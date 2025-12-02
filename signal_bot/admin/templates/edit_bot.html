@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block title %}Edit {{ bot.name }} - Signal Bot Admin{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h1><i class="bi bi-pencil"></i> Edit Bot: {{ bot.name }}</h1>
+    </div>
+</div>
+
+<form action="{{ url_for('edit_bot', bot_id=bot.id) }}" method="post">
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card mb-4">
+                <div class="card-header">Basic Settings</div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">Bot Name</label>
+                        <input type="text" name="name" class="form-control" value="{{ bot.name }}" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">AI Model</label>
+                        <select name="model" class="form-select" required>
+                            {% for model in models %}
+                            <option value="{{ model }}" {% if model == bot.model %}selected{% endif %}>{{ model }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Phone Number</label>
+                        <input type="text" name="phone_number" class="form-control" value="{{ bot.phone_number or '' }}" placeholder="+1234567890">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Signal API Port</label>
+                        <select name="signal_api_port" class="form-select">
+                            <option value="8080" {% if bot.signal_api_port == 8080 %}selected{% endif %}>8080 (Bot 1)</option>
+                            <option value="8081" {% if bot.signal_api_port == 8081 %}selected{% endif %}>8081 (Bot 2)</option>
+                            <option value="8082" {% if bot.signal_api_port == 8082 %}selected{% endif %}>8082 (Bot 3)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card mb-4">
+                <div class="card-header">Response Settings</div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input type="checkbox" name="respond_on_mention" class="form-check-input" id="respondMention" {% if bot.respond_on_mention %}checked{% endif %}>
+                            <label class="form-check-label" for="respondMention">Respond when mentioned</label>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Random Response Chance (%)</label>
+                        <input type="range" name="random_chance_percent" class="form-range" min="0" max="50" value="{{ bot.random_chance_percent }}" id="randomChance" oninput="document.getElementById('randomValue').textContent = this.value + '%'">
+                        <span id="randomValue">{{ bot.random_chance_percent }}%</span>
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input type="checkbox" name="image_generation_enabled" class="form-check-input" id="imageGen" {% if bot.image_generation_enabled %}checked{% endif %}>
+                            <label class="form-check-label" for="imageGen">Enable image generation (!image)</label>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input type="checkbox" name="web_search_enabled" class="form-check-input" id="webSearch" {% if bot.web_search_enabled %}checked{% endif %}>
+                            <label class="form-check-label" for="webSearch">Enable web search (real-time data)</label>
+                        </div>
+                        <small class="text-muted">Uses OpenRouter's web search plugin for current info</small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-emoji-smile"></i> Reaction Settings
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input type="checkbox" name="reaction_enabled" class="form-check-input" id="reactionEnabled" {% if bot.reaction_enabled %}checked{% endif %}>
+                            <label class="form-check-label" for="reactionEnabled">Enable emoji reactions</label>
+                        </div>
+                        <small class="text-muted">Bot can react to messages with emoji</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Random Animal Emoji Chance (%)</label>
+                        <input type="range" name="reaction_chance_percent" class="form-range" min="0" max="20" value="{{ bot.reaction_chance_percent or 5 }}" id="reactionChance" oninput="document.getElementById('reactionValue').textContent = this.value + '%'">
+                        <span id="reactionValue">{{ bot.reaction_chance_percent or 5 }}%</span>
+                        <br><small class="text-muted">Chance to react with random animal emoji (free, no API cost)</small>
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input type="checkbox" name="llm_reaction_enabled" class="form-check-input" id="llmReaction" {% if bot.llm_reaction_enabled %}checked{% endif %}>
+                            <label class="form-check-label" for="llmReaction">Use AI to detect funny messages</label>
+                        </div>
+                        <small class="text-muted">Uses Haiku to evaluate if messages are funny and react appropriately (costs ~$0.0001/msg)</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-12">
+            <div class="card mb-4">
+                <div class="card-header">
+                    System Prompt
+                    <small class="text-muted ms-2">Define the bot's personality</small>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">Load from Template</label>
+                        <select class="form-select" id="promptTemplate" onchange="loadPromptTemplate(this.value)">
+                            <option value="">-- Select a template --</option>
+                            {% for prompt in prompts %}
+                            <option value="{{ prompt.prompt_text|e }}">{{ prompt.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Custom System Prompt</label>
+                        <textarea name="system_prompt" class="form-control" rows="10" id="systemPrompt" placeholder="Enter a custom system prompt or select a template above...">{{ bot.system_prompt or '' }}</textarea>
+                        <small class="text-muted">Leave empty to use the default prompt</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col">
+            <a href="{{ url_for('bots_list') }}" class="btn btn-secondary">
+                <i class="bi bi-arrow-left"></i> Back
+            </a>
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-check-lg"></i> Save Changes
+            </button>
+        </div>
+    </div>
+</form>
+
+<script>
+function loadPromptTemplate(value) {
+    if (value) {
+        document.getElementById('systemPrompt').value = value;
+    }
+}
+</script>
+{% endblock %}

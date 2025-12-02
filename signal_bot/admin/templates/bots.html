@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block title %}Bots - Signal Bot Admin{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h1><i class="bi bi-cpu"></i> Bot Management</h1>
+    </div>
+    <div class="col-auto">
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addBotModal">
+            <i class="bi bi-plus-lg"></i> Add Bot
+        </button>
+    </div>
+</div>
+
+<div class="row">
+    {% for bot in bots %}
+    <div class="col-md-6 col-lg-4 mb-4">
+        <div class="card h-100 {% if bot.enabled %}border-success{% endif %}">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>
+                    <i class="bi bi-robot"></i> {{ bot.name }}
+                </span>
+                <form action="{{ url_for('toggle_bot', bot_id=bot.id) }}" method="post" class="d-inline">
+                    <button type="submit" class="btn btn-sm {% if bot.enabled %}btn-success{% else %}btn-outline-secondary{% endif %}">
+                        {% if bot.enabled %}<i class="bi bi-toggle-on"></i> ON{% else %}<i class="bi bi-toggle-off"></i> OFF{% endif %}
+                    </button>
+                </form>
+            </div>
+            <div class="card-body">
+                <p><strong>Model:</strong> {{ bot.model }}</p>
+                <p><strong>Phone:</strong> {{ bot.phone_number or 'Not configured' }}</p>
+                <p><strong>API Port:</strong> {{ bot.signal_api_port }}</p>
+                <hr>
+                <p><strong>Response Settings:</strong></p>
+                <ul class="list-unstyled small">
+                    <li>
+                        <i class="bi bi-{% if bot.respond_on_mention %}check-circle text-success{% else %}x-circle text-muted{% endif %}"></i>
+                        Respond on mention
+                    </li>
+                    <li>
+                        <i class="bi bi-{% if bot.random_chance_percent > 0 %}check-circle text-success{% else %}x-circle text-muted{% endif %}"></i>
+                        Random chance: {{ bot.random_chance_percent }}%
+                    </li>
+                    <li>
+                        <i class="bi bi-{% if bot.image_generation_enabled %}check-circle text-success{% else %}x-circle text-muted{% endif %}"></i>
+                        Image generation
+                    </li>
+                </ul>
+            </div>
+            <div class="card-footer">
+                <a href="{{ url_for('edit_bot', bot_id=bot.id) }}" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-pencil"></i> Edit
+                </a>
+                <form action="{{ url_for('delete_bot', bot_id=bot.id) }}" method="post" class="d-inline" onsubmit="return confirm('Delete this bot?')">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">
+                        <i class="bi bi-trash"></i> Delete
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="col-12">
+        <div class="alert alert-info">
+            <i class="bi bi-info-circle"></i> No bots configured yet. Click "Add Bot" to create one.
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Add Bot Modal -->
+<div class="modal fade" id="addBotModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="{{ url_for('add_bot') }}" method="post">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add New Bot</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Bot Name</label>
+                        <input type="text" name="name" class="form-control" placeholder="e.g., Claude" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">AI Model</label>
+                        <select name="model" class="form-select" required>
+                            {% for model in models %}
+                            <option value="{{ model }}">{{ model }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Phone Number</label>
+                        <input type="text" name="phone_number" class="form-control" placeholder="+1234567890">
+                        <small class="text-muted">The Signal phone number for this bot</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Signal API Port</label>
+                        <select name="signal_api_port" class="form-select">
+                            <option value="8080">8080 (Bot 1)</option>
+                            <option value="8081">8081 (Bot 2)</option>
+                            <option value="8082">8082 (Bot 3)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Bot</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

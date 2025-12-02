@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Memories - Signal Bot Admin{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h1><i class="bi bi-lightbulb"></i> Long-Term Memories</h1>
+        <p class="text-muted">Memorable moments the bots occasionally reference ("remember when...")</p>
+    </div>
+</div>
+
+<div class="row">
+    {% for memory in memories %}
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <small class="text-muted">
+                    <i class="bi bi-clock"></i> {{ memory.timestamp.strftime('%Y-%m-%d %H:%M') }}
+                </small>
+                <span class="badge bg-secondary">Referenced {{ memory.times_referenced }}x</span>
+            </div>
+            <div class="card-body">
+                <pre class="bg-light p-2 rounded" style="white-space: pre-wrap; font-size: 0.9rem;">{{ memory.content }}</pre>
+                {% if memory.context %}
+                <small class="text-muted">{{ memory.context }}</small>
+                {% endif %}
+            </div>
+            <div class="card-footer">
+                <form action="{{ url_for('delete_memory', memory_id=memory.id) }}" method="post" class="d-inline" onsubmit="return confirm('Delete this memory?')">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">
+                        <i class="bi bi-trash"></i> Delete
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="col-12">
+        <div class="alert alert-info">
+            <i class="bi bi-info-circle"></i> No memories saved yet. As bots chat, they'll occasionally save memorable moments that they can reference later.
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

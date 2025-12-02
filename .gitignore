@@ -172,3 +172,8 @@ memory/ai-2/*
 logs/*
 !logs/.gitkeep
 videos/*
+
+# Signal bot data (credentials/keys)
+signal-data/
+signal_bot.db
+nul

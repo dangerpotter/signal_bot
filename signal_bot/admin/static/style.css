@@ -1,0 +1,97 @@
+/* Signal Bot Admin - Custom Styles */
+
+:root {
+    --primary-color: #0d6efd;
+    --success-color: #198754;
+    --dark-bg: #212529;
+}
+
+body {
+    background-color: #f8f9fa;
+}
+
+.navbar {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.card {
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    transition: box-shadow 0.2s ease;
+}
+
+.card:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.card.border-success {
+    border-width: 2px;
+}
+
+.activity-feed .activity-item:last-child {
+    border-bottom: none !important;
+}
+
+.prompt-preview {
+    font-family: 'Courier New', monospace;
+}
+
+/* Bot status indicators */
+.status-online {
+    color: var(--success-color);
+}
+
+.status-offline {
+    color: #6c757d;
+}
+
+/* Toggle button styling */
+.btn-group-toggle .btn {
+    cursor: pointer;
+}
+
+/* Badge close button fix */
+.badge .btn-close {
+    padding: 0;
+    background-size: 0.5rem;
+    vertical-align: middle;
+}
+
+/* Form improvements */
+.form-range {
+    cursor: pointer;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .card-body {
+        padding: 1rem;
+    }
+
+    h1 {
+        font-size: 1.5rem;
+    }
+}
+
+/* Loading spinner */
+.spinner-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255,255,255,0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+}
+
+/* HTMX loading indicator */
+.htmx-request .htmx-indicator {
+    opacity: 1;
+}
+
+.htmx-indicator {
+    opacity: 0;
+    transition: opacity 200ms ease-in;
+}

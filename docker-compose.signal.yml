@@ -1,0 +1,35 @@
+version: "3.8"
+
+services:
+  signal-bot-1:
+    image: bbernhard/signal-cli-rest-api:latest
+    container_name: signal-bot-1
+    environment:
+      - MODE=normal
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./signal-data/bot1:/home/.local/share/signal-cli
+    restart: unless-stopped
+
+  signal-bot-2:
+    image: bbernhard/signal-cli-rest-api:latest
+    container_name: signal-bot-2
+    environment:
+      - MODE=json-rpc
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./signal-data/bot2:/home/.local/share/signal-cli
+    restart: unless-stopped
+
+  signal-bot-3:
+    image: bbernhard/signal-cli-rest-api:latest
+    container_name: signal-bot-3
+    environment:
+      - MODE=json-rpc
+    ports:
+      - "8082:8080"
+    volumes:
+      - ./signal-data/bot3:/home/.local/share/signal-cli
+    restart: unless-stopped

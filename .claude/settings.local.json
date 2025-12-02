@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl:*)",
+      "Bash(docker exec:*)",
+      "Bash(powershell -Command \"docker exec signal-bot-1 ls /home/.local/share/signal-cli/data/\")",
+      "Bash(powershell -Command \"docker exec signal-bot-1 signal-cli -u ''+17203100759'' receive\")",
+      "Bash(powershell -Command \"docker exec signal-bot-1 signal-cli --config /home/.local/share/signal-cli -u ''+17203100759'' receive\")",
+      "Bash(timeout:*)",
+      "Bash(powershell -Command \"Start-Sleep -Seconds 5; curl -s http://localhost:8080/v1/groups/+17203100759\")",
+      "Bash(powershell -Command \"Start-Sleep -Seconds 5; Invoke-RestMethod -Uri ''http://localhost:8080/v1/groups/+17203100759''\")",
+      "Bash(powershell -Command \"docker exec signal-bot-1 signal-cli --config /home/.local/share/signal-cli -a ''+17408050413'' joinGroup --uri ''https://signal.group/#CjQKIEBnyDIva3goaIxCHUspdEB8Duc3Ki9p0KG2oLCPZMoJEhDcIf0Q_mC77_NMjf0o1EBo''\")",
+      "Bash(docker stop:*)",
+      "Bash(docker run --rm -v \"d:/liminal_backrooms/signal-data/bot1:/home/.local/share/signal-cli\" bbernhard/signal-cli-rest-api:latest signal-cli -a \"+17408050413\" joinGroup --uri \"https://signal.group/#CjQKIEBnyDIva3goaIxCHUspdEB8Duc3Ki9p0KG2oLCPZMoJEhDcIf0Q_mC77_NMjf0o1EBo\")",
+      "Bash(docker rm:*)",
+      "Bash(xargs:*)",
+      "Bash(docker-compose:*)",
+      "Bash(powershell -Command \"Start-Sleep -Seconds 3; Invoke-RestMethod -Uri ''http://localhost:8080/v1/accounts''\")",
+      "Bash(docker run:*)",
+      "Bash(powershell -Command \"docker run --rm --entrypoint ls -v ''d:/liminal_backrooms/signal-data/bot1:/home/.local/share/signal-cli'' bbernhard/signal-cli-rest-api:latest -la /home/.local/share/signal-cli/data/\")",
+      "Bash(powershell -Command \"docker run --rm --entrypoint cat -v ''d:/liminal_backrooms/signal-data/bot1:/home/.local/share/signal-cli'' bbernhard/signal-cli-rest-api:latest /home/.local/share/signal-cli/data/accounts.json\")",
+      "Bash(powershell -Command \"Start-Sleep -Seconds 3; Invoke-RestMethod -Method POST -Uri ''http://localhost:8080/v1/groups/+17408050413'' -ContentType ''application/json'' -Body ''{\"\"groupLink\"\":\"\"https://signal.group/#CjQKIEBnyDIva3goaIxCHUspdEB8Duc3Ki9p0KG2oLCPZMoJEhDcIf0Q_mC77_NMjf0o1EBo\"\"}''\")",
+      "Bash(dir:*)",
+      "Bash(powershell -Command \"Start-Sleep -Seconds 3; Invoke-RestMethod -Uri ''''http://localhost:8080/v1/groups/+17408050413''''\")",
+      "Bash(docker ps:*)",
+      "Bash(python run_signal.py:*)",
+      "Bash(python -m json.tool:*)",
+      "Bash(poetry add:*)",
+      "Bash(powershell -Command \"cd d:/liminal_backrooms; & \"\"$env:APPDATA\\Python\\Scripts\\poetry.exe\"\" add together\")",
+      "Bash(python:*)",
+      "Bash(powershell -Command \"docker ps\")",
+      "Bash(git remote set-url:*)",
+      "Bash(git push:*)",
+      "Bash(cat:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

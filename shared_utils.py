@@ -226,11 +226,12 @@ def call_openai_api(prompt, conversation_history, model, system_prompt):
         print(f"Error calling OpenAI API: {e}")
         return None
 
-def call_openrouter_api(prompt, conversation_history, model, system_prompt, stream_callback=None):
+def call_openrouter_api(prompt, conversation_history, model, system_prompt, stream_callback=None, web_search=False):
     """Call the OpenRouter API to access various LLM models.
-    
+
     Args:
         stream_callback: Optional function(chunk: str) to call with each streaming token
+        web_search: If True, enable OpenRouter's web search plugin
     """
     try:
         headers = {
@@ -315,17 +316,27 @@ def call_openrouter_api(prompt, conversation_history, model, system_prompt, stre
         def make_api_call(include_images=True):
             """Make the API call, returns (success, result_or_error)"""
             msgs = build_messages(include_images=include_images)
-            
+
+            # Use :online suffix for web search (more reliable than plugins array)
+            model_to_use = openrouter_model
+            if web_search:
+                # Append :online to enable web search
+                if not model_to_use.endswith(":online"):
+                    model_to_use = f"{model_to_use}:online"
+                print(f"[OpenRouter] Web search ENABLED - using model: {model_to_use}")
+            else:
+                print(f"[OpenRouter] Web search: DISABLED")
+
             payload = {
-                "model": openrouter_model,
+                "model": model_to_use,
                 "messages": msgs,
                 "temperature": 1,
                 "max_tokens": 4000,
                 "stream": stream_callback is not None
             }
-            
+
             print(f"\nSending to OpenRouter:")
-            print(f"Model: {model}")
+            print(f"Model: {model_to_use}")
             print(f"Include images: {include_images}")
             # Log message summary (avoid huge base64 dumps)
             for i, m in enumerate(msgs):

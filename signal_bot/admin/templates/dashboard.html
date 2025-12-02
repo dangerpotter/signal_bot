@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Signal Bot Admin{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1 class="mb-4"><i class="bi bi-speedometer2"></i> Dashboard</h1>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <!-- Stats Cards -->
+    <div class="col-md-3">
+        <div class="card bg-primary text-white">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-cpu"></i> Active Bots</h5>
+                <h2>{{ bots|selectattr('enabled')|list|length }} / {{ bots|length }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-success text-white">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-people"></i> Connected Groups</h5>
+                <h2>{{ groups|selectattr('enabled')|list|length }} / {{ groups|length }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-info text-white">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-chat-dots"></i> Messages Today</h5>
+                <h2>--</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-warning text-dark">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-image"></i> Images Generated</h5>
+                <h2>--</h2>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Bot Quick Controls -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-cpu"></i> Bot Quick Controls
+            </div>
+            <div class="card-body">
+                {% if bots %}
+                    <div class="list-group">
+                        {% for bot in bots %}
+                        <div class="list-group-item d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong>{{ bot.name }}</strong>
+                                <br>
+                                <small class="text-muted">{{ bot.model }}</small>
+                            </div>
+                            <div>
+                                <form action="{{ url_for('toggle_bot', bot_id=bot.id) }}" method="post" class="d-inline">
+                                    <button type="submit" class="btn btn-sm {% if bot.enabled %}btn-success{% else %}btn-outline-secondary{% endif %}">
+                                        {% if bot.enabled %}
+                                            <i class="bi bi-toggle-on"></i> ON
+                                        {% else %}
+                                            <i class="bi bi-toggle-off"></i> OFF
+                                        {% endif %}
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="text-muted">No bots configured. <a href="{{ url_for('bots_list') }}">Add a bot</a></p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Activity -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-clock-history"></i> Recent Activity
+            </div>
+            <div class="card-body activity-feed" style="max-height: 400px; overflow-y: auto;">
+                {% if activity %}
+                    {% for log in activity %}
+                    <div class="activity-item mb-2 pb-2 border-bottom">
+                        <small class="text-muted">{{ log.timestamp.strftime('%H:%M:%S') }}</small>
+                        <br>
+                        <span class="badge bg-{{ 'success' if log.event_type == 'message_sent' else 'info' if log.event_type == 'image_generated' else 'secondary' }}">
+                            {{ log.event_type }}
+                        </span>
+                        {{ log.description }}
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <p class="text-muted">No recent activity</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <!-- Groups Overview -->
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-people"></i> Groups Overview
+            </div>
+            <div class="card-body">
+                {% if groups %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Group Name</th>
+                                    <th>Status</th>
+                                    <th>Assigned Bots</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for group in groups %}
+                                <tr>
+                                    <td>{{ group.name }}</td>
+                                    <td>
+                                        {% if group.enabled %}
+                                            <span class="badge bg-success">Active</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">Disabled</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% for assignment in group.bot_assignments %}
+                                            <span class="badge bg-primary">{{ assignment.bot.name }}</span>
+                                        {% else %}
+                                            <span class="text-muted">None</span>
+                                        {% endfor %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <p class="text-muted">No groups connected. <a href="{{ url_for('groups_list') }}">Add a group</a></p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

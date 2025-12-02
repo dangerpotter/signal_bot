@@ -1,0 +1,285 @@
+{% extends "base.html" %}
+
+{% block title %}Member Memories - Signal Bot Admin{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h1><i class="bi bi-person-lines-fill"></i> Member Memories</h1>
+        <p class="text-muted">Location-aware and personal information about group members. Auto-scans every 6 hours.</p>
+    </div>
+</div>
+
+<!-- Add Memory Form -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-plus-circle"></i> Add Memory Manually</h5>
+    </div>
+    <div class="card-body">
+        <form action="{{ url_for('add_member_memory') }}" method="post" class="row g-3">
+            <div class="col-md-2">
+                <label class="form-label">Group</label>
+                <select name="group_id" id="groupSelect" class="form-select" required>
+                    <option value="">Select group...</option>
+                    {% for group in all_groups %}
+                    <option value="{{ group.id }}">{{ group.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Member Name</label>
+                <select name="member_name" id="memberNameSelect" class="form-select" required>
+                    <option value="">Select member...</option>
+                </select>
+                <input type="text" name="member_name_custom" id="memberNameCustom" class="form-control mt-1 d-none" placeholder="Or type name...">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Slot Type</label>
+                <select name="slot_type" class="form-select" required>
+                    {% for value, label in slot_types %}
+                    <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Content</label>
+                <input type="text" name="content" class="form-control" placeholder="Memory content..." required>
+            </div>
+            <div class="col-md-1">
+                <label class="form-label">From</label>
+                <input type="date" name="valid_from" class="form-control">
+            </div>
+            <div class="col-md-1">
+                <label class="form-label">Until</label>
+                <input type="date" name="valid_until" class="form-control">
+            </div>
+            <div class="col-md-1 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="bi bi-plus"></i> Add
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% for group, members in memories_by_group.items() %}
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-people"></i> {{ group.name }}</h5>
+        <form action="{{ url_for('force_memory_scan', group_id=group.id) }}" method="post" class="d-inline">
+            <button type="submit" class="btn btn-sm btn-outline-primary" onclick="this.innerHTML='<span class=\'spinner-border spinner-border-sm\'></span> Scanning...'; this.disabled=true; this.form.submit();">
+                <i class="bi bi-arrow-repeat"></i> Force Scan
+            </button>
+        </form>
+    </div>
+    <div class="card-body">
+        {% for member_name, mems in members.items() %}
+        <div class="card mb-3">
+            <div class="card-header bg-light">
+                <strong><i class="bi bi-person"></i> {{ member_name }}</strong>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th style="width: 150px;">Slot</th>
+                            <th>Content</th>
+                            <th style="width: 200px;">Valid Period</th>
+                            <th style="width: 150px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for mem in mems %}
+                        <tr id="memory-row-{{ mem.id }}">
+                            <td>
+                                {% if mem.slot_type == 'home_location' %}
+                                <span class="badge bg-success"><i class="bi bi-house"></i> Home</span>
+                                {% elif mem.slot_type == 'travel_location' %}
+                                <span class="badge bg-info"><i class="bi bi-airplane"></i> Travel</span>
+                                {% elif mem.slot_type == 'interests' %}
+                                <span class="badge bg-primary"><i class="bi bi-star"></i> Interests</span>
+                                {% elif mem.slot_type == 'media_prefs' %}
+                                <span class="badge bg-warning text-dark"><i class="bi bi-film"></i> Media</span>
+                                {% elif mem.slot_type == 'life_events' %}
+                                <span class="badge bg-danger"><i class="bi bi-calendar-heart"></i> Life Event</span>
+                                {% elif mem.slot_type == 'work_info' %}
+                                <span class="badge bg-dark"><i class="bi bi-briefcase"></i> Work</span>
+                                {% elif mem.slot_type == 'social_notes' %}
+                                <span class="badge bg-secondary"><i class="bi bi-people"></i> Social</span>
+                                {% elif mem.slot_type == 'response_prefs' %}
+                                <span class="badge bg-secondary"><i class="bi bi-chat-dots"></i> Response Style</span>
+                                {% else %}
+                                <span class="badge bg-secondary"><i class="bi bi-journal"></i> {{ mem.slot_type.replace('_', ' ').title() }}</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ mem.content }}</td>
+                            <td>
+                                {% if mem.valid_from or mem.valid_until %}
+                                <small class="text-muted">
+                                    {% if mem.valid_from %}{{ mem.valid_from.strftime('%b %d') }}{% endif %}
+                                    {% if mem.valid_from and mem.valid_until %} - {% endif %}
+                                    {% if mem.valid_until %}{{ mem.valid_until.strftime('%b %d, %Y') }}{% endif %}
+                                </small>
+                                {% else %}
+                                <small class="text-muted">-</small>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <button type="button" class="btn btn-sm btn-outline-primary" onclick="showEditForm({{ mem.id }}, '{{ mem.slot_type }}', '{{ mem.content | e }}', '{{ mem.valid_from.strftime('%Y-%m-%d') if mem.valid_from else '' }}', '{{ mem.valid_until.strftime('%Y-%m-%d') if mem.valid_until else '' }}')">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <form action="{{ url_for('delete_member_memory', memory_id=mem.id) }}" method="post" class="d-inline" onsubmit="return confirm('Delete this memory?')">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="card-footer text-muted">
+                <small>Last updated: {{ mems[0].updated_at.strftime('%Y-%m-%d %H:%M') if mems else 'Never' }}</small>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% else %}
+<div class="alert alert-info">
+    <i class="bi bi-info-circle"></i> No member memories yet. The scanner runs every 6 hours to extract location and personal info from chat history. You can also add memories manually using the form above.
+    <br><br>
+    <strong>Memory slots per member:</strong>
+    <ul class="mb-0 mt-2">
+        <li><span class="badge bg-success">Home Location</span> - Where they live (permanent)</li>
+        <li><span class="badge bg-info">Travel Location</span> - Current travel/vacation (with dates)</li>
+        <li><span class="badge bg-primary">Interests</span> - Hobbies, concerts, sports teams, music artists</li>
+        <li><span class="badge bg-warning text-dark">Media Prefs</span> - Shows, movies, podcasts, games they like</li>
+        <li><span class="badge bg-danger">Life Events</span> - Wedding dates, birthdays, anniversaries</li>
+        <li><span class="badge bg-dark">Work Info</span> - Job, company, professional background</li>
+        <li><span class="badge bg-secondary">Social Notes</span> - Friend connections, relationship dynamics</li>
+        <li><span class="badge bg-secondary">Response Prefs</span> - How they prefer the bot to respond</li>
+    </ul>
+</div>
+{% endfor %}
+
+<!-- Edit Modal -->
+<div class="modal fade" id="editModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form id="editForm" method="post">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-pencil"></i> Edit Memory</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Slot Type</label>
+                        <select name="slot_type" id="editSlotType" class="form-select">
+                            {% for value, label in slot_types %}
+                            <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Content</label>
+                        <textarea name="content" id="editContent" class="form-control" rows="3" required></textarea>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Valid From (optional)</label>
+                            <input type="date" name="valid_from" id="editValidFrom" class="form-control">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Valid Until (optional)</label>
+                            <input type="date" name="valid_until" id="editValidUntil" class="form-control">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function showEditForm(memoryId, slotType, content, validFrom, validUntil) {
+    document.getElementById('editForm').action = '/member-memories/' + memoryId + '/edit';
+    document.getElementById('editSlotType').value = slotType;
+    document.getElementById('editContent').value = content;
+    document.getElementById('editValidFrom').value = validFrom;
+    document.getElementById('editValidUntil').value = validUntil;
+
+    var modal = new bootstrap.Modal(document.getElementById('editModal'));
+    modal.show();
+}
+
+// Dynamic member loading when group is selected
+document.getElementById('groupSelect').addEventListener('change', function() {
+    const groupId = this.value;
+    const memberSelect = document.getElementById('memberNameSelect');
+    const customInput = document.getElementById('memberNameCustom');
+
+    // Reset member dropdown
+    memberSelect.innerHTML = '<option value="">Loading...</option>';
+    customInput.classList.add('d-none');
+    customInput.value = '';
+
+    if (!groupId) {
+        memberSelect.innerHTML = '<option value="">Select member...</option>';
+        return;
+    }
+
+    // Fetch members for the selected group
+    fetch('/api/groups/' + encodeURIComponent(groupId) + '/members')
+        .then(response => response.json())
+        .then(members => {
+            memberSelect.innerHTML = '<option value="">Select member...</option>';
+
+            // Add members from the group
+            members.forEach(member => {
+                const option = document.createElement('option');
+                option.value = member.name;
+                option.textContent = member.name;
+                memberSelect.appendChild(option);
+            });
+
+            // Add option to enter custom name
+            const customOption = document.createElement('option');
+            customOption.value = '__custom__';
+            customOption.textContent = '+ Enter custom name...';
+            memberSelect.appendChild(customOption);
+        })
+        .catch(error => {
+            console.error('Error loading members:', error);
+            memberSelect.innerHTML = '<option value="">Select member...</option>';
+            // Add custom option anyway
+            const customOption = document.createElement('option');
+            customOption.value = '__custom__';
+            customOption.textContent = '+ Enter custom name...';
+            memberSelect.appendChild(customOption);
+        });
+});
+
+// Handle custom member name input
+document.getElementById('memberNameSelect').addEventListener('change', function() {
+    const customInput = document.getElementById('memberNameCustom');
+    if (this.value === '__custom__') {
+        customInput.classList.remove('d-none');
+        customInput.required = true;
+        this.name = '';  // Don't submit the select value
+        customInput.name = 'member_name';
+    } else {
+        customInput.classList.add('d-none');
+        customInput.required = false;
+        customInput.value = '';
+        this.name = 'member_name';
+        customInput.name = 'member_name_custom';
+    }
+});
+</script>
+{% endblock %}
