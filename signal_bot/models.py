@@ -29,6 +29,10 @@ class Bot(db.Model):
     reaction_chance_percent = db.Column(db.Integer, default=5)  # Random animal emoji chance (0-100)
     llm_reaction_enabled = db.Column(db.Boolean, default=False)  # Use LLM to detect funny messages
 
+    # Signal feature settings
+    typing_enabled = db.Column(db.Boolean, default=True)  # Send typing indicators while composing
+    read_receipts_enabled = db.Column(db.Boolean, default=False)  # Send read receipts for messages
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -51,6 +55,8 @@ class Bot(db.Model):
             "reaction_enabled": self.reaction_enabled,
             "reaction_chance_percent": self.reaction_chance_percent,
             "llm_reaction_enabled": self.llm_reaction_enabled,
+            "typing_enabled": self.typing_enabled,
+            "read_receipts_enabled": self.read_receipts_enabled,
         }
 
 

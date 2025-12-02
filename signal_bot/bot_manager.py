@@ -152,7 +152,9 @@ class SignalBotManager:
                 'web_search_enabled': bot.web_search_enabled,
                 'reaction_enabled': bot.reaction_enabled,
                 'reaction_chance_percent': bot.reaction_chance_percent,
-                'llm_reaction_enabled': bot.llm_reaction_enabled
+                'llm_reaction_enabled': bot.llm_reaction_enabled,
+                'typing_enabled': getattr(bot, 'typing_enabled', True),
+                'read_receipts_enabled': getattr(bot, 'read_receipts_enabled', False)
             }
 
         # Create task to listen for messages
@@ -252,23 +254,47 @@ class SignalBotManager:
         phone_number: str,
         group_id: str,
         message: str,
-        port: int = 8080
+        port: int = 8080,
+        quote_timestamp: Optional[int] = None,
+        quote_author: Optional[str] = None,
+        mentions: Optional[list[dict]] = None,
+        text_styles: Optional[list[dict]] = None
     ) -> bool:
-        """Send a text message to a group."""
-        import base64
-        url = f"http://localhost:{port}/v2/send"
+        """
+        Send a text message to a group.
 
-        # Convert internal_id format to API format (group.base64(internal_id))
-        if not group_id.startswith("group."):
-            api_group_id = "group." + base64.b64encode(group_id.encode()).decode()
-        else:
-            api_group_id = group_id
+        Args:
+            phone_number: Bot's phone number
+            group_id: Target group ID
+            message: Message text
+            port: Signal API port
+            quote_timestamp: Timestamp of message to quote/reply to
+            quote_author: Author UUID of message to quote
+            mentions: List of mentions [{start, length, uuid}]
+            text_styles: List of styles [{start, length, style}] where style is BOLD, ITALIC, etc.
+        """
+        url = f"http://localhost:{port}/v2/send"
 
         payload = {
             "number": phone_number,
-            "recipients": [api_group_id],
+            "recipients": [self._format_group_id(group_id)],
             "message": message
         }
+
+        # Add quote/reply if provided
+        if quote_timestamp and quote_author:
+            payload["quote"] = {
+                "timestamp": quote_timestamp,
+                "author": quote_author
+            }
+
+        # Add mentions if provided
+        if mentions:
+            payload["mentions"] = mentions
+
+        # Add text styles if provided
+        if text_styles:
+            payload["text_style"] = text_styles
 
         try:
             client = await self._get_http_client(port)
@@ -375,6 +401,162 @@ class SignalBotManager:
             self._http_clients[port] = httpx.AsyncClient()
         return self._http_clients[port]
 
+    def _format_group_id(self, group_id: str) -> str:
+        """Convert internal group ID to API format (group.base64(internal_id))."""
+        import base64
+        if not group_id.startswith("group."):
+            return "group." + base64.b64encode(group_id.encode()).decode()
+        return group_id
+
+    async def send_typing(
+        self,
+        phone_number: str,
+        group_id: str,
+        port: int = 8080,
+        stop: bool = False
+    ) -> bool:
+        """Send a typing indicator to a group."""
+        url = f"http://localhost:{port}/v1/typing/{phone_number}"
+
+        payload = {
+            "recipient": self._format_group_id(group_id),
+        }
+        if stop:
+            payload["stop"] = True
+
+        try:
+            client = await self._get_http_client(port)
+            response = await client.put(url, json=payload, timeout=5.0)
+
+            if response.status_code in (200, 201, 204):
+                logger.debug(f"Typing {'stopped' if stop else 'started'} for {phone_number}")
+                return True
+            else:
+                logger.debug(f"Send typing failed: {response.status_code}")
+                return False
+        except Exception as e:
+            logger.debug(f"Error sending typing: {e}")
+            return False
+
+    async def send_read_receipt(
+        self,
+        phone_number: str,
+        sender_id: str,
+        timestamps: list[int],
+        port: int = 8080
+    ) -> bool:
+        """Send a read receipt for messages."""
+        url = f"http://localhost:{port}/v1/receipt/{phone_number}"
+
+        payload = {
+            "recipient": sender_id,
+            "timestamps": timestamps,
+            "type": "read"
+        }
+
+        try:
+            client = await self._get_http_client(port)
+            response = await client.post(url, json=payload, timeout=5.0)
+
+            if response.status_code in (200, 201, 204):
+                logger.debug(f"Read receipt sent for {len(timestamps)} messages")
+                return True
+            else:
+                logger.debug(f"Send read receipt failed: {response.status_code}")
+                return False
+        except Exception as e:
+            logger.debug(f"Error sending read receipt: {e}")
+            return False
+
+    async def join_group_by_link(
+        self,
+        phone_number: str,
+        invite_url: str,
+        port: int = 8080
+    ) -> Optional[dict]:
+        """Join a group via an invitation link."""
+        url = f"http://localhost:{port}/v1/groups/{phone_number}/join"
+
+        payload = {
+            "uri": invite_url
+        }
+
+        try:
+            client = await self._get_http_client(port)
+            response = await client.post(url, json=payload, timeout=30.0)
+
+            if response.status_code in (200, 201):
+                result = response.json()
+                logger.info(f"Joined group via link: {result}")
+                return result
+            else:
+                logger.error(f"Join group failed: {response.status_code} - {response.text}")
+                return None
+        except Exception as e:
+            logger.error(f"Error joining group: {e}")
+            return None
+
+    async def edit_message(
+        self,
+        phone_number: str,
+        group_id: str,
+        original_timestamp: int,
+        new_text: str,
+        port: int = 8080
+    ) -> bool:
+        """Edit a previously sent message."""
+        url = f"http://localhost:{port}/v2/send"
+
+        payload = {
+            "number": phone_number,
+            "recipients": [self._format_group_id(group_id)],
+            "message": new_text,
+            "edit_timestamp": original_timestamp
+        }
+
+        try:
+            client = await self._get_http_client(port)
+            response = await client.post(url, json=payload, timeout=30.0)
+
+            if response.status_code in (200, 201):
+                logger.info(f"Message edited successfully")
+                return True
+            else:
+                logger.error(f"Edit message failed: {response.status_code}")
+                return False
+        except Exception as e:
+            logger.error(f"Error editing message: {e}")
+            return False
+
+    async def delete_message(
+        self,
+        phone_number: str,
+        group_id: str,
+        timestamp: int,
+        port: int = 8080
+    ) -> bool:
+        """Delete a previously sent message."""
+        url = f"http://localhost:{port}/v1/messages/{phone_number}"
+
+        payload = {
+            "recipient": self._format_group_id(group_id),
+            "timestamp": timestamp
+        }
+
+        try:
+            client = await self._get_http_client(port)
+            response = await client.delete(url, json=payload, timeout=10.0)
+
+            if response.status_code in (200, 201, 204):
+                logger.info(f"Message deleted successfully")
+                return True
+            else:
+                logger.error(f"Delete message failed: {response.status_code}")
+                return False
+        except Exception as e:
+            logger.error(f"Error deleting message: {e}")
+            return False
+
     async def _bot_listener(self, bot_data: dict):
         """
         Main listener loop for a bot.
@@ -443,6 +625,22 @@ class SignalBotManager:
 
         # All database operations need app context - keep it open for the whole handler
         with _flask_app.app_context():
+            # Refresh bot settings from database to pick up any changes made in admin UI
+            bot = Bot.query.get(bot_data['id'])
+            if bot:
+                bot_data['model'] = bot.model
+                bot_data['system_prompt'] = bot.system_prompt
+                bot_data['enabled'] = bot.enabled
+                bot_data['respond_on_mention'] = bot.respond_on_mention
+                bot_data['random_chance_percent'] = bot.random_chance_percent
+                bot_data['image_generation_enabled'] = bot.image_generation_enabled
+                bot_data['web_search_enabled'] = bot.web_search_enabled
+                bot_data['reaction_enabled'] = bot.reaction_enabled
+                bot_data['reaction_chance_percent'] = bot.reaction_chance_percent
+                bot_data['llm_reaction_enabled'] = bot.llm_reaction_enabled
+                bot_data['typing_enabled'] = getattr(bot, 'typing_enabled', True)
+                bot_data['read_receipts_enabled'] = getattr(bot, 'read_receipts_enabled', False)
+
             assignment = BotGroupAssignment.query.filter_by(
                 bot_id=bot_data['id'],
                 group_id=group_id
@@ -510,12 +708,45 @@ class SignalBotManager:
             safe_text = message_text[:50].encode('ascii', 'replace').decode('ascii')
             logger.info(f"[{group_name}] {sender_name}: {safe_text}... (mentions: {len(mentions)}, bot_mentioned: {is_mentioned_native})")
 
-            # Create send callbacks
-            async def send_text(text: str):
-                await self.send_message(bot_data['phone_number'], group_id, text, bot_data['signal_api_port'])
+            # Send read receipt if enabled
+            if bot_data.get('read_receipts_enabled', False) and message_timestamp and sender_id:
+                asyncio.create_task(
+                    self.send_read_receipt(
+                        bot_data['phone_number'],
+                        sender_id,
+                        [message_timestamp],
+                        bot_data['signal_api_port']
+                    )
+                )
+
+            # Create send callbacks with quote support
+            async def send_text(
+                text: str,
+                quote_timestamp: Optional[int] = None,
+                quote_author: Optional[str] = None,
+                mentions: Optional[list] = None,
+                text_styles: Optional[list] = None
+            ):
+                await self.send_message(
+                    bot_data['phone_number'],
+                    group_id,
+                    text,
+                    bot_data['signal_api_port'],
+                    quote_timestamp=quote_timestamp,
+                    quote_author=quote_author,
+                    mentions=mentions,
+                    text_styles=text_styles
+                )
 
             async def send_image_cb(path: str):
                 await self.send_image(bot_data['phone_number'], group_id, path, port=bot_data['signal_api_port'])
+
+            # Create typing callbacks
+            async def send_typing_cb():
+                await self.send_typing(bot_data['phone_number'], group_id, bot_data['signal_api_port'])
+
+            async def stop_typing_cb():
+                await self.send_typing(bot_data['phone_number'], group_id, bot_data['signal_api_port'], stop=True)
 
             # Handle the message (inside app context for DB operations)
             await self.message_handler.handle_incoming_message(
@@ -523,10 +754,13 @@ class SignalBotManager:
                 sender_name=sender_name,
                 sender_id=sender_id,
                 message_text=message_text,
+                message_timestamp=message_timestamp,
                 bot_data=bot_data,
                 is_mentioned=is_mentioned_native,  # Pass native mention flag
-                send_callback=lambda t: asyncio.create_task(send_text(t)),
-                send_image_callback=lambda p: asyncio.create_task(send_image_cb(p))
+                send_callback=lambda t, qt=None, qa=None, m=None, ts=None: asyncio.create_task(send_text(t, qt, qa, m, ts)),
+                send_image_callback=lambda p: asyncio.create_task(send_image_cb(p)),
+                send_typing_callback=lambda: asyncio.create_task(send_typing_cb()),
+                stop_typing_callback=lambda: asyncio.create_task(stop_typing_cb())
             )
 
             # Maybe react to the message with an emoji

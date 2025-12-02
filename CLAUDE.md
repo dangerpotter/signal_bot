@@ -194,6 +194,16 @@ signal_bot/
 - **Memory system**: Rolling 25-message window + long-term "remember when..." callbacks
 - **Image generation**: Bots can use `!image` to generate memes
 
+### Signal Features (Per Bot)
+- **Typing indicators**: Shows "typing..." while bot composes response (configurable)
+- **Quote/reply**: Always quotes triggered messages; random chance for others
+- **Text styling**: Supports **bold**, *italic*, `code`, ~~strikethrough~~, ||spoiler||
+- **Read receipts**: Mark messages as read when bot sees them (configurable)
+- **Join via invite link**: Add bots to groups using Signal invite URLs
+- **Link previews**: Rich URL cards in messages
+- **Message editing**: Correct bot messages after sending
+- **Remote delete**: Admin moderation capability
+
 ### Admin UI Pages
 - **Dashboard**: Bot status, quick toggles, activity feed
 - **Bots**: Add/edit bots, set model, prompt, response settings

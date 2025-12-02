@@ -49,12 +49,11 @@ def register_routes(app):
         bots = Bot.query.all()
         prompts = SystemPromptTemplate.query.all()
         all_models = _get_all_models()
-        models = list(all_models.keys())
 
         return render_template("bots.html",
                                bots=bots,
                                prompts=prompts,
-                               models=models)
+                               all_models=all_models)
 
     @app.route("/bots/add", methods=["POST"])
     def add_bot():
@@ -116,6 +115,8 @@ def register_routes(app):
             bot.reaction_enabled = request.form.get("reaction_enabled") == "on"
             bot.reaction_chance_percent = int(request.form.get("reaction_chance_percent", 5))
             bot.llm_reaction_enabled = request.form.get("llm_reaction_enabled") == "on"
+            bot.typing_enabled = request.form.get("typing_enabled") == "on"
+            bot.read_receipts_enabled = request.form.get("read_receipts_enabled") == "on"
 
             db.session.commit()
             _log_activity("bot_updated", bot_id, None, f"Bot '{bot.name}' settings updated")
@@ -124,9 +125,8 @@ def register_routes(app):
 
         prompts = SystemPromptTemplate.query.all()
         all_models = _get_all_models()
-        models = list(all_models.keys())
 
-        return render_template("edit_bot.html", bot=bot, prompts=prompts, models=models)
+        return render_template("edit_bot.html", bot=bot, prompts=prompts, all_models=all_models)
 
     @app.route("/bots/<bot_id>/delete", methods=["POST"])
     def delete_bot(bot_id):
@@ -284,6 +284,77 @@ def register_routes(app):
 
         _log_activity("group_deleted", None, None, f"Group '{name}' deleted")
         flash(f"Group '{name}' deleted", "success")
+        return redirect(url_for("groups_list"))
+
+    @app.route("/groups/join", methods=["POST"])
+    def join_group_by_link():
+        """Join a group via invite link."""
+        import asyncio
+        from signal_bot.bot_manager import get_bot_manager
+
+        bot_id = request.form.get("bot_id", "").strip()
+        invite_url = request.form.get("invite_url", "").strip()
+
+        if not bot_id or not invite_url:
+            flash("Bot and invite URL are required", "error")
+            return redirect(url_for("groups_list"))
+
+        bot = Bot.query.get_or_404(bot_id)
+
+        if not bot.phone_number:
+            flash(f"Bot '{bot.name}' has no phone number configured", "error")
+            return redirect(url_for("groups_list"))
+
+        try:
+            # Run async join in event loop
+            manager = get_bot_manager()
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(
+                manager.join_group_by_link(
+                    bot.phone_number,
+                    invite_url,
+                    bot.signal_api_port
+                )
+            )
+            loop.close()
+
+            if result:
+                # Extract group info from result
+                group_id = result.get("groupId") or result.get("id", "unknown")
+                group_name = result.get("name", "Joined Group")
+
+                # Check if group already exists
+                existing = GroupConnection.query.get(group_id)
+                if not existing:
+                    # Create new group
+                    group = GroupConnection(id=group_id, name=group_name, enabled=True)
+                    db.session.add(group)
+
+                    # Auto-assign the bot to this group
+                    assignment = BotGroupAssignment(bot_id=bot_id, group_id=group_id)
+                    db.session.add(assignment)
+                    db.session.commit()
+
+                    _log_activity("group_joined", bot_id, group_id,
+                                  f"Bot '{bot.name}' joined group '{group_name}' via invite link")
+                    flash(f"Successfully joined group '{group_name}'", "success")
+                else:
+                    # Group exists, just assign bot if not already
+                    existing_assignment = BotGroupAssignment.query.filter_by(
+                        bot_id=bot_id, group_id=group_id
+                    ).first()
+                    if not existing_assignment:
+                        assignment = BotGroupAssignment(bot_id=bot_id, group_id=group_id)
+                        db.session.add(assignment)
+                        db.session.commit()
+                    flash(f"Joined existing group '{existing.name}'", "success")
+            else:
+                flash("Failed to join group - check the invite link", "error")
+
+        except Exception as e:
+            flash(f"Error joining group: {e}", "error")
+
         return redirect(url_for("groups_list"))
 
     @app.route("/prompts")

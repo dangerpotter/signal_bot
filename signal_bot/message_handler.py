@@ -54,9 +54,12 @@ class MessageHandler:
         sender_id: str,
         message_text: str,
         bot_data: dict,
-        send_callback: Callable[[str], None],
+        send_callback: Callable,
         send_image_callback: Optional[Callable[[str], None]] = None,
-        is_mentioned: bool = False
+        is_mentioned: bool = False,
+        message_timestamp: Optional[int] = None,
+        send_typing_callback: Optional[Callable] = None,
+        stop_typing_callback: Optional[Callable] = None
     ) -> Optional[str]:
         """
         Handle an incoming message and potentially generate a response.
@@ -67,9 +70,12 @@ class MessageHandler:
             sender_id: Signal UUID of sender
             message_text: The message content
             bot_data: Bot configuration as dict (id, name, model, system_prompt, etc.)
-            send_callback: Function to call to send text response
+            send_callback: Function to send text response (text, quote_timestamp, quote_author, mentions, text_styles)
             send_image_callback: Function to call to send image
             is_mentioned: Whether the bot was @mentioned (Signal native mention)
+            message_timestamp: Signal timestamp of the triggering message (for quotes/replies)
+            send_typing_callback: Function to start typing indicator
+            stop_typing_callback: Function to stop typing indicator
 
         Returns:
             The response text if one was generated, None otherwise
@@ -118,6 +124,11 @@ class MessageHandler:
 
         logger.info(f"Bot {bot_data['name']} responding (reason: {reason})")
 
+        # Start typing indicator if enabled
+        typing_enabled = bot_data.get('typing_enabled', True)
+        if typing_enabled and send_typing_callback:
+            send_typing_callback()
+
         # Add delay for natural feel
         delay = get_response_delay(bot_data, reason)
         await asyncio.sleep(delay)
@@ -133,18 +144,44 @@ class MessageHandler:
             memory_confirmation=memory_confirmation
         )
 
+        # Stop typing indicator
+        if typing_enabled and stop_typing_callback:
+            stop_typing_callback()
+
         if response:
             # Parse for commands
             cleaned_response, commands = self._parse_commands(response)
 
-            # Send the text response
-            if cleaned_response.strip():
-                send_callback(cleaned_response)
+            # Parse text for styling (markdown-like -> Signal styles)
+            styled_text, text_styles = self._parse_text_styles(cleaned_response)
+
+            # Determine if we should quote/reply to the original message
+            # - Always quote if triggered by mention or direct command
+            # - For random responses, use the random_chance_percent
+            should_quote = False
+            if message_timestamp and sender_id:
+                if is_mentioned or reason in ("native_mention", "mention", "command"):
+                    should_quote = True
+                elif reason == "random":
+                    import random
+                    # Use half the random_chance_percent as quote probability for random responses
+                    quote_chance = bot_data.get('random_chance_percent', 15) / 2
+                    should_quote = random.random() * 100 < quote_chance
+
+            # Send the text response with optional quote and styling
+            if styled_text.strip():
+                send_callback(
+                    styled_text,
+                    message_timestamp if should_quote else None,
+                    sender_id if should_quote else None,
+                    None,  # mentions - could be enhanced later
+                    text_styles if text_styles else None
+                )
 
                 # Log bot's response
                 memory.add_message(
                     sender_name=bot_data['name'],
-                    content=cleaned_response,
+                    content=styled_text,
                     is_bot=True,
                     bot_id=bot_data['id']
                 )
@@ -164,11 +201,11 @@ class MessageHandler:
                 )
 
             # Maybe save memorable moment
-            if cleaned_response:
-                recent_exchange = f"{sender_name}: {message_text}\n{bot_data['name']}: {cleaned_response}"
+            if styled_text:
+                recent_exchange = f"{sender_name}: {message_text}\n{bot_data['name']}: {styled_text}"
                 memory.maybe_save_memorable_moment(recent_exchange)
 
-            return cleaned_response
+            return styled_text
 
         return None
 
@@ -263,6 +300,113 @@ class MessageHandler:
                 cleaned = re.sub(rf'!image\s+"{re.escape(match)}"', '', cleaned)
 
             return cleaned.strip(), commands
+
+    def _parse_text_styles(self, text: str) -> tuple[str, list[dict]]:
+        """
+        Parse markdown-like syntax and convert to Signal text styles.
+
+        Supports:
+        - **bold** -> BOLD
+        - *italic* or _italic_ -> ITALIC
+        - `code` -> MONOSPACE
+        - ~~strikethrough~~ -> STRIKETHROUGH
+        - ||spoiler|| -> SPOILER
+
+        Returns:
+            Tuple of (cleaned_text, list of style dicts with start, length, style)
+        """
+        import re
+
+        styles = []
+        result = text
+
+        # Process patterns in order of priority (longer markers first)
+        patterns = [
+            (r'\*\*(.+?)\*\*', 'BOLD', 2),          # **bold**
+            (r'~~(.+?)~~', 'STRIKETHROUGH', 2),     # ~~strike~~
+            (r'\|\|(.+?)\|\|', 'SPOILER', 2),       # ||spoiler||
+            (r'`(.+?)`', 'MONOSPACE', 1),           # `code`
+            (r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', 'ITALIC', 1),  # *italic* (not **)
+            (r'(?<!_)_(?!_)(.+?)(?<!_)_(?!_)', 'ITALIC', 1),        # _italic_ (not __)
+        ]
+
+        # Track processed ranges to avoid double-processing
+        processed_ranges = []
+
+        for pattern, style_name, marker_len in patterns:
+            # Find all matches
+            for match in re.finditer(pattern, result):
+                full_match = match.group(0)
+                inner_text = match.group(1)
+                start = match.start()
+
+                # Skip if this range overlaps with already processed
+                end = start + len(full_match)
+                overlaps = any(
+                    not (end <= ps or start >= pe)
+                    for ps, pe in processed_ranges
+                )
+                if overlaps:
+                    continue
+
+                processed_ranges.append((start, end))
+
+        # Now do actual replacement and build styles
+        # We need to do this carefully to track positions correctly
+        styles = []
+        offset = 0
+        result_chars = list(text)
+
+        # Sort patterns by their match positions in the original text
+        all_matches = []
+        for pattern, style_name, marker_len in patterns:
+            for match in re.finditer(pattern, text):
+                all_matches.append({
+                    'start': match.start(),
+                    'end': match.end(),
+                    'inner': match.group(1),
+                    'style': style_name,
+                    'marker_len': marker_len
+                })
+
+        # Sort by start position and remove overlapping matches
+        all_matches.sort(key=lambda x: x['start'])
+        filtered_matches = []
+        last_end = -1
+        for m in all_matches:
+            if m['start'] >= last_end:
+                filtered_matches.append(m)
+                last_end = m['end']
+
+        # Build result string and styles
+        result = ""
+        last_pos = 0
+        for m in filtered_matches:
+            # Add text before this match
+            result += text[last_pos:m['start']]
+            # Add the inner text (without markers)
+            style_start = len(result)
+            result += m['inner']
+            style_end = len(result)
+
+            # Record the style
+            # Signal uses UTF-16 code units, so we need to calculate correctly
+            # For ASCII/BMP characters, len() works, but for emoji we need special handling
+            utf16_start = len(result[:style_start].encode('utf-16-le')) // 2
+            utf16_length = len(m['inner'].encode('utf-16-le')) // 2
+
+            styles.append({
+                'start': utf16_start,
+                'length': utf16_length,
+                'style': m['style']
+            })
+
+            last_pos = m['end']
+
+        # Add remaining text
+        result += text[last_pos:]
+
+        return result, styles
 
     async def _execute_commands(
         self,
