@@ -41,6 +41,11 @@
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'models_list' %}active{% endif %}" href="{{ url_for('models_list') }}">
+                            <i class="bi bi-box"></i> Models
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link {% if request.endpoint == 'memories_list' %}active{% endif %}" href="{{ url_for('memories_list') }}">
                             <i class="bi bi-lightbulb"></i> Memories
                         </a>

@@ -756,12 +756,13 @@ Search for current news and pick something good!"""
         try:
             from shared_utils import call_openrouter_api
             from config import AI_MODELS
+            from signal_bot.config_signal import HUMOR_EVAL_MODEL
         except ImportError as e:
             logger.error(f"Failed to import for funny evaluation: {e}")
             return False, ""
 
-        # Use Haiku for speed and cost efficiency
-        model_id = "anthropic/claude-3-5-haiku-20241022"
+        # Use configurable model for humor evaluation (default: Haiku for speed/cost)
+        model_id = HUMOR_EVAL_MODEL
 
         prompt = f'''Is this message funny, clever, or reaction-worthy? Message: "{message_text}"
 

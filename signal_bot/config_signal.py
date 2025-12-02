@@ -14,6 +14,11 @@ DEFAULT_RANDOM_CHANCE = 15   # % chance to respond randomly
 LONG_TERM_SAVE_CHANCE = 10   # % chance to save a memorable snippet
 LONG_TERM_RECALL_CHANCE = 5  # % chance to reference old memory
 
+# Model settings for auxiliary tasks (can use env vars to override)
+# These are separate from the main bot response model
+HUMOR_EVAL_MODEL = os.getenv("HUMOR_EVAL_MODEL", "anthropic/claude-3-5-haiku-20241022")
+MEMORY_SCAN_MODEL = os.getenv("MEMORY_SCAN_MODEL", "anthropic/claude-sonnet-4-20250514")  # Fallback if bot has no model
+
 # Signal API base URLs (for Docker containers)
 SIGNAL_API_PORTS = {
     1: 8080,

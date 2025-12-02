@@ -5,8 +5,25 @@ from flask import render_template, request, jsonify, redirect, url_for, flash
 
 from signal_bot.models import (
     db, Bot, GroupConnection, BotGroupAssignment,
-    SystemPromptTemplate, ActivityLog, MemorySnippet, GroupMemberMemory, MessageLog
+    SystemPromptTemplate, ActivityLog, MemorySnippet, GroupMemberMemory, MessageLog,
+    CustomModel
 )
+
+
+def _get_all_models():
+    """Get all available models (config + custom)."""
+    try:
+        from config import AI_MODELS
+        models = dict(AI_MODELS)  # Make a copy
+    except ImportError:
+        models = {"Claude Sonnet 4.5": "anthropic/claude-sonnet-4.5"}
+
+    # Add custom models from database
+    custom = CustomModel.query.filter_by(enabled=True).all()
+    for m in custom:
+        models[m.display_name] = m.id
+
+    return models
 
 
 def register_routes(app):
@@ -31,13 +48,8 @@ def register_routes(app):
         """Bot management page."""
         bots = Bot.query.all()
         prompts = SystemPromptTemplate.query.all()
-
-        # Get available models from config
-        try:
-            from config import AI_MODELS
-            models = list(AI_MODELS.keys())
-        except ImportError:
-            models = ["Claude Sonnet 4.5", "GPT-4o", "Gemini 2.5 Pro"]
+        all_models = _get_all_models()
+        models = list(all_models.keys())
 
         return render_template("bots.html",
                                bots=bots,
@@ -111,11 +123,8 @@ def register_routes(app):
             return redirect(url_for("bots_list"))
 
         prompts = SystemPromptTemplate.query.all()
-        try:
-            from config import AI_MODELS
-            models = list(AI_MODELS.keys())
-        except ImportError:
-            models = ["Claude Sonnet 4.5", "GPT-4o", "Gemini 2.5 Pro"]
+        all_models = _get_all_models()
+        models = list(all_models.keys())
 
         return render_template("edit_bot.html", bot=bot, prompts=prompts, models=models)
 
@@ -328,6 +337,187 @@ def register_routes(app):
         db.session.commit()
         flash(f"Prompt '{name}' deleted", "success")
         return redirect(url_for("prompts_list"))
+
+    # Custom Models CRUD
+    @app.route("/models")
+    def models_list():
+        """Custom models management page."""
+        custom_models = CustomModel.query.all()
+
+        # Get built-in models for reference
+        try:
+            from config import AI_MODELS
+            builtin_models = AI_MODELS
+        except ImportError:
+            builtin_models = {}
+
+        return render_template("models.html",
+                               custom_models=custom_models,
+                               builtin_models=builtin_models)
+
+    @app.route("/models/add", methods=["POST"])
+    def add_model():
+        """Add a new custom model."""
+        model_id = request.form.get("model_id", "").strip()
+        display_name = request.form.get("display_name", "").strip()
+        description = request.form.get("description", "").strip() or None
+        context_length = request.form.get("context_length", "").strip()
+        is_free = request.form.get("is_free") == "on"
+        supports_images = request.form.get("supports_images") == "on"
+        supports_tools = request.form.get("supports_tools") == "on"
+
+        if not model_id or not display_name:
+            flash("Model ID and display name are required", "error")
+            return redirect(url_for("models_list"))
+
+        # Check if model already exists
+        existing = CustomModel.query.get(model_id)
+        if existing:
+            flash(f"Model '{model_id}' already exists", "error")
+            return redirect(url_for("models_list"))
+
+        model = CustomModel(
+            id=model_id,
+            display_name=display_name,
+            description=description,
+            context_length=int(context_length) if context_length else None,
+            is_free=is_free,
+            supports_images=supports_images,
+            supports_tools=supports_tools,
+            enabled=True
+        )
+        db.session.add(model)
+        db.session.commit()
+
+        _log_activity("model_added", None, None, f"Custom model '{display_name}' added")
+        flash(f"Model '{display_name}' added successfully", "success")
+        return redirect(url_for("models_list"))
+
+    @app.route("/models/<path:model_id>/edit", methods=["GET", "POST"])
+    def edit_model(model_id):
+        """Edit a custom model."""
+        model = CustomModel.query.get_or_404(model_id)
+
+        if request.method == "POST":
+            model.display_name = request.form.get("display_name", model.display_name).strip()
+            model.description = request.form.get("description", "").strip() or None
+            context_length = request.form.get("context_length", "").strip()
+            model.context_length = int(context_length) if context_length else None
+            model.is_free = request.form.get("is_free") == "on"
+            model.supports_images = request.form.get("supports_images") == "on"
+            model.supports_tools = request.form.get("supports_tools") == "on"
+            model.enabled = request.form.get("enabled") == "on"
+
+            db.session.commit()
+            flash(f"Model '{model.display_name}' updated successfully", "success")
+            return redirect(url_for("models_list"))
+
+        return render_template("edit_model.html", model=model)
+
+    @app.route("/models/<path:model_id>/toggle", methods=["POST"])
+    def toggle_model(model_id):
+        """Toggle model enabled/disabled."""
+        model = CustomModel.query.get_or_404(model_id)
+        model.enabled = not model.enabled
+        db.session.commit()
+        status = "enabled" if model.enabled else "disabled"
+        flash(f"Model '{model.display_name}' {status}", "success")
+        return redirect(url_for("models_list"))
+
+    @app.route("/models/<path:model_id>/delete", methods=["POST"])
+    def delete_model(model_id):
+        """Delete a custom model."""
+        model = CustomModel.query.get_or_404(model_id)
+        name = model.display_name
+        db.session.delete(model)
+        db.session.commit()
+        _log_activity("model_deleted", None, None, f"Custom model '{name}' deleted")
+        flash(f"Model '{name}' deleted", "success")
+        return redirect(url_for("models_list"))
+
+    @app.route("/models/fetch-info", methods=["POST"])
+    def fetch_model_info():
+        """Fetch model info from OpenRouter API."""
+        import os
+        import requests
+
+        model_id = request.form.get("model_id", "").strip()
+        if not model_id:
+            return jsonify({"error": "Model ID required"}), 400
+
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        if not api_key:
+            return jsonify({"error": "OPENROUTER_API_KEY not set"}), 500
+
+        try:
+            response = requests.get(
+                "https://openrouter.ai/api/v1/models",
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=10
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            # Find the specific model
+            for m in data.get("data", []):
+                if m.get("id") == model_id:
+                    return jsonify({
+                        "id": m.get("id"),
+                        "name": m.get("name"),
+                        "description": m.get("description"),
+                        "context_length": m.get("context_length"),
+                        "pricing": m.get("pricing"),
+                        "architecture": m.get("architecture"),
+                        "supported_parameters": m.get("supported_parameters", [])
+                    })
+
+            return jsonify({"error": f"Model '{model_id}' not found"}), 404
+
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/models/search")
+    def search_models():
+        """Search OpenRouter models by query."""
+        import os
+        import requests
+
+        query = request.args.get("q", "").lower().strip()
+        if not query or len(query) < 2:
+            return jsonify({"results": []})
+
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        if not api_key:
+            return jsonify({"error": "OPENROUTER_API_KEY not set"}), 500
+
+        try:
+            response = requests.get(
+                "https://openrouter.ai/api/v1/models",
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=10
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            # Search models
+            results = []
+            for m in data.get("data", []):
+                model_id = m.get("id", "").lower()
+                name = m.get("name", "").lower()
+                if query in model_id or query in name:
+                    results.append({
+                        "id": m.get("id"),
+                        "name": m.get("name"),
+                        "context_length": m.get("context_length"),
+                        "pricing": m.get("pricing", {})
+                    })
+                    if len(results) >= 20:
+                        break
+
+            return jsonify({"results": results})
+
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
 
     @app.route("/memories")
     def memories_list():

@@ -275,3 +275,36 @@ class ActivityLog(db.Model):
             "description": self.description,
             "timestamp": self.timestamp.isoformat() if self.timestamp else None,
         }
+
+
+class CustomModel(db.Model):
+    """Custom OpenRouter models added by user."""
+    __tablename__ = "custom_models"
+
+    id = db.Column(db.String(200), primary_key=True)  # OpenRouter model ID (e.g., "anthropic/claude-3-opus")
+    display_name = db.Column(db.String(200), nullable=False)  # Friendly name for UI
+    description = db.Column(db.Text, nullable=True)  # Optional description
+    context_length = db.Column(db.Integer, nullable=True)  # Max context window
+    is_free = db.Column(db.Boolean, default=False)  # Free tier model?
+    supports_images = db.Column(db.Boolean, default=True)  # Vision support?
+    supports_tools = db.Column(db.Boolean, default=False)  # Function calling?
+    enabled = db.Column(db.Boolean, default=True)  # Show in model dropdowns
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "display_name": self.display_name,
+            "description": self.description,
+            "context_length": self.context_length,
+            "is_free": self.is_free,
+            "supports_images": self.supports_images,
+            "supports_tools": self.supports_tools,
+            "enabled": self.enabled,
+        }
+
+    @staticmethod
+    def get_all_enabled():
+        """Get all enabled custom models as a dict for merging with config.AI_MODELS."""
+        models = CustomModel.query.filter_by(enabled=True).all()
+        return {m.display_name: m.id for m in models}

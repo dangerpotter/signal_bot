@@ -170,6 +170,7 @@ class MemberMemoryScanner:
         try:
             from shared_utils import call_openrouter_api
             from config import AI_MODELS
+            from signal_bot.config_signal import MEMORY_SCAN_MODEL
         except ImportError as e:
             logger.error(f"Failed to import for memory scan: {e}")
             return []
@@ -264,7 +265,11 @@ Group: {group_name}
 Analyze these messages and return memory updates as JSON."""
 
         try:
-            model_id = AI_MODELS.get(bot.model, bot.model)
+            # Use bot's configured model, or fall back to config default
+            if bot.model:
+                model_id = AI_MODELS.get(bot.model, bot.model)
+            else:
+                model_id = MEMORY_SCAN_MODEL
 
             response = call_openrouter_api(
                 prompt=user_prompt,
@@ -305,7 +310,9 @@ Analyze these messages and return memory updates as JSON."""
                 try:
                     operation = update.get("operation", "set")
                     member_name = update.get("member_name")
-                    member_id = update.get("member_id") or "unknown"
+                    # Use member_name as fallback ID to avoid unique constraint collisions
+                    # when multiple members have member_id='unknown'
+                    member_id = update.get("member_id") or member_name or "unknown"
                     slot_type = update.get("slot_type")
                     content = update.get("content")
                     reason = update.get("reason", "")
@@ -382,11 +389,13 @@ Analyze these messages and return memory updates as JSON."""
                         )
                         db.session.add(log)
 
+                    # Commit each update individually to avoid cascading failures
+                    db.session.commit()
+
                 except Exception as e:
                     logger.error(f"Error applying memory update: {e}")
+                    db.session.rollback()  # Rollback failed transaction before continuing
                     continue
-
-            db.session.commit()
 
     async def force_scan_group(self, group_id: str):
         """Force an immediate scan of a specific group (for testing/admin)."""

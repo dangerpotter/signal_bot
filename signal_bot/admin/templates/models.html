@@ -1,0 +1,270 @@
+{% extends "base.html" %}
+
+{% block title %}Models - Signal Bot Admin{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h1><i class="bi bi-cpu"></i> Custom Models</h1>
+        <p class="text-muted">Add OpenRouter models that aren't in the default list</p>
+    </div>
+    <div class="col-auto">
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addModelModal">
+            <i class="bi bi-plus-lg"></i> Add Model
+        </button>
+    </div>
+</div>
+
+<!-- Custom Models Section -->
+<div class="row mb-4">
+    <div class="col-12">
+        <h4><i class="bi bi-star"></i> Custom Models</h4>
+    </div>
+</div>
+
+<div class="row">
+    {% for model in custom_models %}
+    <div class="col-md-6 col-lg-4 mb-4">
+        <div class="card h-100 {% if not model.enabled %}opacity-50{% endif %}">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>
+                    <i class="bi bi-cpu"></i> {{ model.display_name }}
+                    {% if model.is_free %}<span class="badge bg-success">Free</span>{% endif %}
+                </span>
+                <span class="badge {% if model.enabled %}bg-success{% else %}bg-secondary{% endif %}">
+                    {{ 'Enabled' if model.enabled else 'Disabled' }}
+                </span>
+            </div>
+            <div class="card-body">
+                <p class="small text-muted mb-2">
+                    <code>{{ model.id }}</code>
+                </p>
+                {% if model.description %}
+                <p class="small mb-2">{{ model.description[:150] }}{% if model.description|length > 150 %}...{% endif %}</p>
+                {% endif %}
+                <div class="small">
+                    {% if model.context_length %}
+                    <span class="me-2"><i class="bi bi-arrows-expand"></i> {{ "{:,}".format(model.context_length) }} ctx</span>
+                    {% endif %}
+                    {% if model.supports_images %}<span class="me-2" title="Vision"><i class="bi bi-image"></i></span>{% endif %}
+                    {% if model.supports_tools %}<span class="me-2" title="Tools"><i class="bi bi-tools"></i></span>{% endif %}
+                </div>
+            </div>
+            <div class="card-footer">
+                <a href="{{ url_for('edit_model', model_id=model.id) }}" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-pencil"></i> Edit
+                </a>
+                <form action="{{ url_for('toggle_model', model_id=model.id) }}" method="post" class="d-inline">
+                    <button type="submit" class="btn btn-sm btn-outline-{% if model.enabled %}warning{% else %}success{% endif %}">
+                        <i class="bi bi-{% if model.enabled %}pause{% else %}play{% endif %}"></i>
+                        {{ 'Disable' if model.enabled else 'Enable' }}
+                    </button>
+                </form>
+                <form action="{{ url_for('delete_model', model_id=model.id) }}" method="post" class="d-inline" onsubmit="return confirm('Delete this model?')">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="col-12">
+        <div class="alert alert-info">
+            <i class="bi bi-info-circle"></i> No custom models added yet. Click "Add Model" to add an OpenRouter model.
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Built-in Models Reference -->
+<div class="row mt-4 mb-4">
+    <div class="col-12">
+        <h4><i class="bi bi-box"></i> Built-in Models (from config.py)</h4>
+        <p class="text-muted small">These models are hardcoded in config.py. Add custom models above to extend this list.</p>
+    </div>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-sm table-striped">
+        <thead>
+            <tr>
+                <th>Display Name</th>
+                <th>Model ID</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for name, model_id in builtin_models.items() %}
+            <tr>
+                <td>{{ name }}</td>
+                <td><code class="small">{{ model_id }}</code></td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="2" class="text-muted">No built-in models found</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Add Model Modal -->
+<div class="modal fade" id="addModelModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form action="{{ url_for('add_model') }}" method="post">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Custom Model</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- Search OpenRouter -->
+                    <div class="mb-3">
+                        <label class="form-label">Search OpenRouter Models</label>
+                        <div class="input-group">
+                            <input type="text" id="modelSearch" class="form-control" placeholder="Search by name or ID (e.g., 'llama', 'gemini')...">
+                            <button type="button" class="btn btn-outline-secondary" onclick="searchModels()">
+                                <i class="bi bi-search"></i>
+                            </button>
+                        </div>
+                        <div id="searchResults" class="mt-2"></div>
+                    </div>
+
+                    <hr>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">OpenRouter Model ID <span class="text-danger">*</span></label>
+                                <input type="text" name="model_id" id="modelId" class="form-control"
+                                       placeholder="e.g., meta-llama/llama-3.1-70b-instruct" required>
+                                <small class="text-muted">The full model ID from OpenRouter</small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Display Name <span class="text-danger">*</span></label>
+                                <input type="text" name="display_name" id="displayName" class="form-control"
+                                       placeholder="e.g., Llama 3.1 70B" required>
+                                <small class="text-muted">Friendly name shown in dropdowns</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <textarea name="description" id="modelDescription" class="form-control" rows="2"
+                                  placeholder="Optional description of the model"></textarea>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Context Length</label>
+                                <input type="number" name="context_length" id="contextLength" class="form-control"
+                                       placeholder="e.g., 128000">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3 pt-4">
+                                <div class="form-check form-check-inline">
+                                    <input type="checkbox" name="is_free" id="isFree" class="form-check-input">
+                                    <label class="form-check-label" for="isFree">Free tier</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input type="checkbox" name="supports_images" id="supportsImages" class="form-check-input" checked>
+                                    <label class="form-check-label" for="supportsImages">Vision</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input type="checkbox" name="supports_tools" id="supportsTools" class="form-check-input">
+                                    <label class="form-check-label" for="supportsTools">Tools</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add Model</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+let searchTimeout;
+
+document.getElementById('modelSearch').addEventListener('input', function() {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(searchModels, 300);
+});
+
+function searchModels() {
+    const query = document.getElementById('modelSearch').value;
+    const resultsDiv = document.getElementById('searchResults');
+
+    if (query.length < 2) {
+        resultsDiv.innerHTML = '';
+        return;
+    }
+
+    resultsDiv.innerHTML = '<div class="spinner-border spinner-border-sm" role="status"></div> Searching...';
+
+    fetch('/api/models/search?q=' + encodeURIComponent(query))
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                resultsDiv.innerHTML = '<div class="alert alert-danger small">' + data.error + '</div>';
+                return;
+            }
+
+            if (data.results.length === 0) {
+                resultsDiv.innerHTML = '<div class="text-muted small">No models found</div>';
+                return;
+            }
+
+            let html = '<div class="list-group small">';
+            data.results.forEach(model => {
+                const pricing = model.pricing || {};
+                const promptCost = pricing.prompt ? parseFloat(pricing.prompt) * 1000000 : 0;
+                const completionCost = pricing.completion ? parseFloat(pricing.completion) * 1000000 : 0;
+
+                html += `
+                    <a href="#" class="list-group-item list-group-item-action" onclick="selectModel('${model.id}', '${model.name.replace(/'/g, "\\'")}', ${model.context_length || 0}); return false;">
+                        <div class="d-flex justify-content-between">
+                            <strong>${model.name}</strong>
+                            <span class="text-muted">${model.context_length ? model.context_length.toLocaleString() + ' ctx' : ''}</span>
+                        </div>
+                        <small class="text-muted">${model.id}</small>
+                        ${promptCost > 0 ? `<br><small class="text-success">$${promptCost.toFixed(2)}/$${completionCost.toFixed(2)} per 1M tokens</small>` : '<br><small class="text-success">Free</small>'}
+                    </a>
+                `;
+            });
+            html += '</div>';
+            resultsDiv.innerHTML = html;
+        })
+        .catch(error => {
+            resultsDiv.innerHTML = '<div class="alert alert-danger small">Error: ' + error + '</div>';
+        });
+}
+
+function selectModel(id, name, contextLength) {
+    document.getElementById('modelId').value = id;
+    document.getElementById('displayName').value = name;
+    document.getElementById('contextLength').value = contextLength || '';
+    document.getElementById('searchResults').innerHTML = '<div class="alert alert-success small">Selected: ' + name + '</div>';
+
+    // Check if it's a free model
+    document.getElementById('isFree').checked = id.includes(':free');
+
+    // Guess vision support
+    const visionModels = ['gpt-4', 'claude-3', 'gemini', 'llava', 'vision'];
+    document.getElementById('supportsImages').checked = visionModels.some(v => id.toLowerCase().includes(v));
+
+    // Guess tools support
+    const toolModels = ['gpt-4', 'claude-3', 'gemini', 'mistral-large'];
+    document.getElementById('supportsTools').checked = toolModels.some(v => id.toLowerCase().includes(v));
+}
+</script>
+{% endblock %}

@@ -469,7 +469,29 @@ def call_openrouter_api(prompt, conversation_history, model, system_prompt, stre
             if success:
                 return result
             status_code, error_text = result
-        
+
+        # Handle 429 rate limit with exponential backoff retry
+        if status_code == 429:
+            import time
+            max_retries = 3
+            base_delay = 2  # seconds
+
+            for retry in range(max_retries):
+                delay = base_delay * (2 ** retry)  # 2, 4, 8 seconds
+                print(f"[OpenRouter] Rate limited (429), waiting {delay}s before retry {retry + 1}/{max_retries}...")
+                time.sleep(delay)
+
+                success, result = make_api_call(include_images=True)
+                if success:
+                    return result
+
+                if isinstance(result, tuple):
+                    status_code, error_text = result
+                    if status_code != 429:
+                        break  # Different error, stop retrying
+
+            print(f"[OpenRouter] Rate limit persists after {max_retries} retries")
+
         # Handle other errors
         error_msg = f"OpenRouter API error {status_code}: {error_text}"
         print(error_msg)
@@ -477,6 +499,8 @@ def call_openrouter_api(prompt, conversation_history, model, system_prompt, stre
             print("Model not found or doesn't support this request type.")
         elif status_code == 401:
             print("Authentication error. Please check your API key.")
+        elif status_code == 429:
+            print("Rate limited. Consider adding your own API key at https://openrouter.ai/settings/integrations")
         return f"Error: {error_msg}"
             
     except requests.exceptions.Timeout:

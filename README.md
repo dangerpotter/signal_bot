@@ -9,6 +9,7 @@ A web-based management dashboard for running AI bots in Signal group chats. Conf
 - **Bots**: Add/edit bots, configure AI models, system prompts, response settings
 - **Groups**: Connect Signal groups, assign multiple bots per group
 - **Prompts**: Manage reusable system prompt templates
+- **Models**: Add custom OpenRouter models with live search (beyond built-in list)
 - **Memories**: View and manage long-term conversation memories
 - **Member Memories**: Track personal info about group members (location, interests, etc.)
 
@@ -120,6 +121,7 @@ SQLite database (`signal_bot.db`) with tables:
 - `memory_snippets` - Long-term "remember when" memories
 - `group_member_memories` - Per-member personal info
 - `prompt_templates` - Reusable system prompts
+- `custom_models` - User-added OpenRouter models
 - `activity_logs` - Admin activity feed
 
 ## Project Structure
@@ -150,7 +152,18 @@ All models route through OpenRouter:
 - **Gemini**: 2.5 Pro, 2.5 Flash, 3 Pro
 - **Others**: Grok, DeepSeek R1, Kimi K2, Qwen 3, Llama 3.1
 
-Add models in `config.py` → `AI_MODELS` dictionary.
+**Adding Custom Models:**
+- Use the **Models** page in the admin UI to add any OpenRouter model
+- Search for models by name or paste the OpenRouter model ID directly
+- Custom models appear in bot configuration dropdowns alongside built-in models
+
+You can also add models in `config.py` → `AI_MODELS` dictionary.
+
+**Auxiliary Model Config** (env vars):
+```env
+HUMOR_EVAL_MODEL=anthropic/claude-3-5-haiku-20241022   # For funny message detection
+MEMORY_SCAN_MODEL=anthropic/claude-sonnet-4-20250514  # For memory extraction
+```
 
 ## License
 
