@@ -192,7 +192,6 @@ class MemberMemoryScanner:
         try:
             from shared_utils import call_openrouter_api
             from config import AI_MODELS
-            from signal_bot.config_signal import MEMORY_SCAN_MODEL
         except ImportError as e:
             logger.error(f"Failed to import for memory scan: {e}")
             return []
@@ -287,11 +286,11 @@ Group: {group_name}
 Analyze these messages and return memory updates as JSON."""
 
         try:
-            # Use bot's configured model, or fall back to config default
-            if bot.model:
-                model_id = AI_MODELS.get(bot.model, bot.model)
-            else:
-                model_id = MEMORY_SCAN_MODEL
+            # Use bot's configured model (no fallback - bot must have a model)
+            if not bot.model:
+                logger.error(f"Bot {bot.name} has no model configured for memory scan")
+                return []
+            model_id = AI_MODELS.get(bot.model, bot.model)
 
             response = call_openrouter_api(
                 prompt=user_prompt,

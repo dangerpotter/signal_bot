@@ -124,7 +124,7 @@ async def extract_memory_from_message(
         sender_id: Signal UUID of sender
         group_id: Group ID
         detected_category: The category that triggered this extraction
-        bot_model: Model to use (defaults to Haiku)
+        bot_model: Model to use (required)
 
     Returns:
         Dict with slot_type, content, valid_from, valid_until, or None if nothing to save
@@ -132,7 +132,6 @@ async def extract_memory_from_message(
     try:
         from shared_utils import call_openrouter_api
         from config import AI_MODELS
-        from signal_bot.config_signal import REALTIME_MEMORY_MODEL
     except ImportError as e:
         logger.error(f"Failed to import for memory extraction: {e}")
         return None
@@ -183,7 +182,11 @@ Today's date: {datetime.utcnow().strftime('%Y-%m-%d')}
 Extract the memory (JSON only):"""
 
     try:
-        model_id = REALTIME_MEMORY_MODEL  # Use fast model for extraction
+        # Use the bot's configured model
+        model_id = AI_MODELS.get(bot_model, bot_model) if bot_model else None
+        if not model_id:
+            logger.error("No bot model provided for memory extraction")
+            return None
 
         response = call_openrouter_api(
             prompt=user_prompt,

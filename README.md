@@ -167,12 +167,7 @@ All models route through OpenRouter:
 
 You can also add models in `config.py` → `AI_MODELS` dictionary.
 
-**Auxiliary Model Config** (env vars):
-```env
-HUMOR_EVAL_MODEL=anthropic/claude-3-5-haiku-20241022      # For funny message detection
-MEMORY_SCAN_MODEL=anthropic/claude-sonnet-4-20250514     # For background memory extraction
-REALTIME_MEMORY_MODEL=anthropic/claude-3-5-haiku-20241022 # For instant memory saves
-```
+All auxiliary tasks (humor evaluation, memory scanning, memory extraction) use the bot's configured model.
 
 ## License
 

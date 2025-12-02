@@ -12,11 +12,8 @@ from signal_bot.models import (
 
 def _get_all_models():
     """Get all available models (config + custom)."""
-    try:
-        from config import AI_MODELS
-        models = dict(AI_MODELS)  # Make a copy
-    except ImportError:
-        models = {"Claude Sonnet 4.5": "anthropic/claude-sonnet-4.5"}
+    from config import AI_MODELS
+    models = dict(AI_MODELS)  # Make a copy
 
     # Add custom models from database
     custom = CustomModel.query.filter_by(enabled=True).all()
@@ -416,11 +413,8 @@ def register_routes(app):
         custom_models = CustomModel.query.all()
 
         # Get built-in models for reference
-        try:
-            from config import AI_MODELS
-            builtin_models = AI_MODELS
-        except ImportError:
-            builtin_models = {}
+        from config import AI_MODELS
+        builtin_models = AI_MODELS
 
         return render_template("models.html",
                                custom_models=custom_models,

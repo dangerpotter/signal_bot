@@ -41,6 +41,35 @@
                     </div>
                 </div>
             </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-signal"></i> Signal Features
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input type="checkbox" name="typing_enabled" class="form-check-input" id="typingEnabled" {% if bot.typing_enabled is not defined or bot.typing_enabled %}checked{% endif %}>
+                            <label class="form-check-label" for="typingEnabled">Send typing indicators</label>
+                        </div>
+                        <small class="text-muted">Show "typing..." while bot composes a response</small>
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input type="checkbox" name="read_receipts_enabled" class="form-check-input" id="readReceipts" {% if bot.read_receipts_enabled %}checked{% endif %}>
+                            <label class="form-check-label" for="readReceipts">Send read receipts</label>
+                        </div>
+                        <small class="text-muted">Mark messages as read when bot sees them</small>
+                    </div>
+                    <hr>
+                    <p class="text-muted mb-0">
+                        <small>
+                            <i class="bi bi-info-circle"></i>
+                            <strong>Also enabled:</strong> Quote/reply to messages, text styling (**bold**, *italic*, `code`), link previews
+                        </small>
+                    </p>
+                </div>
+            </div>
         </div>
 
         <div class="col-md-6">
@@ -99,35 +128,6 @@
                         </div>
                         <small class="text-muted">Uses Haiku to evaluate if messages are funny and react appropriately (costs ~$0.0001/msg)</small>
                     </div>
-                </div>
-            </div>
-
-            <div class="card mb-4">
-                <div class="card-header">
-                    <i class="bi bi-signal"></i> Signal Features
-                </div>
-                <div class="card-body">
-                    <div class="mb-3">
-                        <div class="form-check form-switch">
-                            <input type="checkbox" name="typing_enabled" class="form-check-input" id="typingEnabled" {% if bot.typing_enabled is not defined or bot.typing_enabled %}checked{% endif %}>
-                            <label class="form-check-label" for="typingEnabled">Send typing indicators</label>
-                        </div>
-                        <small class="text-muted">Show "typing..." while bot composes a response</small>
-                    </div>
-                    <div class="mb-3">
-                        <div class="form-check form-switch">
-                            <input type="checkbox" name="read_receipts_enabled" class="form-check-input" id="readReceipts" {% if bot.read_receipts_enabled %}checked{% endif %}>
-                            <label class="form-check-label" for="readReceipts">Send read receipts</label>
-                        </div>
-                        <small class="text-muted">Mark messages as read when bot sees them</small>
-                    </div>
-                    <hr>
-                    <p class="text-muted mb-0">
-                        <small>
-                            <i class="bi bi-info-circle"></i>
-                            <strong>Also enabled:</strong> Quote/reply to messages, text styling (**bold**, *italic*, `code`), link previews
-                        </small>
-                    </p>
                 </div>
             </div>
         </div>
