@@ -181,6 +181,60 @@ class MemberMemoryScanner:
             if memory_updates:
                 self._apply_memory_updates(group_id, memory_updates)
 
+    # JSON Schema for memory scan results
+    MEMORY_SCAN_SCHEMA = {
+        "type": "object",
+        "properties": {
+            "updates": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "operation": {
+                            "type": "string",
+                            "enum": ["set", "update", "delete"],
+                            "description": "The operation to perform"
+                        },
+                        "member_name": {
+                            "type": "string",
+                            "description": "Name of the group member"
+                        },
+                        "member_id": {
+                            "type": ["string", "null"],
+                            "description": "Signal UUID if known, null otherwise"
+                        },
+                        "slot_type": {
+                            "type": "string",
+                            "enum": ["interests", "media_prefs", "life_events", "work_info",
+                                     "social_notes", "response_prefs", "home_location", "travel_location"],
+                            "description": "The memory slot type"
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "The memory content"
+                        },
+                        "valid_from": {
+                            "type": ["string", "null"],
+                            "description": "Start date YYYY-MM-DD or null"
+                        },
+                        "valid_until": {
+                            "type": ["string", "null"],
+                            "description": "End date YYYY-MM-DD or null"
+                        },
+                        "reason": {
+                            "type": "string",
+                            "description": "Brief explanation for the update"
+                        }
+                    },
+                    "required": ["operation", "member_name", "slot_type"],
+                    "additionalProperties": False
+                }
+            }
+        },
+        "required": ["updates"],
+        "additionalProperties": False
+    }
+
     async def _analyze_messages_for_memories(
         self,
         messages: list,
@@ -188,9 +242,9 @@ class MemberMemoryScanner:
         group_name: str,
         bot: 'Bot'
     ) -> list[dict]:
-        """Use AI to analyze messages and propose memory updates."""
+        """Use AI to analyze messages and propose memory updates using structured outputs."""
         try:
-            from shared_utils import call_openrouter_api
+            from shared_utils import call_openrouter_api_structured
             from config import AI_MODELS
         except ImportError as e:
             logger.error(f"Failed to import for memory scan: {e}")
@@ -237,11 +291,10 @@ EXAMPLES OF WHAT TO REMEMBER:
 - "Bryan prefers succinct, list-style responses" -> response_prefs
 - "Joe works as a software engineer" -> work_info
 - "Paul's wedding is March 15, 2025" -> life_events
-- "The Chair Company is a great show" (recommendation) -> media_prefs
 
 EXAMPLES OF WHAT NOT TO REMEMBER:
 - "lol", "nice", "same" - too trivial
-- "I'm making coffee", "heading to lunch" - momentary states
+- "I'm making coffee" - momentary states
 - Bot/AI responses - only store info about humans
 
 Your task:
@@ -249,29 +302,7 @@ Your task:
 2. Identify OUTDATED info to remove (e.g., past travel)
 3. Identify info that should be UPDATED
 
-Rules:
-- Capture entertainment preferences, upcoming events they're interested in
-- Capture communication style preferences explicitly stated
-- Capture anything they recommend to others
-- Location info valuable for weather/time queries
-- Today's date matters for evaluating if travel is current
-
-Output as JSON array:
-[
-  {
-    "operation": "set" | "update" | "delete",
-    "member_name": "Name",
-    "member_id": null,
-    "slot_type": "interests" | "media_prefs" | "life_events" | "work_info" | "social_notes" | "response_prefs" | "home_location" | "travel_location",
-    "content": "The memory content",
-    "valid_from": "2024-01-15" or null,
-    "valid_until": "2024-01-20" or null,
-    "reason": "Brief explanation"
-  }
-]
-
-Return empty array [] if no updates needed.
-IMPORTANT: Return ONLY the JSON array, no other text."""
+Return updates array. Empty array [] if no updates needed."""
 
         user_prompt = f"""Today's date: {datetime.utcnow().strftime('%Y-%m-%d')}
 
@@ -283,7 +314,7 @@ Group: {group_name}
 === LAST {len(messages)} MESSAGES ===
 {message_text}
 
-Analyze these messages and return memory updates as JSON."""
+Analyze and return memory updates:"""
 
         try:
             # Use bot's configured model (no fallback - bot must have a model)
@@ -292,32 +323,26 @@ Analyze these messages and return memory updates as JSON."""
                 return []
             model_id = AI_MODELS.get(bot.model, bot.model)
 
-            response = call_openrouter_api(
+            # Use structured outputs for guaranteed valid JSON
+            result = call_openrouter_api_structured(
                 prompt=user_prompt,
-                conversation_history=[],
                 model=model_id,
                 system_prompt=system_prompt,
-                stream_callback=None,
-                web_search=False  # No need for web search here
+                json_schema=self.MEMORY_SCAN_SCHEMA,
+                schema_name="memory_scan"
             )
 
-            if not response:
+            if not result:
                 return []
 
-            # Parse the JSON response
-            # Try to extract JSON from the response (handle markdown code blocks)
-            json_match = re.search(r'\[[\s\S]*\]', response)
-            if json_match:
-                updates = json.loads(json_match.group())
+            updates = result.get("updates", [])
+            if updates:
                 logger.info(f"Memory scanner found {len(updates)} updates for {group_name}")
-                return updates
             else:
                 logger.debug(f"No memory updates found for {group_name}")
-                return []
 
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse memory updates JSON: {e}")
-            return []
+            return updates
+
         except Exception as e:
             logger.error(f"Error in memory analysis: {e}")
             return []

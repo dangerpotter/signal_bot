@@ -118,6 +118,19 @@ REALTIME_MEMORY_ENABLED = True       # Instant saves when user says "remember...
 TRAVEL_PROXIMITY_DAYS = 7            # Include travel info if within N days
 ```
 
+### OpenRouter API Enhancements (config.py)
+
+```python
+OPENROUTER_MIDDLE_OUT_ENABLED = True   # Auto-compress prompts exceeding context limits
+OPENROUTER_TOOL_CALLING_ENABLED = True # Native function calling (falls back to regex)
+```
+
+**Message Transforms**: Automatically compresses long conversations using middle-out compression when they exceed the model's context window.
+
+**Structured Outputs**: Memory extraction uses JSON schema validation for guaranteed valid responses (no more parsing failures).
+
+**Native Tool Calling**: Commands like `!image` use OpenRouter's native function calling when the model supports it. Falls back to regex parsing for older models.
+
 ## Database
 
 SQLite database (`signal_bot.db`) with tables:
@@ -148,6 +161,8 @@ signal_bot/
 ├── models.py               # SQLite database models
 └── config_signal.py        # Signal-specific settings
 
+tool_schemas.py             # OpenRouter tool definitions for function calling
+tool_executor.py            # Bridges tool calls to command execution
 run_signal.py               # Entry point
 docker-compose.signal.yml   # Signal API containers
 ```

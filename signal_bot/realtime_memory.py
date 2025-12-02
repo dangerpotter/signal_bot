@@ -107,6 +107,37 @@ def check_for_memory_trigger(message_text: str) -> Optional[str]:
     return None
 
 
+MEMORY_EXTRACTION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "skip": {
+            "type": "boolean",
+            "description": "Set to true if nothing worth remembering"
+        },
+        "slot_type": {
+            "type": "string",
+            "enum": ["response_prefs", "home_location", "travel_location",
+                     "interests", "media_prefs", "life_events", "work_info", "social_notes"],
+            "description": "The type of memory slot to save to"
+        },
+        "content": {
+            "type": "string",
+            "description": "Concise factual content to remember"
+        },
+        "valid_from": {
+            "type": ["string", "null"],
+            "description": "Start date in YYYY-MM-DD format, or null"
+        },
+        "valid_until": {
+            "type": ["string", "null"],
+            "description": "End date in YYYY-MM-DD format, or null"
+        }
+    },
+    "required": ["skip"],
+    "additionalProperties": False
+}
+
+
 async def extract_memory_from_message(
     message_text: str,
     sender_name: str,
@@ -116,7 +147,7 @@ async def extract_memory_from_message(
     bot_model: Optional[str] = None
 ) -> Optional[dict]:
     """
-    Extract memory from a single message using a lightweight LLM call.
+    Extract memory from a single message using structured outputs.
 
     Args:
         message_text: The message content
@@ -130,7 +161,7 @@ async def extract_memory_from_message(
         Dict with slot_type, content, valid_from, valid_until, or None if nothing to save
     """
     try:
-        from shared_utils import call_openrouter_api
+        from shared_utils import call_openrouter_api_structured
         from config import AI_MODELS
     except ImportError as e:
         logger.error(f"Failed to import for memory extraction: {e}")
@@ -163,23 +194,15 @@ Available slot types:
 - work_info: Job, company, profession
 - social_notes: Relationships within the group
 
-Output ONLY valid JSON (no markdown, no explanation):
-{
-  "slot_type": "one of the types above",
-  "content": "concise factual content to remember",
-  "valid_from": "YYYY-MM-DD" or null,
-  "valid_until": "YYYY-MM-DD" or null
-}
-
-If the message doesn't contain anything worth remembering, output:
-{"skip": true}"""
+If the message doesn't contain anything worth remembering, set skip=true.
+Otherwise, provide slot_type and content."""
 
     user_prompt = f"""Message from {sender_name}: "{message_text}"
 {slot_hint}
 
 Today's date: {datetime.utcnow().strftime('%Y-%m-%d')}
 
-Extract the memory (JSON only):"""
+Extract the memory:"""
 
     try:
         # Use the bot's configured model
@@ -188,44 +211,30 @@ Extract the memory (JSON only):"""
             logger.error("No bot model provided for memory extraction")
             return None
 
-        response = call_openrouter_api(
+        # Use structured outputs for guaranteed valid JSON
+        result = call_openrouter_api_structured(
             prompt=user_prompt,
-            conversation_history=[],
             model=model_id,
             system_prompt=system_prompt,
-            stream_callback=None,
-            web_search=False
+            json_schema=MEMORY_EXTRACTION_SCHEMA,
+            schema_name="memory_extraction"
         )
 
-        if not response:
+        if not result:
             return None
-
-        # Parse the JSON response
-        # Clean up response - remove any markdown formatting
-        response = response.strip()
-        if response.startswith("```"):
-            response = re.sub(r'^```\w*\n?', '', response)
-            response = re.sub(r'\n?```$', '', response)
-
-        result = json.loads(response)
 
         if result.get("skip"):
             logger.debug(f"No memory to extract from message by {sender_name}")
             return None
 
-        # Validate slot type
-        valid_slots = ["response_prefs", "home_location", "travel_location",
-                       "interests", "media_prefs", "life_events", "work_info", "social_notes"]
-        if result.get("slot_type") not in valid_slots:
-            logger.warning(f"Invalid slot type from extraction: {result.get('slot_type')}")
+        # Validate slot type is present
+        if not result.get("slot_type"):
+            logger.warning(f"No slot_type in extraction result")
             return None
 
         logger.info(f"Extracted real-time memory for {sender_name}: {result.get('slot_type')} = {result.get('content', '')[:50]}...")
         return result
 
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse memory extraction JSON: {e}")
-        return None
     except Exception as e:
         logger.error(f"Error in memory extraction: {e}")
         return None

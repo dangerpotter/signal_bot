@@ -12,6 +12,10 @@ SHARE_CHAIN_OF_THOUGHT = False  # Set to True to allow AIs to see each other's C
 SORA_SECONDS=6
 SORA_SIZE="1280x720"
 
+# OpenRouter API enhancements
+OPENROUTER_MIDDLE_OUT_ENABLED = True  # Enable middle-out compression for large contexts
+OPENROUTER_TOOL_CALLING_ENABLED = True  # Enable native tool calling (falls back to regex if unsupported)
+
 # Available AI models
 AI_MODELS = {
     "Claude Opus 4.5": "claude-opus-4.5",

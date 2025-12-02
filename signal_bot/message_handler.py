@@ -141,7 +141,8 @@ class MessageHandler:
             group_id=group_id,
             sender_name=sender_name,
             sender_id=sender_id,
-            memory_confirmation=memory_confirmation
+            memory_confirmation=memory_confirmation,
+            send_image_callback=send_image_callback
         )
 
         # Stop typing indicator
@@ -217,13 +218,16 @@ class MessageHandler:
         group_id: str,
         sender_name: str = "",
         sender_id: str = "",
-        memory_confirmation: Optional[str] = None
+        memory_confirmation: Optional[str] = None,
+        send_image_callback: Optional[Callable[[str], None]] = None
     ) -> Optional[str]:
         """Generate an AI response using the configured model."""
         try:
             # Import shared_utils for API calls
             from shared_utils import call_openrouter_api
-            from config import AI_MODELS
+            from config import AI_MODELS, OPENROUTER_TOOL_CALLING_ENABLED
+            from tool_schemas import SIGNAL_TOOLS, model_supports_tools
+            from tool_executor import SignalToolExecutor
         except ImportError as e:
             logger.error(f"Failed to import shared_utils: {e}")
             return None
@@ -266,6 +270,23 @@ class MessageHandler:
             formatted_messages.append({"role": role, "content": content})
 
         try:
+            # Determine if we should use native tool calling
+            use_tools = None
+            tool_executor = None
+
+            if (OPENROUTER_TOOL_CALLING_ENABLED and
+                bot_data.get('image_generation_enabled') and
+                model_supports_tools(model_id)):
+
+                use_tools = SIGNAL_TOOLS
+                signal_executor = SignalToolExecutor(
+                    bot_data=bot_data,
+                    group_id=group_id,
+                    send_image_callback=send_image_callback
+                )
+                tool_executor = signal_executor.execute
+                logger.info(f"Tool calling enabled for {bot_data.get('name')}")
+
             # Call the AI API
             response = call_openrouter_api(
                 prompt=trigger_message,
@@ -273,7 +294,9 @@ class MessageHandler:
                 model=model_id,
                 system_prompt=system_prompt,
                 stream_callback=None,  # No streaming for Signal
-                web_search=bot_data.get('web_search_enabled', False)
+                web_search=bot_data.get('web_search_enabled', False),
+                tools=use_tools,
+                tool_executor=tool_executor
             )
 
             return response

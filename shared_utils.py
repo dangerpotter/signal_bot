@@ -29,6 +29,127 @@ anthropic = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 # Initialize OpenAI client
 openai_client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 
+
+def _add_openrouter_transforms(payload: dict) -> dict:
+    """Add OpenRouter message transforms if enabled.
+
+    Middle-out compression automatically handles prompts that exceed
+    the model's context size by removing/truncating messages from the middle.
+    Also handles Anthropic's max 100 messages limit.
+    """
+    try:
+        from config import OPENROUTER_MIDDLE_OUT_ENABLED
+        if OPENROUTER_MIDDLE_OUT_ENABLED:
+            payload["transforms"] = ["middle-out"]
+    except ImportError:
+        pass  # Config not available, skip transforms
+    return payload
+
+
+def call_openrouter_api_structured(
+    prompt: str,
+    model: str,
+    system_prompt: str,
+    json_schema: dict,
+    schema_name: str = "response",
+    conversation_history: list = None
+) -> dict | None:
+    """Call OpenRouter API with guaranteed JSON schema response.
+
+    Uses structured outputs to ensure the response matches the provided JSON schema.
+    No JSON parsing retry logic needed - responses are guaranteed valid.
+
+    Args:
+        prompt: The user message/prompt
+        model: Model ID (e.g., 'anthropic/claude-sonnet-4')
+        system_prompt: System prompt for the model
+        json_schema: JSON Schema dict defining the response structure
+        schema_name: Name for the schema (used in response_format)
+        conversation_history: Optional list of previous messages
+
+    Returns:
+        Parsed JSON dict on success, None on error
+    """
+    try:
+        headers = {
+            "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}",
+            "HTTP-Referer": "http://localhost:3000",
+            "Content-Type": "application/json",
+            "X-Title": "AI Conversation"
+        }
+
+        # Normalize model ID for OpenRouter
+        openrouter_model = model
+        if model.startswith("claude-") and not model.startswith("anthropic/"):
+            openrouter_model = f"anthropic/{model}"
+
+        # Build messages
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+
+        if conversation_history:
+            for msg in conversation_history:
+                if msg.get("role") != "system":
+                    content = msg.get("content", "")
+                    # Flatten structured content to text
+                    if isinstance(content, list):
+                        text_parts = [p.get('text', '') for p in content if p.get('type') == 'text']
+                        content = ' '.join(text_parts)
+                    messages.append({"role": msg.get("role", "user"), "content": content})
+
+        messages.append({"role": "user", "content": prompt})
+
+        payload = {
+            "model": openrouter_model,
+            "messages": messages,
+            "temperature": 0.7,  # Lower temp for more consistent structured output
+            "max_tokens": 2000,
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": schema_name,
+                    "strict": True,
+                    "schema": json_schema
+                }
+            }
+        }
+        _add_openrouter_transforms(payload)
+
+        print(f"[OpenRouter Structured] Model: {openrouter_model}, Schema: {schema_name}")
+
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=60
+        )
+
+        if response.status_code == 200:
+            response_data = response.json()
+            if 'choices' in response_data and len(response_data['choices']) > 0:
+                content = response_data['choices'][0].get('message', {}).get('content', '')
+                if content:
+                    try:
+                        return json.loads(content)
+                    except json.JSONDecodeError as e:
+                        print(f"[OpenRouter Structured] JSON parse error (shouldn't happen): {e}")
+                        print(f"[OpenRouter Structured] Content: {content[:500]}")
+                        return None
+            print("[OpenRouter Structured] No content in response")
+            return None
+        else:
+            print(f"[OpenRouter Structured] Error {response.status_code}: {response.text[:500]}")
+            return None
+
+    except requests.exceptions.Timeout:
+        print("[OpenRouter Structured] Request timed out")
+        return None
+    except Exception as e:
+        print(f"[OpenRouter Structured] Error: {e}")
+        return None
+
+
 def call_claude_api(prompt, messages, model_id, system_prompt=None, stream_callback=None):
     """Call the Claude API with the given messages and prompt
     
@@ -366,6 +487,7 @@ def call_openrouter_responses_api(prompt, conversation_history, model, system_pr
             "max_output_tokens": 4000,
             "temperature": 1
         }
+        _add_openrouter_transforms(payload)
 
         print(f"\n[OpenRouter Responses API] Sending request:")
         print(f"  Model: {openrouter_model}")
@@ -418,12 +540,23 @@ def call_openrouter_responses_api(prompt, conversation_history, model, system_pr
         return None
 
 
-def call_openrouter_api(prompt, conversation_history, model, system_prompt, stream_callback=None, web_search=False):
+def call_openrouter_api(
+    prompt,
+    conversation_history,
+    model,
+    system_prompt,
+    stream_callback=None,
+    web_search=False,
+    tools=None,
+    tool_executor=None
+):
     """Call the OpenRouter API to access various LLM models.
 
     Args:
         stream_callback: Optional function(chunk: str) to call with each streaming token
         web_search: If True, enable OpenRouter's web search via Responses API (returns citations)
+        tools: Optional list of tool schemas for function calling
+        tool_executor: Optional callback function(name, args) -> dict to execute tool calls
     """
     # Route web search requests to Responses API for citation support
     if web_search:
@@ -528,13 +661,24 @@ def call_openrouter_api(prompt, conversation_history, model, system_prompt, stre
             else:
                 print(f"[OpenRouter] Web search: DISABLED")
 
+            # Disable streaming when tools are provided (incompatible)
+            use_streaming = stream_callback is not None and not tools
+
             payload = {
                 "model": model_to_use,
                 "messages": msgs,
                 "temperature": 1,
                 "max_tokens": 4000,
-                "stream": stream_callback is not None
+                "stream": use_streaming
             }
+
+            # Add tools for function calling if provided
+            if tools:
+                payload["tools"] = tools
+                payload["tool_choice"] = "auto"  # Let model decide when to use tools
+                print(f"[OpenRouter] Tool calling enabled with {len(tools)} tools")
+
+            _add_openrouter_transforms(payload)
 
             print(f"\nSending to OpenRouter:")
             print(f"Model: {model_to_use}")
@@ -618,7 +762,82 @@ def call_openrouter_api(prompt, conversation_history, model, system_prompt, stre
                     if 'choices' in response_data and len(response_data['choices']) > 0:
                         choice = response_data['choices'][0]
                         message = choice.get('message', {})
+                        finish_reason = choice.get('finish_reason', '')
                         content = message.get('content', '') if message else ''
+                        tool_calls = message.get('tool_calls', [])
+
+                        # Handle tool calls if present and we have an executor
+                        if tool_calls and tool_executor:
+                            print(f"[OpenRouter] Model requested {len(tool_calls)} tool call(s)")
+
+                            # Add assistant message with tool calls to conversation
+                            tool_call_msg = {
+                                "role": "assistant",
+                                "content": content,  # May be null
+                                "tool_calls": tool_calls
+                            }
+                            msgs.append(tool_call_msg)
+
+                            # Execute each tool and collect results
+                            for tc in tool_calls:
+                                try:
+                                    fn_name = tc.get('function', {}).get('name', '')
+                                    fn_args_str = tc.get('function', {}).get('arguments', '{}')
+                                    tc_id = tc.get('id', '')
+
+                                    # Parse arguments
+                                    try:
+                                        fn_args = json.loads(fn_args_str) if isinstance(fn_args_str, str) else fn_args_str
+                                    except json.JSONDecodeError:
+                                        fn_args = {}
+
+                                    print(f"[OpenRouter] Executing tool: {fn_name}({fn_args})")
+
+                                    # Execute the tool
+                                    tool_result = tool_executor(fn_name, fn_args)
+
+                                    # Add tool result to messages
+                                    msgs.append({
+                                        "role": "tool",
+                                        "tool_call_id": tc_id,
+                                        "content": json.dumps(tool_result) if isinstance(tool_result, dict) else str(tool_result)
+                                    })
+                                    print(f"[OpenRouter] Tool result: {tool_result}")
+
+                                except Exception as e:
+                                    print(f"[OpenRouter] Tool execution error: {e}")
+                                    msgs.append({
+                                        "role": "tool",
+                                        "tool_call_id": tc.get('id', ''),
+                                        "content": json.dumps({"success": False, "message": str(e)})
+                                    })
+
+                            # Make follow-up API call without tools to get final response
+                            follow_up_payload = {
+                                "model": model_to_use,
+                                "messages": msgs,
+                                "temperature": 1,
+                                "max_tokens": 4000,
+                                "stream": False
+                            }
+                            _add_openrouter_transforms(follow_up_payload)
+
+                            print(f"[OpenRouter] Making follow-up call for final response...")
+                            follow_up_response = requests.post(
+                                "https://openrouter.ai/api/v1/chat/completions",
+                                headers=headers,
+                                json=follow_up_payload,
+                                timeout=60
+                            )
+
+                            if follow_up_response.status_code == 200:
+                                follow_up_data = follow_up_response.json()
+                                if 'choices' in follow_up_data and len(follow_up_data['choices']) > 0:
+                                    final_content = follow_up_data['choices'][0].get('message', {}).get('content', '')
+                                    if final_content:
+                                        return True, final_content
+                            print(f"[OpenRouter] Follow-up call failed, using initial content if any")
+
                         if content and content.strip():
                             return True, content
                         else:
@@ -627,15 +846,15 @@ def call_openrouter_api(prompt, conversation_history, model, system_prompt, stre
                             print(f"[OpenRouter] Empty content from model: {model}", flush=True)
                             print(f"[OpenRouter]   Choice keys: {list(choice.keys())}", flush=True)
                             print(f"[OpenRouter]   Message keys: {list(message.keys()) if message else 'None'}", flush=True)
-                            print(f"[OpenRouter]   Finish reason: {choice.get('finish_reason', 'unknown')}", flush=True)
+                            print(f"[OpenRouter]   Finish reason: {finish_reason}", flush=True)
                             print(f"[OpenRouter]   Content type: {type(content).__name__}, len: {len(content) if content else 0}", flush=True)
                             print(f"[OpenRouter]   Content repr: {repr(content)}", flush=True)
                             # Check for refusal or other indicators
                             if message.get('refusal'):
                                 print(f"[OpenRouter]   Refusal: {message.get('refusal')}", flush=True)
-                            # Check for tool_calls that might indicate the model is doing something else
-                            if message.get('tool_calls'):
-                                print(f"[OpenRouter]   Tool calls: {len(message.get('tool_calls'))} call(s)", flush=True)
+                            # Check for tool_calls that weren't handled
+                            if tool_calls and not tool_executor:
+                                print(f"[OpenRouter]   Tool calls: {len(tool_calls)} call(s) (no executor provided)", flush=True)
                             sys.stdout.flush()
                             return True, None
                     else:
@@ -796,7 +1015,8 @@ def call_deepseek_api(prompt, conversation_history, model, system_prompt, stream
             "temperature": 1,
             "stream": stream_callback is not None
         }
-        
+        _add_openrouter_transforms(payload)
+
         print(f"\nSending to DeepSeek via OpenRouter:")
         print(f"Model: deepseek/deepseek-r1")
         print(f"Messages: {len(messages)} messages")

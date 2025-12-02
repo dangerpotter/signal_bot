@@ -19,7 +19,8 @@ from config import (
     AI_MODELS,
     SYSTEM_PROMPT_PAIRS,
     SHOW_CHAIN_OF_THOUGHT_IN_CONTEXT,
-    SHARE_CHAIN_OF_THOUGHT
+    SHARE_CHAIN_OF_THOUGHT,
+    OPENROUTER_TOOL_CALLING_ENABLED
 )
 from shared_utils import (
     call_claude_api,
@@ -33,6 +34,8 @@ from shared_utils import (
 )
 from gui import LiminalBackroomsApp, load_fonts
 from command_parser import parse_commands, AgentCommand, format_command_result
+from tool_schemas import AGENT_TOOLS, model_supports_tools
+from tool_executor import ToolExecutor
 
 def is_image_message(message: dict) -> bool:
     """Returns True if 'message' contains a base64 image in its 'content' list."""
@@ -65,8 +68,8 @@ class VideoUpdateSignals(QObject):
 
 class Worker(QRunnable):
     """Worker thread for processing AI turns using QThreadPool"""
-    
-    def __init__(self, ai_name, conversation, model, system_prompt, is_branch=False, branch_id=None, gui=None):
+
+    def __init__(self, ai_name, conversation, model, system_prompt, is_branch=False, branch_id=None, gui=None, tool_executor=None):
         super().__init__()
         self.ai_name = ai_name
         self.conversation = conversation.copy()  # Make a copy to prevent race conditions
@@ -74,6 +77,7 @@ class Worker(QRunnable):
         self.system_prompt = system_prompt
         self.is_branch = is_branch
         self.branch_id = branch_id
+        self.tool_executor = tool_executor  # Optional callback for native tool calling
         self.gui = gui
         
         # Create signals object
@@ -99,6 +103,7 @@ class Worker(QRunnable):
                 self.model,
                 self.system_prompt,
                 gui=self.gui,
+                tool_executor=self.tool_executor,
                 streaming_callback=stream_chunk
             )
             print(f"[Worker] ai_turn completed for {self.ai_name}, result type: {type(result)}")
@@ -130,11 +135,12 @@ class Worker(QRunnable):
             # Still emit finished signal even if there's an error
             self.signals.finished.emit()
 
-def ai_turn(ai_name, conversation, model, system_prompt, gui=None, is_branch=False, branch_output=None, streaming_callback=None):
+def ai_turn(ai_name, conversation, model, system_prompt, gui=None, is_branch=False, branch_output=None, streaming_callback=None, tool_executor=None):
     """Execute an AI turn with the given parameters
-    
+
     Args:
         streaming_callback: Optional function(chunk: str) to call with each streaming token
+        tool_executor: Optional callback function(name, args) -> dict for native tool calling
     """
     print(f"==================================================")
     print(f"Starting {model} turn ({ai_name})...")
@@ -587,8 +593,24 @@ def ai_turn(ai_name, conversation, model, system_prompt, gui=None, is_branch=Fal
                     prompt_content = "Connecting..."
                     context_messages = []
                 
-                # Call OpenRouter API with streaming support
-                response = call_openrouter_api(prompt_content, context_messages, model_id, system_prompt, stream_callback=streaming_callback)
+                # Determine if we should use native tool calling
+                use_tools = None
+                use_tool_executor = None
+                if OPENROUTER_TOOL_CALLING_ENABLED and tool_executor and model_supports_tools(model_id):
+                    use_tools = AGENT_TOOLS
+                    use_tool_executor = tool_executor
+                    print(f"[OpenRouter] Native tool calling enabled for {model}")
+
+                # Call OpenRouter API with streaming support and optional tool calling
+                response = call_openrouter_api(
+                    prompt_content,
+                    context_messages,
+                    model_id,
+                    system_prompt,
+                    stream_callback=streaming_callback,
+                    tools=use_tools,
+                    tool_executor=use_tool_executor
+                )
                 
                 # Avoid printing full response which could be large
                 response_preview = str(response)[:200] + "..." if response and len(str(response)) > 200 else response
@@ -833,7 +855,10 @@ class ConversationManager:
             model = self.get_model_for_ai(i)
             prompt = SYSTEM_PROMPT_PAIRS[selected_prompt_pair][ai_name]
             
-            worker = Worker(ai_name, self.app.main_conversation, model, prompt, gui=self.app)
+            # Create a tool executor for this AI that uses our execute_agent_command
+            tool_exec = ToolExecutor(self.execute_agent_command, ai_name)
+
+            worker = Worker(ai_name, self.app.main_conversation, model, prompt, gui=self.app, tool_executor=tool_exec.execute)
             worker.signals.response.connect(self.on_ai_response_received)
             worker.signals.result.connect(self.on_ai_result_received)
             worker.signals.streaming_chunk.connect(self.on_streaming_chunk)
