@@ -25,6 +25,28 @@ LOCATION_SLOTS = ["home_location", "travel_location"]
 SEMANTIC_SLOTS = ["interests", "media_prefs", "life_events", "work_info", "social_notes", "response_prefs"]
 ALL_SLOTS = LOCATION_SLOTS + SEMANTIC_SLOTS
 
+# Memory priority tiers for context inclusion
+TIER_ALWAYS = ["response_prefs"]  # Always include for current speaker
+TIER_CONTEXTUAL = ["interests", "media_prefs", "life_events", "work_info", "social_notes"]  # Include for speaker + mentioned
+TIER_SITUATIONAL = ["home_location", "travel_location"]  # Only when location-relevant
+
+# Keywords that make location contextually relevant
+LOCATION_KEYWORDS = [
+    "weather", "temperature", "forecast", "rain", "snow", "hot", "cold",
+    "time", "timezone", "what time",
+    "local", "nearby", "around here", "in your area",
+    "visit", "travel", "trip", "vacation", "flying",
+    "where are you", "where do you live", "where is",
+    "distance", "how far", "drive", "flight",
+    "restaurant", "food", "eat", "coffee", "bar",
+    "event", "concert", "game", "show",
+]
+
+# Instruction to prevent over-mentioning location
+LOCATION_INSTRUCTION = """[Context includes location info for reference. Do NOT proactively mention
+someone's location unless they ask about weather, time, local recommendations, or it's directly relevant.
+Mentioning location unprompted feels intrusive.]"""
+
 # Scan interval (6 hours)
 SCAN_INTERVAL_HOURS = 6
 MESSAGES_TO_SCAN = 100
@@ -423,22 +445,125 @@ Analyze these messages and return memory updates as JSON."""
             await self._scan_group(group_id, group.name, bot)
 
 
-def format_member_memories_for_context(group_id: str) -> str:
+def detect_mentioned_members(message_content: str, group_id: str) -> list[str]:
     """
-    Format all member memories for a group into a string for system prompt injection.
+    Detect which group members are mentioned in the message.
 
-    Returns a formatted string like:
-    === WHAT I KNOW ABOUT GROUP MEMBERS ===
-    AT:
-    - Lives in: Denver, CO
-    - Currently traveling: Miami (Dec 15-22)
-    - Wedding date: March 15, 2025
-
-    Bob:
-    - Lives in: Seattle
+    Returns list of member_names that appear to be mentioned.
     """
     from signal_bot.models import GroupMemberMemory
-    from datetime import datetime
+
+    try:
+        with _flask_app.app_context():
+            # Get all known member names from this group
+            members = GroupMemberMemory.query.filter_by(group_id=group_id).with_entities(
+                GroupMemberMemory.member_name
+            ).distinct().all()
+
+            member_names = [m.member_name for m in members]
+            mentioned = []
+
+            message_lower = message_content.lower()
+
+            for name in member_names:
+                name_lower = name.lower()
+                # Check for name mention (with word boundaries to avoid false positives)
+                if re.search(rf'\b{re.escape(name_lower)}\b', message_lower):
+                    mentioned.append(name)
+                # Also check for @mention style
+                elif f"@{name_lower}" in message_lower:
+                    if name not in mentioned:
+                        mentioned.append(name)
+
+            return mentioned
+    except Exception as e:
+        logger.error(f"Error detecting mentioned members: {e}")
+        return []
+
+
+def is_location_relevant(message_content: str, member_memories: list) -> tuple[bool, bool]:
+    """
+    Determine if location info is relevant to include.
+
+    Args:
+        message_content: The message text
+        member_memories: List of GroupMemberMemory objects
+
+    Returns:
+        Tuple of (should_include_location, is_explicitly_asked)
+        - should_include_location: Whether to include location in context
+        - is_explicitly_asked: Whether location was explicitly asked about (no need for warning)
+    """
+    from signal_bot.config_signal import TRAVEL_PROXIMITY_DAYS
+
+    message_lower = message_content.lower()
+
+    # Check for keyword match
+    keyword_match = any(kw in message_lower for kw in LOCATION_KEYWORDS)
+
+    if keyword_match:
+        return True, True  # Include location, was explicitly relevant
+
+    # Check for upcoming travel (within configured days)
+    now = datetime.utcnow()
+    for mem in member_memories:
+        if mem.slot_type == "travel_location" and mem.valid_from:
+            days_until = (mem.valid_from - now).days
+            if 0 <= days_until <= TRAVEL_PROXIMITY_DAYS:
+                return True, False  # Include due to proximity, but add warning
+
+    return False, False
+
+
+def format_single_memory(mem) -> str:
+    """Format a single memory entry."""
+    slot_labels = {
+        "response_prefs": "Prefers responses",
+        "home_location": "Lives in",
+        "travel_location": "Currently traveling",
+        "interests": "Interests",
+        "media_prefs": "Media preferences",
+        "life_events": "Life event",
+        "work_info": "Work",
+        "social_notes": "Social",
+    }
+
+    label = slot_labels.get(mem.slot_type, mem.slot_type)
+
+    # Add date info for travel
+    if mem.slot_type == "travel_location":
+        date_str = ""
+        if mem.valid_from and mem.valid_until:
+            date_str = f" ({mem.valid_from.strftime('%b %d')}-{mem.valid_until.strftime('%b %d')})"
+        elif mem.valid_until:
+            date_str = f" (until {mem.valid_until.strftime('%b %d')})"
+        return f"- {label}: {mem.content}{date_str}"
+
+    return f"- {label}: {mem.content}"
+
+
+def format_member_memories_for_context(
+    group_id: str,
+    current_speaker_name: str = "",
+    current_speaker_id: str = "",
+    message_content: str = ""
+) -> str:
+    """
+    Format member memories prioritized for the current conversation context.
+
+    Args:
+        group_id: The group's ID
+        current_speaker_name: Name of person who sent the message
+        current_speaker_id: Signal UUID of speaker (optional)
+        message_content: The message text (for mentioned member detection)
+
+    Returns:
+        Formatted string with tiered memory inclusion:
+        - Current speaker: Full context (response_prefs always, location when relevant)
+        - Mentioned members: Full context
+        - Others: Omitted
+    """
+    from signal_bot.models import GroupMemberMemory
 
     try:
         with _flask_app.app_context():
@@ -447,10 +572,10 @@ def format_member_memories_for_context(group_id: str) -> str:
             if not memories:
                 return ""
 
-            # Group by member
-            by_member = {}
             now = datetime.utcnow()
 
+            # Group by member, filtering expired travel
+            by_member = {}
             for mem in memories:
                 # Skip expired travel locations
                 if mem.slot_type == "travel_location" and mem.valid_until:
@@ -459,42 +584,64 @@ def format_member_memories_for_context(group_id: str) -> str:
 
                 if mem.member_name not in by_member:
                     by_member[mem.member_name] = []
-
-                # Format the memory based on slot type
-                if mem.slot_type == "home_location":
-                    by_member[mem.member_name].append(f"- Lives in: {mem.content}")
-                elif mem.slot_type == "travel_location":
-                    date_str = ""
-                    if mem.valid_from and mem.valid_until:
-                        date_str = f" ({mem.valid_from.strftime('%b %d')}-{mem.valid_until.strftime('%b %d')})"
-                    elif mem.valid_until:
-                        date_str = f" (until {mem.valid_until.strftime('%b %d')})"
-                    by_member[mem.member_name].append(f"- Currently traveling: {mem.content}{date_str}")
-                elif mem.slot_type == "interests":
-                    by_member[mem.member_name].append(f"- Interests: {mem.content}")
-                elif mem.slot_type == "media_prefs":
-                    by_member[mem.member_name].append(f"- Media preferences: {mem.content}")
-                elif mem.slot_type == "life_events":
-                    by_member[mem.member_name].append(f"- Life event: {mem.content}")
-                elif mem.slot_type == "work_info":
-                    by_member[mem.member_name].append(f"- Work: {mem.content}")
-                elif mem.slot_type == "social_notes":
-                    by_member[mem.member_name].append(f"- Social: {mem.content}")
-                elif mem.slot_type == "response_prefs":
-                    by_member[mem.member_name].append(f"- Prefers responses: {mem.content}")
-                else:
-                    by_member[mem.member_name].append(f"- {mem.content}")
+                by_member[mem.member_name].append(mem)
 
             if not by_member:
                 return ""
 
-            # Build output
-            lines = ["\n=== WHAT I KNOW ABOUT GROUP MEMBERS ==="]
-            for member, mems in by_member.items():
-                lines.append(f"\n{member}:")
-                lines.extend(mems)
+            # Detect mentioned members
+            mentioned_members = detect_mentioned_members(message_content, group_id) if message_content else []
 
-            return "\n".join(lines)
+            # Check location relevance based on current speaker's memories
+            speaker_memories = by_member.get(current_speaker_name, [])
+            include_location, location_explicit = is_location_relevant(message_content, speaker_memories)
+
+            output_lines = []
+
+            # === CURRENT SPEAKER SECTION ===
+            if current_speaker_name and current_speaker_name in by_member:
+                output_lines.append(f"\n=== WHAT I KNOW ABOUT {current_speaker_name.upper()} (CURRENT SPEAKER) ===")
+
+                for mem in by_member[current_speaker_name]:
+                    # Tier 1: Always include response_prefs
+                    if mem.slot_type in TIER_ALWAYS:
+                        output_lines.append(format_single_memory(mem))
+
+                    # Tier 2: Contextual - always include for speaker
+                    elif mem.slot_type in TIER_CONTEXTUAL:
+                        output_lines.append(format_single_memory(mem))
+
+                    # Tier 3: Situational - location only when relevant
+                    elif mem.slot_type in TIER_SITUATIONAL:
+                        if include_location:
+                            output_lines.append(format_single_memory(mem))
+
+            # === MENTIONED MEMBERS SECTION ===
+            for mentioned_name in mentioned_members:
+                if mentioned_name == current_speaker_name:
+                    continue  # Already covered
+                if mentioned_name not in by_member:
+                    continue
+
+                output_lines.append(f"\n=== {mentioned_name.upper()} (MENTIONED IN MESSAGE) ===")
+
+                for mem in by_member[mentioned_name]:
+                    # Include all tiers for mentioned members
+                    output_lines.append(format_single_memory(mem))
+
+            # Add location instruction if location was included but not explicitly asked
+            if include_location and not location_explicit:
+                output_lines.append(f"\n{LOCATION_INSTRUCTION}")
+
+            # Note about omitted members (if any)
+            included_count = 1 if current_speaker_name in by_member else 0
+            included_count += len([m for m in mentioned_members if m in by_member and m != current_speaker_name])
+            omitted_count = len(by_member) - included_count
+
+            if omitted_count > 0:
+                output_lines.append(f"\n[{omitted_count} other group member(s) - context available if mentioned]")
+
+            return "\n".join(output_lines) if output_lines else ""
 
     except Exception as e:
         logger.error(f"Error formatting member memories: {e}")

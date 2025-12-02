@@ -15,6 +15,11 @@ from signal_bot.models import db, Bot, MessageLog, ActivityLog
 from signal_bot.memory_manager import MemoryManager, get_memory_manager
 from signal_bot.trigger_logic import should_bot_respond, get_response_delay
 from signal_bot.member_memory_scanner import format_member_memories_for_context
+from signal_bot.realtime_memory import (
+    check_and_save_realtime_memory,
+    format_memory_confirmation_instruction,
+    set_flask_app as set_realtime_flask_app
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +31,8 @@ def set_flask_app(app: Flask):
     """Set the Flask app for database context."""
     global _flask_app
     _flask_app = app
+    # Also set for realtime memory module
+    set_realtime_flask_app(app)
 
 
 class MessageHandler:
@@ -77,6 +84,22 @@ class MessageHandler:
             sender_id=sender_id
         )
 
+        # Check for real-time memory save (e.g., "remember I prefer...")
+        memory_result = await check_and_save_realtime_memory(
+            message_text=message_text,
+            sender_name=sender_name,
+            sender_id=sender_id,
+            group_id=group_id,
+            bot_data=bot_data
+        )
+
+        memory_confirmation = None
+        if memory_result and memory_result.get('saved'):
+            memory_confirmation = format_memory_confirmation_instruction(
+                memory_result,
+                sender_name
+            )
+
         # Check if bot should respond
         # If natively @mentioned in Signal, always respond
         if is_mentioned:
@@ -100,7 +123,15 @@ class MessageHandler:
         await asyncio.sleep(delay)
 
         # Generate response
-        response = await self._generate_response(bot_data, memory, message_text, group_id)
+        response = await self._generate_response(
+            bot_data=bot_data,
+            memory=memory,
+            trigger_message=message_text,
+            group_id=group_id,
+            sender_name=sender_name,
+            sender_id=sender_id,
+            memory_confirmation=memory_confirmation
+        )
 
         if response:
             # Parse for commands
@@ -146,7 +177,10 @@ class MessageHandler:
         bot_data: dict,
         memory: MemoryManager,
         trigger_message: str,
-        group_id: str
+        group_id: str,
+        sender_name: str = "",
+        sender_id: str = "",
+        memory_confirmation: Optional[str] = None
     ) -> Optional[str]:
         """Generate an AI response using the configured model."""
         try:
@@ -169,10 +203,19 @@ class MessageHandler:
         if memory_callback:
             system_prompt += f"\n\n{memory_callback}"
 
-        # Inject member memories (locations, personal info)
-        member_memories = format_member_memories_for_context(group_id)
+        # Inject member memories (locations, personal info) - now prioritized by speaker
+        member_memories = format_member_memories_for_context(
+            group_id=group_id,
+            current_speaker_name=sender_name,
+            current_speaker_id=sender_id,
+            message_content=trigger_message
+        )
         if member_memories:
             system_prompt += f"\n{member_memories}"
+
+        # Inject memory confirmation instruction if a memory was just saved
+        if memory_confirmation:
+            system_prompt += f"\n\n{memory_confirmation}"
 
         # Get model ID
         model_id = AI_MODELS.get(bot_data['model'], bot_data['model'])

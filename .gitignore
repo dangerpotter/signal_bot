@@ -177,3 +177,6 @@ videos/*
 signal-data/
 signal_bot.db
 nul
+
+# Claude Code instructions (project-specific, not for repo)
+CLAUDE.md

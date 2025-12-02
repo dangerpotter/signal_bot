@@ -19,6 +19,13 @@ LONG_TERM_RECALL_CHANCE = 5  # % chance to reference old memory
 HUMOR_EVAL_MODEL = os.getenv("HUMOR_EVAL_MODEL", "anthropic/claude-3-5-haiku-20241022")
 MEMORY_SCAN_MODEL = os.getenv("MEMORY_SCAN_MODEL", "anthropic/claude-sonnet-4-20250514")  # Fallback if bot has no model
 
+# Real-time memory settings
+REALTIME_MEMORY_ENABLED = True  # Enable instant memory saves when user says "remember..."
+REALTIME_MEMORY_MODEL = os.getenv("REALTIME_MEMORY_MODEL", "anthropic/claude-3-5-haiku-20241022")  # Fast model for extraction
+
+# Location context settings
+TRAVEL_PROXIMITY_DAYS = 7  # Include travel location if within N days of travel date
+
 # Signal API base URLs (for Docker containers)
 SIGNAL_API_PORTS = {
     1: 8080,

@@ -23,9 +23,14 @@ A web-based management dashboard for running AI bots in Signal group chats. Conf
 ### Memory System
 - **Rolling Context**: Maintains a configurable window of recent messages (default 25)
 - **Long-Term Memories**: Randomly saves memorable moments, recalls them with "remember when..."
-- **Member Memories**: Tracks per-member info like home location, travel plans, interests
-  - Auto-scans conversations every 12 hours to extract personal details
+- **Member Memories**: Tracks per-member info like home location, travel plans, interests, response preferences
+  - **Real-time saves**: When a user says "remember I prefer...", it's saved immediately (no waiting for scan)
+  - Auto-scans conversations every 6 hours to extract personal details
   - Location-aware (knows when someone is traveling vs. at home)
+- **Smart Context Retrieval**: Prioritizes the current speaker's info in the system prompt
+  - Response preferences always included for current speaker
+  - Location info only included when contextually relevant (weather, travel, local questions)
+  - Mentioned members' context included automatically
 
 ### Multi-Bot Architecture
 - Each bot gets its own Signal phone number
@@ -106,9 +111,11 @@ python run_signal.py --bots-only  # Headless mode - bots only, no web UI
 ### Memory Settings (config_signal.py)
 
 ```python
-DEFAULT_ROLLING_WINDOW = 25      # Messages to keep in context
-LONG_TERM_SAVE_CHANCE = 15       # % chance to save memorable moment
-LONG_TERM_RECALL_CHANCE = 10     # % chance to recall old memory
+DEFAULT_ROLLING_WINDOW = 25          # Messages to keep in context
+LONG_TERM_SAVE_CHANCE = 10           # % chance to save memorable moment
+LONG_TERM_RECALL_CHANCE = 5          # % chance to recall old memory
+REALTIME_MEMORY_ENABLED = True       # Instant saves when user says "remember..."
+TRAVEL_PROXIMITY_DAYS = 7            # Include travel info if within N days
 ```
 
 ## Database
@@ -135,7 +142,8 @@ signal_bot/
 ├── bot_manager.py          # Orchestrates multiple bots
 ├── message_handler.py      # AI response generation
 ├── memory_manager.py       # Rolling context + long-term memories
-├── member_memory_scanner.py # Extracts member info from chats
+├── member_memory_scanner.py # Extracts member info from chats (background scan)
+├── realtime_memory.py      # Instant memory saves ("remember I prefer...")
 ├── trigger_logic.py        # Mention detection, random chance
 ├── models.py               # SQLite database models
 └── config_signal.py        # Signal-specific settings
@@ -161,8 +169,9 @@ You can also add models in `config.py` → `AI_MODELS` dictionary.
 
 **Auxiliary Model Config** (env vars):
 ```env
-HUMOR_EVAL_MODEL=anthropic/claude-3-5-haiku-20241022   # For funny message detection
-MEMORY_SCAN_MODEL=anthropic/claude-sonnet-4-20250514  # For memory extraction
+HUMOR_EVAL_MODEL=anthropic/claude-3-5-haiku-20241022      # For funny message detection
+MEMORY_SCAN_MODEL=anthropic/claude-sonnet-4-20250514     # For background memory extraction
+REALTIME_MEMORY_MODEL=anthropic/claude-3-5-haiku-20241022 # For instant memory saves
 ```
 
 ## License
