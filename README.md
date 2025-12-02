@@ -18,7 +18,7 @@ A web-based management dashboard for running AI bots in Signal group chats. Conf
 - **Multiple AI Models**: Claude, GPT, Gemini, Grok, DeepSeek, and more via OpenRouter
 - **Image Generation**: `!image "prompt"` command generates images via Gemini
 - **Emoji Reactions**: Random animal emoji reactions + LLM-powered "funny detection"
-- **Web Search**: Optional news search for idle conversation starters
+- **Web Search**: Real-time web search with inline citations and source links
 
 ### Memory System
 - **Rolling Context**: Maintains a configurable window of recent messages (default 25)
@@ -103,7 +103,7 @@ python run_signal.py --bots-only  # Headless mode - bots only, no web UI
 | **Respond on Mention** | Reply when @mentioned |
 | **Random Chance %** | Chance to respond to any message (0-100) |
 | **Image Generation** | Enable `!image` command |
-| **Web Search** | Enable news search for idle posts |
+| **Web Search** | Enable web search with citation sources |
 | **Reactions** | Enable emoji reactions to messages |
 | **Reaction Chance %** | Random animal emoji chance |
 | **LLM Reactions** | Use AI to detect funny messages |

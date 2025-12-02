@@ -226,13 +226,214 @@ def call_openai_api(prompt, conversation_history, model, system_prompt):
         print(f"Error calling OpenAI API: {e}")
         return None
 
+def format_response_with_citations(text: str, annotations: list) -> str:
+    """Format response text with inline footnote markers and a sources section.
+
+    Args:
+        text: The response text from the API
+        annotations: List of annotation objects from the API response
+
+    Returns:
+        Formatted text with [1], [2] markers and a Sources section at the end
+    """
+    if not annotations:
+        return text
+
+    # Filter to only url_citation annotations
+    url_citations = [a for a in annotations if a.get('type') == 'url_citation']
+    if not url_citations:
+        return text
+
+    # Build URL to footnote number mapping (deduplicate URLs)
+    url_to_number = {}
+    sources = []  # List of (number, title, url) tuples
+
+    for citation in url_citations:
+        url = citation.get('url', '')
+        if not url:
+            continue
+        if url not in url_to_number:
+            number = len(url_to_number) + 1
+            url_to_number[url] = number
+            # Get title, fallback to domain if not available
+            title = citation.get('title', '')
+            if not title:
+                # Extract domain from URL as fallback
+                try:
+                    from urllib.parse import urlparse
+                    parsed = urlparse(url)
+                    title = parsed.netloc or url
+                except:
+                    title = url
+            sources.append((number, title, url))
+
+    if not sources:
+        return text
+
+    # Insert footnote markers at end_index positions
+    # Process in reverse order to preserve index positions
+    citations_with_positions = [
+        (c.get('end_index', 0), url_to_number.get(c.get('url', ''), 0))
+        for c in url_citations
+        if c.get('url') in url_to_number and c.get('end_index') is not None
+    ]
+    # Sort by position descending
+    citations_with_positions.sort(key=lambda x: x[0], reverse=True)
+
+    # Insert markers (avoid duplicates at same position)
+    modified_text = text
+    inserted_positions = set()
+    for end_index, footnote_num in citations_with_positions:
+        if end_index not in inserted_positions and footnote_num > 0:
+            # Insert the marker at the position
+            marker = f" [{footnote_num}]"
+            modified_text = modified_text[:end_index] + marker + modified_text[end_index:]
+            inserted_positions.add(end_index)
+
+    # Build sources section
+    sources_section = "\n\n---\nSources:"
+    for number, title, url in sorted(sources, key=lambda x: x[0]):
+        sources_section += f"\n{number}. {title} - {url}"
+
+    return modified_text + sources_section
+
+
+def call_openrouter_responses_api(prompt, conversation_history, model, system_prompt):
+    """Call the OpenRouter Responses API with web search enabled.
+
+    This API returns citation annotations for web search results.
+
+    Args:
+        prompt: The current user message
+        conversation_history: List of previous messages
+        model: The model ID to use
+        system_prompt: System prompt for the model
+
+    Returns:
+        Formatted response string with citations, or None on error
+    """
+    try:
+        headers = {
+            "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}",
+            "HTTP-Referer": "http://localhost:3000",
+            "Content-Type": "application/json",
+            "X-Title": "AI Conversation"
+        }
+
+        # Normalize model ID for OpenRouter
+        openrouter_model = model
+        if model.startswith("claude-") and not model.startswith("anthropic/"):
+            openrouter_model = f"anthropic/{model}"
+
+        # Build input array in OpenResponses format
+        input_messages = []
+
+        # Add system prompt as first message if provided
+        if system_prompt:
+            input_messages.append({
+                "role": "system",
+                "content": system_prompt
+            })
+
+        # Add conversation history
+        for msg in conversation_history:
+            if msg.get("role") != "system":  # Skip system prompts in history
+                content = msg.get("content", "")
+                # Convert structured content to plain text for Responses API
+                if isinstance(content, list):
+                    text_parts = [p.get('text', '') for p in content if p.get('type') == 'text']
+                    content = ' '.join(text_parts)
+                input_messages.append({
+                    "role": msg.get("role", "user"),
+                    "content": content
+                })
+
+        # Add current prompt
+        if isinstance(prompt, list):
+            text_parts = [p.get('text', '') for p in prompt if p.get('type') == 'text']
+            prompt_text = ' '.join(text_parts)
+        else:
+            prompt_text = prompt
+        input_messages.append({
+            "role": "user",
+            "content": prompt_text
+        })
+
+        payload = {
+            "model": openrouter_model,
+            "input": input_messages,
+            "tools": [{"type": "web_search"}],  # Enable web search
+            "max_output_tokens": 4000,
+            "temperature": 1
+        }
+
+        print(f"\n[OpenRouter Responses API] Sending request:")
+        print(f"  Model: {openrouter_model}")
+        print(f"  Messages: {len(input_messages)}")
+        print(f"  Web search: ENABLED")
+
+        response = requests.post(
+            "https://openrouter.ai/api/v1/responses",
+            headers=headers,
+            json=payload,
+            timeout=120
+        )
+
+        print(f"[OpenRouter Responses API] Response status: {response.status_code}")
+
+        if response.status_code == 200:
+            response_data = response.json()
+
+            # Extract text and annotations from response
+            output = response_data.get("output", [])
+            text = ""
+            annotations = []
+
+            for item in output:
+                if item.get("type") == "message":
+                    for content in item.get("content", []):
+                        if content.get("type") == "output_text":
+                            text = content.get("text", "")
+                            annotations = content.get("annotations", [])
+                            break
+                    break
+
+            if text:
+                # Format response with citations
+                formatted_response = format_response_with_citations(text, annotations)
+                print(f"[OpenRouter Responses API] Response received, {len(annotations)} citations found")
+                return formatted_response
+            else:
+                print("[OpenRouter Responses API] Empty text in response")
+                return None
+        else:
+            print(f"[OpenRouter Responses API] Error: {response.status_code} - {response.text[:500]}")
+            return None
+
+    except requests.exceptions.Timeout:
+        print("[OpenRouter Responses API] Request timed out")
+        return None
+    except Exception as e:
+        print(f"[OpenRouter Responses API] Error: {e}")
+        return None
+
+
 def call_openrouter_api(prompt, conversation_history, model, system_prompt, stream_callback=None, web_search=False):
     """Call the OpenRouter API to access various LLM models.
 
     Args:
         stream_callback: Optional function(chunk: str) to call with each streaming token
-        web_search: If True, enable OpenRouter's web search plugin
+        web_search: If True, enable OpenRouter's web search via Responses API (returns citations)
     """
+    # Route web search requests to Responses API for citation support
+    if web_search:
+        print(f"[OpenRouter] Web search enabled, using Responses API for citations")
+        result = call_openrouter_responses_api(prompt, conversation_history, model, system_prompt)
+        if result:
+            return result
+        # Fall back to Chat Completions API if Responses API fails
+        print(f"[OpenRouter] Responses API failed, falling back to Chat Completions with :online suffix")
+
     try:
         headers = {
             "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}",
