@@ -32,7 +32,9 @@
       "Bash(git remote set-url:*)",
       "Bash(git push:*)",
       "Bash(cat:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nAdd Signal bot integration with admin UI\n\n- Signal bot package for AI bots in Signal group chats\n- Flask admin UI for managing bots, groups, and prompts\n- Memory system with rolling context and long-term memories\n- Docker compose for Signal API containers\n- Updated dependencies and shared utils\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []
