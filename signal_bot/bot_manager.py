@@ -56,6 +56,7 @@ class SignalBotManager:
         self._group_last_activity: dict[str, float] = {}  # group_id -> timestamp
         self._group_last_idle_check: dict[str, float] = {}  # group_id -> timestamp
         self._idle_checker_task: Optional[asyncio.Task] = None
+        self._startup_time: float = time.time()  # Track when manager started for idle calculation
 
         # Member memory scanner
         self.memory_scanner = get_memory_scanner()
@@ -818,8 +819,8 @@ class SignalBotManager:
                     group_id = pair['group_id']
                     bot_data = pair['bot']
 
-                    # Get last activity time (default to now if never seen)
-                    last_activity = self._group_last_activity.get(group_id, current_time)
+                    # Get last activity time (default to startup time if never seen)
+                    last_activity = self._group_last_activity.get(group_id, self._startup_time)
                     idle_time = current_time - last_activity
 
                     # Check if we're in idle mode (15+ min of silence)
