@@ -303,6 +303,15 @@ class SignalBotManager:
 
             if response.status_code in (200, 201):
                 return True
+            elif response.status_code == 400:
+                # Check for partial delivery (unregistered user in group)
+                error_text = response.text
+                if "Unregistered user" in error_text:
+                    logger.warning(f"Partial send - some recipients unregistered: {error_text}")
+                    return True  # Message likely delivered to other members
+                else:
+                    logger.error(f"Send message failed: {response.status_code} - {error_text}")
+                    return False
             else:
                 logger.error(f"Send message failed: {response.status_code} - {response.text}")
                 return False
@@ -432,6 +441,10 @@ class SignalBotManager:
             if response.status_code in (200, 201, 204):
                 logger.debug(f"Typing {'stopped' if stop else 'started'} for {phone_number}")
                 return True
+            elif response.status_code == 404:
+                # Endpoint not available in this REST API version - silently skip
+                logger.debug("Typing indicator endpoint not available")
+                return False
             else:
                 logger.debug(f"Send typing failed: {response.status_code}")
                 return False
@@ -462,6 +475,10 @@ class SignalBotManager:
             if response.status_code in (200, 201, 204):
                 logger.debug(f"Read receipt sent for {len(timestamps)} messages")
                 return True
+            elif response.status_code == 404:
+                # Endpoint not available in this REST API version - silently skip
+                logger.debug("Read receipt endpoint not available")
+                return False
             else:
                 logger.debug(f"Send read receipt failed: {response.status_code}")
                 return False
