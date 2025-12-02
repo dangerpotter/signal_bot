@@ -107,6 +107,7 @@ def register_routes(app):
             bot.system_prompt = request.form.get("system_prompt", "").strip() or None
             bot.respond_on_mention = request.form.get("respond_on_mention") == "on"
             bot.random_chance_percent = int(request.form.get("random_chance_percent", 15))
+            bot.context_window = int(request.form.get("context_window", 25))
             bot.image_generation_enabled = request.form.get("image_generation_enabled") == "on"
             bot.web_search_enabled = request.form.get("web_search_enabled") == "on"
             bot.reaction_enabled = request.form.get("reaction_enabled") == "on"

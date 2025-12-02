@@ -228,8 +228,9 @@ class MessageHandler:
             logger.error(f"Failed to import shared_utils: {e}")
             return None
 
-        # Build context
-        context_messages = memory.get_context_messages()
+        # Build context (use bot's context_window setting)
+        context_window = bot_data.get('context_window', 25)
+        context_messages = memory.get_context_messages(limit=context_window)
 
         # Maybe inject a memory callback
         memory_callback = memory.maybe_get_memory_callback()
