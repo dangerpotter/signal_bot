@@ -42,6 +42,12 @@ LOCATION_KEYWORDS = [
     "event", "concert", "game", "show",
 ]
 
+# Keywords indicating request for ALL members' info
+COLLECTIVE_KEYWORDS = [
+    "everyone", "everybody", "all of us", "each of us", "the group",
+    "all members", "whole group", "all of you", "each person",
+]
+
 # Instruction to prevent over-mentioning location
 LOCATION_INSTRUCTION = """[Context includes location info for reference. Do NOT proactively mention
 someone's location unless they ask about weather, time, local recommendations, or it's directly relevant.
@@ -271,6 +277,8 @@ class MemberMemoryScanner:
         # Build the analysis prompt
         system_prompt = """You are a memory manager for a group chat AI assistant. Analyze recent messages and extract important information about group members.
 
+CRITICAL: Only record EXPLICIT statements, never inferences or assumptions.
+
 Each member can have up to 8 memory slots:
 
 LOCATION SLOTS:
@@ -289,7 +297,7 @@ EXAMPLES OF WHAT TO REMEMBER:
 - "Scott is interested in the Jack Johnson concert Aug 2026" -> interests
 - "Austin Tyler likes 90s cartoons like Freakazoid" -> media_prefs
 - "Bryan prefers succinct, list-style responses" -> response_prefs
-- "Joe works as a software engineer" -> work_info
+- "Joe works as a software engineer" -> work_info (EXPLICIT statement of profession)
 - "Paul's wedding is March 15, 2025" -> life_events
 
 EXAMPLES OF WHAT NOT TO REMEMBER:
@@ -297,10 +305,18 @@ EXAMPLES OF WHAT NOT TO REMEMBER:
 - "I'm making coffee" - momentary states
 - Bot/AI responses - only store info about humans
 
+AVOID INCORRECT INFERENCES:
+- Someone discussing "payroll" does NOT mean they work in payroll - they might own a business
+- Someone mentioning a topic does NOT mean it's their profession or primary interest
+- If context is unclear, use general language: "Runs a business" not "Works in [assumed industry]"
+- When uncertain, describe the activity not the assumed role: "Handles company payroll" not "Works in payroll services"
+- If you can't determine their actual job/role, skip work_info entirely rather than guess
+
 Your task:
-1. Review messages and identify NEW info worth remembering
+1. Review messages and identify NEW info worth remembering (EXPLICIT statements only)
 2. Identify OUTDATED info to remove (e.g., past travel)
 3. Identify info that should be UPDATED
+4. When uncertain, either skip the update or use deliberately vague language
 
 Return updates array. Empty array [] if no updates needed."""
 
@@ -539,6 +555,14 @@ def is_location_relevant(message_content: str, member_memories: list) -> tuple[b
     return False, False
 
 
+def is_collective_location_request(message_content: str) -> bool:
+    """Check if message asks about location info for all members (e.g., 'weather for everyone')."""
+    message_lower = message_content.lower()
+    has_collective = any(kw in message_lower for kw in COLLECTIVE_KEYWORDS)
+    has_location_keyword = any(kw in message_lower for kw in LOCATION_KEYWORDS)
+    return has_collective and has_location_keyword
+
+
 def format_single_memory(mem) -> str:
     """Format a single memory entry."""
     slot_labels = {
@@ -553,6 +577,10 @@ def format_single_memory(mem) -> str:
     }
 
     label = slot_labels.get(mem.slot_type, mem.slot_type)
+
+    # Special handling for response_prefs - make it emphatic so AI follows formatting
+    if mem.slot_type == "response_prefs":
+        return f"- **{label}**: {mem.content}\n  ⚠️ IMPORTANT: You MUST follow this user's response/formatting preferences exactly as specified above."
 
     # Add date info for travel
     if mem.slot_type == "travel_location":
@@ -653,17 +681,37 @@ def format_member_memories_for_context(
                     # Include all tiers for mentioned members
                     output_lines.append(format_single_memory(mem))
 
+            # === ALL MEMBERS SECTION (for collective requests like "weather for everyone") ===
+            include_all_locations = is_collective_location_request(message_content)
+
+            if include_all_locations:
+                # Gather all members with home_location who weren't already included
+                already_included = {current_speaker_name} | set(mentioned_members)
+                all_locations = []
+                for member_name, mems in by_member.items():
+                    if member_name in already_included:
+                        continue
+                    for mem in mems:
+                        if mem.slot_type == "home_location":
+                            all_locations.append(f"- {member_name}: {mem.content}")
+                            break
+
+                if all_locations:
+                    output_lines.append(f"\n=== OTHER GROUP MEMBERS' LOCATIONS ===")
+                    output_lines.extend(all_locations)
+
             # Add location instruction if location was included but not explicitly asked
             if include_location and not location_explicit:
                 output_lines.append(f"\n{LOCATION_INSTRUCTION}")
 
-            # Note about omitted members (if any)
-            included_count = 1 if current_speaker_name in by_member else 0
-            included_count += len([m for m in mentioned_members if m in by_member and m != current_speaker_name])
-            omitted_count = len(by_member) - included_count
+            # Note about omitted members (if any) - skip if we included all locations
+            if not include_all_locations:
+                included_count = 1 if current_speaker_name in by_member else 0
+                included_count += len([m for m in mentioned_members if m in by_member and m != current_speaker_name])
+                omitted_count = len(by_member) - included_count
 
-            if omitted_count > 0:
-                output_lines.append(f"\n[{omitted_count} other group member(s) - context available if mentioned]")
+                if omitted_count > 0:
+                    output_lines.append(f"\n[{omitted_count} other group member(s) - context available if mentioned]")
 
             return "\n".join(output_lines) if output_lines else ""
 
