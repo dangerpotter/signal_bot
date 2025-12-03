@@ -24,6 +24,7 @@ class Bot(db.Model):
     image_generation_enabled = db.Column(db.Boolean, default=True)
     web_search_enabled = db.Column(db.Boolean, default=False)  # Enable OpenRouter web search
     weather_enabled = db.Column(db.Boolean, default=False)  # Enable weather tool (WeatherAPI.com)
+    finance_enabled = db.Column(db.Boolean, default=False)  # Enable finance tools (Yahoo Finance)
 
     # Idle news settings
     idle_news_enabled = db.Column(db.Boolean, default=False)  # Post news when group is quiet
@@ -63,6 +64,7 @@ class Bot(db.Model):
             "image_generation_enabled": self.image_generation_enabled,
             "web_search_enabled": self.web_search_enabled,
             "weather_enabled": self.weather_enabled,
+            "finance_enabled": self.finance_enabled,
             "idle_news_enabled": self.idle_news_enabled,
             "idle_threshold_minutes": self.idle_threshold_minutes or 15,
             "idle_check_interval_minutes": self.idle_check_interval_minutes or 5,

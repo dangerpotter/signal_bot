@@ -113,6 +113,13 @@
                         </div>
                         <small class="text-muted">Accurate weather data via WeatherAPI.com (requires tool-capable model)</small>
                     </div>
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input type="checkbox" name="finance_enabled" class="form-check-input" id="financeEnabled" {% if bot.finance_enabled %}checked{% endif %}>
+                            <label class="form-check-label" for="financeEnabled">Enable finance tools</label>
+                        </div>
+                        <small class="text-muted">Yahoo Finance data for stocks, ETFs, and crypto. Includes: stock quotes, company news, symbol search, top performers by sector, price history, options chains, and earnings data. Bot responds to any ticker/company mentioned.</small>
+                    </div>
                 </div>
             </div>
 

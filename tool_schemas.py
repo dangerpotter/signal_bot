@@ -129,6 +129,187 @@ SIGNAL_TOOLS = [
     if tool["function"]["name"] == "generate_image"
 ]
 
+# Finance tools for Signal bots
+FINANCE_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_stock_quote",
+            "description": "Get current stock/crypto price and key metrics including market cap, P/E ratio, 52-week range, and volume. Works with stocks (AAPL, MSFT), ETFs (SPY, QQQ), and crypto (BTC-USD, ETH-USD).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "Ticker symbol (e.g., 'AAPL', 'MSFT', 'BTC-USD', 'ETH-USD')"
+                    }
+                },
+                "required": ["symbol"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_stock_news",
+            "description": "Get recent news articles for a stock or cryptocurrency.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "Ticker symbol (e.g., 'AAPL', 'TSLA', 'BTC-USD')"
+                    },
+                    "count": {
+                        "type": "integer",
+                        "description": "Number of news articles to return (1-20)",
+                        "default": 5
+                    }
+                },
+                "required": ["symbol"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_stocks",
+            "description": "Search for stocks, ETFs, or crypto by name or symbol. Use when you need to find a ticker symbol.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search term - company name, ticker, or keyword (e.g., 'Apple', 'electric vehicles', 'bitcoin')"
+                    },
+                    "count": {
+                        "type": "integer",
+                        "description": "Maximum results to return (1-25)",
+                        "default": 10
+                    }
+                },
+                "required": ["query"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_top_stocks",
+            "description": "Get top performing stocks or ETFs by sector.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "entity_type": {
+                        "type": "string",
+                        "description": "Type of entity: 'companies' or 'etfs'",
+                        "enum": ["companies", "etfs"],
+                        "default": "companies"
+                    },
+                    "sector": {
+                        "type": "string",
+                        "description": "Market sector",
+                        "enum": ["technology", "healthcare", "financial-services", "consumer-cyclical", "consumer-defensive", "energy", "industrials", "basic-materials", "real-estate", "utilities", "communication-services"],
+                        "default": "technology"
+                    },
+                    "count": {
+                        "type": "integer",
+                        "description": "Number of results (1-25)",
+                        "default": 10
+                    }
+                },
+                "required": [],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_price_history",
+            "description": "Get historical price data for charting or analysis. Returns OHLCV data.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "Ticker symbol (e.g., 'AAPL', 'SPY', 'BTC-USD')"
+                    },
+                    "period": {
+                        "type": "string",
+                        "description": "Time period for data",
+                        "enum": ["1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "ytd", "max"],
+                        "default": "1mo"
+                    },
+                    "interval": {
+                        "type": "string",
+                        "description": "Data interval/granularity",
+                        "enum": ["1m", "5m", "15m", "30m", "1h", "1d", "1wk", "1mo"],
+                        "default": "1d"
+                    }
+                },
+                "required": ["symbol"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_options",
+            "description": "Get options chain data including calls and puts with strike prices, bids, asks, and implied volatility.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "Ticker symbol (e.g., 'AAPL', 'SPY', 'TSLA')"
+                    },
+                    "option_type": {
+                        "type": "string",
+                        "description": "Type of options to return",
+                        "enum": ["call", "put", "both"],
+                        "default": "both"
+                    },
+                    "date": {
+                        "type": "string",
+                        "description": "Expiration date in YYYY-MM-DD format (optional, defaults to nearest expiration)"
+                    }
+                },
+                "required": ["symbol"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_earnings",
+            "description": "Get earnings data including historical earnings, EPS, and next earnings date.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "Ticker symbol (e.g., 'AAPL', 'MSFT', 'GOOGL')"
+                    },
+                    "period": {
+                        "type": "string",
+                        "description": "Earnings period type",
+                        "enum": ["annual", "quarterly"],
+                        "default": "quarterly"
+                    }
+                },
+                "required": ["symbol"],
+                "additionalProperties": False
+            }
+        }
+    }
+]
+
 # Weather tool for Signal bots
 WEATHER_TOOL = {
     "type": "function",
@@ -157,7 +338,8 @@ WEATHER_TOOL = {
 def get_tools_for_context(
     context: str = "gui",
     image_enabled: bool = False,
-    weather_enabled: bool = False
+    weather_enabled: bool = False,
+    finance_enabled: bool = False
 ) -> list:
     """
     Return appropriate tools based on context and enabled features.
@@ -166,6 +348,7 @@ def get_tools_for_context(
         context: "gui" for main app (all tools), "signal" for Signal bot
         image_enabled: Include image generation tool (Signal bot only)
         weather_enabled: Include weather tool (Signal bot only)
+        finance_enabled: Include finance tools (Signal bot only)
 
     Returns:
         List of tool definitions appropriate for the context
@@ -176,6 +359,8 @@ def get_tools_for_context(
             tools.extend(SIGNAL_TOOLS)
         if weather_enabled:
             tools.append(WEATHER_TOOL)
+        if finance_enabled:
+            tools.extend(FINANCE_TOOLS)
         return tools
     return AGENT_TOOLS
 

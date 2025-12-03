@@ -182,6 +182,8 @@ signal_bot/
 ├── trigger_logic.py      # Mention detection, random chance
 ├── models.py             # SQLite database models
 ├── config_signal.py      # Signal-specific settings
+├── weather_client.py     # WeatherAPI.com integration
+├── finance_client.py     # Yahoo Finance integration (yfinance)
 └── admin/
     ├── app.py            # Flask app factory
     ├── routes.py         # Web routes
@@ -195,6 +197,7 @@ signal_bot/
 - **Memory system**: Rolling 25-message window + long-term "remember when..." callbacks
 - **Image generation**: Bots can use `!image` to generate memes
 - **Weather tool**: Real-time weather data via WeatherAPI.com (toggle per-bot)
+- **Finance tools**: Stock quotes, news, price history, options, earnings via Yahoo Finance (toggle per-bot)
 
 ### Signal Features (Per Bot)
 - **Typing indicators**: Shows "typing..." while bot composes response (configurable)
