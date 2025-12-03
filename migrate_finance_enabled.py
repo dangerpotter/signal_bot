@@ -1,20 +1,15 @@
+#!/usr/bin/env python3
 """
 Migration script to add finance_enabled column to bots table.
-Run this once: python migrate_finance_enabled.py
 """
 
 import sqlite3
 import os
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "signal_bot.db")
-
+DB_PATH = os.path.join(os.path.dirname(__file__), 'signal_bot.db')
 
 def migrate():
-    if not os.path.exists(DB_PATH):
-        print(f"Database not found at {DB_PATH}")
-        print("It will be created with the new schema on first run.")
-        return
-
+    """Add finance_enabled column to bots table."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
@@ -22,19 +17,22 @@ def migrate():
     cursor.execute("PRAGMA table_info(bots)")
     columns = [col[1] for col in cursor.fetchall()]
 
-    if "finance_enabled" in columns:
-        print("Column 'finance_enabled' already exists. Nothing to do.")
+    if 'finance_enabled' in columns:
+        print("Column 'finance_enabled' already exists. No migration needed.")
         conn.close()
         return
 
-    # Add the new column
+    # Add the column
     print("Adding 'finance_enabled' column to bots table...")
-    cursor.execute("ALTER TABLE bots ADD COLUMN finance_enabled BOOLEAN DEFAULT 0")
+    cursor.execute("""
+        ALTER TABLE bots
+        ADD COLUMN finance_enabled BOOLEAN DEFAULT 0
+    """)
+
     conn.commit()
-    print("Migration complete!")
+    print("Migration complete! finance_enabled column added (default: disabled)")
 
     conn.close()
 
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     migrate()
