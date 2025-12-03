@@ -419,16 +419,18 @@ def format_response_with_citations(text: str, annotations: list) -> str:
     return modified_text + sources_section
 
 
-def call_openrouter_responses_api(prompt, conversation_history, model, system_prompt):
-    """Call the OpenRouter Responses API with web search enabled.
+def call_openrouter_responses_api(prompt, conversation_history, model, system_prompt, tools=None, tool_executor=None):
+    """Call the OpenRouter Responses API with web search and optional function tools.
 
-    This API returns citation annotations for web search results.
+    This API returns citation annotations for web search results and supports tool calling.
 
     Args:
         prompt: The current user message
         conversation_history: List of previous messages
         model: The model ID to use
         system_prompt: System prompt for the model
+        tools: Optional list of function tool schemas
+        tool_executor: Optional callback function(name, args) -> result to execute tool calls
 
     Returns:
         Formatted response string with citations, or None on error
@@ -480,10 +482,24 @@ def call_openrouter_responses_api(prompt, conversation_history, model, system_pr
             "content": prompt_text
         })
 
+        # Build tools array - always include web_search, add function tools if provided
+        api_tools = [{"type": "web_search"}]
+        if tools:
+            # Convert OpenAI-style tools to Responses API format
+            for tool in tools:
+                if tool.get("type") == "function":
+                    api_tools.append({
+                        "type": "function",
+                        "name": tool["function"]["name"],
+                        "description": tool["function"].get("description", ""),
+                        "parameters": tool["function"].get("parameters", {})
+                    })
+
         payload = {
             "model": openrouter_model,
             "input": input_messages,
-            "tools": [{"type": "web_search"}],  # Enable web search
+            "tools": api_tools,
+            "tool_choice": "auto",
             "max_output_tokens": 4000,
             "temperature": 1
         }
@@ -493,6 +509,8 @@ def call_openrouter_responses_api(prompt, conversation_history, model, system_pr
         print(f"  Model: {openrouter_model}")
         print(f"  Messages: {len(input_messages)}")
         print(f"  Web search: ENABLED")
+        if tools:
+            print(f"  Function tools: {[t['function']['name'] for t in tools if t.get('type') == 'function']}")
 
         response = requests.post(
             "https://openrouter.ai/api/v1/responses",
@@ -506,10 +524,11 @@ def call_openrouter_responses_api(prompt, conversation_history, model, system_pr
         if response.status_code == 200:
             response_data = response.json()
 
-            # Extract text and annotations from response
+            # Extract output items
             output = response_data.get("output", [])
             text = ""
             annotations = []
+            function_calls = []
 
             for item in output:
                 if item.get("type") == "message":
@@ -517,8 +536,36 @@ def call_openrouter_responses_api(prompt, conversation_history, model, system_pr
                         if content.get("type") == "output_text":
                             text = content.get("text", "")
                             annotations = content.get("annotations", [])
-                            break
-                    break
+                elif item.get("type") == "function_call":
+                    function_calls.append(item)
+
+            # Handle function calls if present and we have an executor
+            if function_calls and tool_executor:
+                print(f"[OpenRouter Responses API] Processing {len(function_calls)} function call(s)")
+
+                for fc in function_calls:
+                    func_name = fc.get("name")
+                    func_args = fc.get("arguments", "{}")
+                    call_id = fc.get("call_id", fc.get("id", ""))
+
+                    print(f"[OpenRouter Responses API] Executing tool: {func_name}")
+                    try:
+                        import json
+                        args_dict = json.loads(func_args) if isinstance(func_args, str) else func_args
+                        tool_result = tool_executor(func_name, args_dict)
+                        print(f"[OpenRouter Responses API] Tool result: {str(tool_result)[:200]}")
+
+                        # For image generation, the tool executor handles sending the image
+                        # We can return a simple confirmation or the text response
+                        if func_name == "generate_image" and tool_result:
+                            # Image was generated, return text if any, or empty string to indicate success
+                            if text:
+                                formatted_response = format_response_with_citations(text, annotations)
+                                return formatted_response
+                            return ""  # Image sent separately, return empty to indicate handled
+
+                    except Exception as e:
+                        print(f"[OpenRouter Responses API] Tool execution error: {e}")
 
             if text:
                 # Format response with citations
@@ -561,11 +608,15 @@ def call_openrouter_api(
     # Route web search requests to Responses API for citation support
     if web_search:
         print(f"[OpenRouter] Web search enabled, using Responses API for citations")
-        result = call_openrouter_responses_api(prompt, conversation_history, model, system_prompt)
-        if result:
+        result = call_openrouter_responses_api(
+            prompt, conversation_history, model, system_prompt,
+            tools=tools, tool_executor=tool_executor
+        )
+        if result is not None:  # None could mean image was sent separately
             return result
+        # Check if we got a tool call that was handled (returns None but tool ran)
         # Fall back to Chat Completions API if Responses API fails
-        print(f"[OpenRouter] Responses API failed, falling back to Chat Completions with :online suffix")
+        print(f"[OpenRouter] Responses API returned None, falling back to Chat Completions with :online suffix")
 
     try:
         headers = {
