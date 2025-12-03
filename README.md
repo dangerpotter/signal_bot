@@ -19,6 +19,8 @@ A web-based management dashboard for running AI bots in Signal group chats. Conf
 - **Image Generation**: `!image "prompt"` command generates images via Gemini
 - **Emoji Reactions**: Random animal emoji reactions + LLM-powered "funny detection"
 - **Web Search**: Real-time web search with inline citations and source links
+- **Weather Tool**: Real-time weather data via WeatherAPI.com (toggle per-bot)
+- **Finance Tools**: Stock quotes, analyst ratings, dividends, financials, and more via Yahoo Finance (toggle per-bot)
 
 ### Memory System
 - **Rolling Context**: Maintains a configurable window of recent messages (default 25)
@@ -104,9 +106,31 @@ python run_signal.py --bots-only  # Headless mode - bots only, no web UI
 | **Random Chance %** | Chance to respond to any message (0-100) |
 | **Image Generation** | Enable `!image` command |
 | **Web Search** | Enable web search with citation sources |
+| **Weather Tool** | Enable weather queries via WeatherAPI.com |
+| **Finance Tools** | Enable stock/crypto data via Yahoo Finance |
 | **Reactions** | Enable emoji reactions to messages |
 | **Reaction Chance %** | Random animal emoji chance |
 | **LLM Reactions** | Use AI to detect funny messages |
+
+### Finance Tools (via yfinance)
+
+When finance tools are enabled, bots can answer questions about stocks, crypto, and markets:
+
+| Tool | Description |
+|------|-------------|
+| **get_stock_quote** | Current price, P/E ratio, market cap, 52-week range |
+| **get_stock_news** | Recent news articles for a ticker |
+| **search_stocks** | Find ticker symbols by company name |
+| **get_top_stocks** | Top performers by sector |
+| **get_price_history** | Historical OHLCV data |
+| **get_options** | Options chain with strikes, IV, greeks |
+| **get_earnings** | Earnings history, EPS, next earnings date |
+| **get_analyst_ratings** | Buy/hold/sell counts, price targets, upgrades/downgrades |
+| **get_dividends** | Yield, ex-dividend date, payout ratio, payment history |
+| **get_financials** | Revenue, margins, debt, cash flow highlights |
+| **get_holders** | Institutional holders, insider transactions |
+
+Supports stocks (AAPL), ETFs (SPY), and crypto (BTC-USD).
 
 ### Memory Settings (config_signal.py)
 
@@ -164,6 +188,8 @@ signal_bot/
 ├── member_memory_scanner.py # Extracts member info from chats (background scan)
 ├── realtime_memory.py      # Instant memory saves ("remember I prefer...")
 ├── trigger_logic.py        # Mention detection, random chance
+├── weather_client.py       # WeatherAPI.com integration
+├── finance_client.py       # Yahoo Finance integration (yfinance)
 ├── models.py               # SQLite database models
 └── config_signal.py        # Signal-specific settings
 

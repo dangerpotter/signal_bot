@@ -140,6 +140,14 @@ class SignalToolExecutor:
             return self._execute_options(arguments)
         if function_name == "get_earnings":
             return self._execute_earnings(arguments)
+        if function_name == "get_analyst_ratings":
+            return self._execute_analyst_ratings(arguments)
+        if function_name == "get_dividends":
+            return self._execute_dividends(arguments)
+        if function_name == "get_financials":
+            return self._execute_financials(arguments)
+        if function_name == "get_holders":
+            return self._execute_holders(arguments)
 
         if function_name != "generate_image":
             return {"success": False, "message": f"Unsupported function: {function_name}"}
@@ -410,6 +418,118 @@ class SignalToolExecutor:
         except Exception as e:
             logger.error(f"Error getting earnings: {e}")
             return {"success": False, "message": f"Error getting earnings: {str(e)}"}
+
+    def _execute_analyst_ratings(self, arguments: dict) -> dict:
+        """Execute the get_analyst_ratings tool call."""
+        if not self.bot_data.get('finance_enabled'):
+            return {"success": False, "message": "Finance tools disabled for this bot"}
+
+        symbol = arguments.get("symbol", "")
+        if not symbol:
+            return {"success": False, "message": "Symbol is required"}
+
+        try:
+            from signal_bot.finance_client import get_analyst_ratings_sync
+
+            result = get_analyst_ratings_sync(symbol)
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": f"Retrieved analyst ratings for {result.get('name', symbol)}"
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting analyst ratings: {e}")
+            return {"success": False, "message": f"Error getting analyst ratings: {str(e)}"}
+
+    def _execute_dividends(self, arguments: dict) -> dict:
+        """Execute the get_dividends tool call."""
+        if not self.bot_data.get('finance_enabled'):
+            return {"success": False, "message": "Finance tools disabled for this bot"}
+
+        symbol = arguments.get("symbol", "")
+        include_history = arguments.get("include_history", False)
+
+        if not symbol:
+            return {"success": False, "message": "Symbol is required"}
+
+        try:
+            from signal_bot.finance_client import get_dividends_sync
+
+            result = get_dividends_sync(symbol, include_history)
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": f"Retrieved dividend data for {result.get('name', symbol)}"
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting dividends: {e}")
+            return {"success": False, "message": f"Error getting dividends: {str(e)}"}
+
+    def _execute_financials(self, arguments: dict) -> dict:
+        """Execute the get_financials tool call."""
+        if not self.bot_data.get('finance_enabled'):
+            return {"success": False, "message": "Finance tools disabled for this bot"}
+
+        symbol = arguments.get("symbol", "")
+        period = arguments.get("period", "annual")
+
+        if not symbol:
+            return {"success": False, "message": "Symbol is required"}
+
+        try:
+            from signal_bot.finance_client import get_financials_sync
+
+            result = get_financials_sync(symbol, period)
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": f"Retrieved {period} financials for {result.get('name', symbol)}"
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting financials: {e}")
+            return {"success": False, "message": f"Error getting financials: {str(e)}"}
+
+    def _execute_holders(self, arguments: dict) -> dict:
+        """Execute the get_holders tool call."""
+        if not self.bot_data.get('finance_enabled'):
+            return {"success": False, "message": "Finance tools disabled for this bot"}
+
+        symbol = arguments.get("symbol", "")
+        if not symbol:
+            return {"success": False, "message": "Symbol is required"}
+
+        try:
+            from signal_bot.finance_client import get_holders_sync
+
+            result = get_holders_sync(symbol)
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": f"Retrieved holder data for {result.get('name', symbol)}"
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting holders: {e}")
+            return {"success": False, "message": f"Error getting holders: {str(e)}"}
 
 
 def create_tool_executor_callback(executor: ToolExecutor) -> Callable[[str, dict], dict]:

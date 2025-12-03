@@ -307,6 +307,89 @@ FINANCE_TOOLS = [
                 "additionalProperties": False
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_analyst_ratings",
+            "description": "Get analyst recommendations (buy/hold/sell counts), price targets (low/mean/high), and recent upgrades/downgrades. Shows what Wall Street analysts think about a stock.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "Ticker symbol (e.g., 'AAPL', 'TSLA', 'GOOGL')"
+                    }
+                },
+                "required": ["symbol"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_dividends",
+            "description": "Get dividend information including yield, payment dates, ex-dividend date, payout ratio, and stock split history. Use this when someone asks about dividends or income investing.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "Ticker symbol (e.g., 'AAPL', 'KO', 'JNJ', 'VYM')"
+                    },
+                    "include_history": {
+                        "type": "boolean",
+                        "description": "Include last 8 dividend payment amounts",
+                        "default": False
+                    }
+                },
+                "required": ["symbol"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_financials",
+            "description": "Get key financial metrics: revenue, profit margins, assets, debt, and cash flow. Returns highlights from income statement, balance sheet, and cash flow statement - not full statements.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "Ticker symbol (e.g., 'AAPL', 'MSFT', 'AMZN')"
+                    },
+                    "period": {
+                        "type": "string",
+                        "description": "Annual or quarterly financials",
+                        "enum": ["annual", "quarterly"],
+                        "default": "annual"
+                    }
+                },
+                "required": ["symbol"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_holders",
+            "description": "Get ownership information: percentage held by insiders and institutions, top institutional holders (Vanguard, Blackrock, etc.), and recent insider buying/selling activity.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "Ticker symbol (e.g., 'AAPL', 'NVDA', 'TSLA')"
+                    }
+                },
+                "required": ["symbol"],
+                "additionalProperties": False
+            }
+        }
     }
 ]
 

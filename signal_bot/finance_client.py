@@ -541,3 +541,455 @@ def get_option_chain_sync(symbol: str, option_type: str = "both", date: Optional
 def get_earnings_sync(symbol: str, period: str = "quarterly") -> dict:
     """Synchronous wrapper for get_earnings."""
     return get_earnings(symbol, period)
+
+
+def get_analyst_ratings(symbol: str) -> dict:
+    """
+    Get analyst recommendations and price targets.
+
+    Args:
+        symbol: Ticker symbol (e.g., 'AAPL', 'TSLA')
+
+    Returns:
+        dict with analyst ratings data or error
+    """
+    if not symbol:
+        return {"error": "Symbol is required"}
+
+    try:
+        import yfinance as yf
+
+        ticker = yf.Ticker(symbol.upper())
+        info = ticker.info
+
+        if not info or info.get("regularMarketPrice") is None:
+            return {"error": f"Could not find data for symbol: {symbol}"}
+
+        result = {
+            "symbol": info.get("symbol", symbol.upper()),
+            "name": info.get("longName") or info.get("shortName", "Unknown"),
+            "current_price": info.get("regularMarketPrice"),
+            "currency": info.get("currency", "USD"),
+        }
+
+        # Get price targets
+        try:
+            targets = ticker.analyst_price_targets
+            if targets is not None and not targets.empty if hasattr(targets, 'empty') else targets:
+                if isinstance(targets, dict):
+                    result["price_targets"] = {
+                        "current": targets.get("current"),
+                        "low": targets.get("low"),
+                        "high": targets.get("high"),
+                        "mean": targets.get("mean"),
+                        "median": targets.get("median"),
+                        "number_of_analysts": targets.get("numberOfAnalystOpinions"),
+                    }
+                    # Calculate upside if we have current price and mean target
+                    if result["current_price"] and targets.get("mean"):
+                        upside = ((targets["mean"] - result["current_price"]) / result["current_price"]) * 100
+                        result["price_targets"]["upside_percent"] = round(upside, 2)
+        except Exception:
+            result["price_targets"] = None
+
+        # Get recommendation summary (buy/hold/sell counts)
+        try:
+            rec_summary = ticker.recommendations_summary
+            if rec_summary is not None and not rec_summary.empty:
+                # Get the most recent row
+                latest = rec_summary.iloc[0] if len(rec_summary) > 0 else None
+                if latest is not None:
+                    result["recommendation_summary"] = {
+                        "strong_buy": int(latest.get("strongBuy", 0)),
+                        "buy": int(latest.get("buy", 0)),
+                        "hold": int(latest.get("hold", 0)),
+                        "sell": int(latest.get("sell", 0)),
+                        "strong_sell": int(latest.get("strongSell", 0)),
+                    }
+                    # Calculate consensus
+                    total = sum(result["recommendation_summary"].values())
+                    if total > 0:
+                        buys = result["recommendation_summary"]["strong_buy"] + result["recommendation_summary"]["buy"]
+                        sells = result["recommendation_summary"]["sell"] + result["recommendation_summary"]["strong_sell"]
+                        if buys > sells * 2:
+                            result["recommendation_summary"]["consensus"] = "Strong Buy"
+                        elif buys > sells:
+                            result["recommendation_summary"]["consensus"] = "Buy"
+                        elif sells > buys:
+                            result["recommendation_summary"]["consensus"] = "Sell"
+                        else:
+                            result["recommendation_summary"]["consensus"] = "Hold"
+        except Exception:
+            result["recommendation_summary"] = None
+
+        # Get recent upgrades/downgrades
+        try:
+            upgrades = ticker.upgrades_downgrades
+            if upgrades is not None and not upgrades.empty:
+                recent_changes = []
+                for idx, row in upgrades.head(5).iterrows():
+                    change = {
+                        "date": str(idx.date()) if hasattr(idx, 'date') else str(idx),
+                        "firm": row.get("Firm", "Unknown"),
+                        "to_grade": row.get("ToGrade", ""),
+                        "from_grade": row.get("FromGrade", ""),
+                        "action": row.get("Action", ""),
+                    }
+                    recent_changes.append(change)
+                result["recent_changes"] = recent_changes
+        except Exception:
+            result["recent_changes"] = []
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error getting analyst ratings for {symbol}: {e}")
+        return {"error": f"Failed to get analyst ratings: {str(e)}"}
+
+
+def get_dividends(symbol: str, include_history: bool = False) -> dict:
+    """
+    Get dividend information including yield, payment dates, and history.
+
+    Args:
+        symbol: Ticker symbol
+        include_history: Include dividend payment history
+
+    Returns:
+        dict with dividend data or error
+    """
+    if not symbol:
+        return {"error": "Symbol is required"}
+
+    try:
+        import yfinance as yf
+        from datetime import datetime
+
+        ticker = yf.Ticker(symbol.upper())
+        info = ticker.info
+
+        if not info or info.get("regularMarketPrice") is None:
+            return {"error": f"Could not find data for symbol: {symbol}"}
+
+        result = {
+            "symbol": info.get("symbol", symbol.upper()),
+            "name": info.get("longName") or info.get("shortName", "Unknown"),
+            "current_price": info.get("regularMarketPrice"),
+            "currency": info.get("currency", "USD"),
+        }
+
+        # Dividend info from ticker.info
+        dividend_yield = info.get("dividendYield")
+        if dividend_yield:
+            result["dividend_yield"] = round(dividend_yield * 100, 2)  # Convert to percentage
+        else:
+            result["dividend_yield"] = None
+
+        result["annual_dividend"] = info.get("dividendRate")
+        result["payout_ratio"] = round(info.get("payoutRatio", 0) * 100, 2) if info.get("payoutRatio") else None
+        result["five_year_avg_yield"] = round(info.get("fiveYearAvgDividendYield", 0), 2) if info.get("fiveYearAvgDividendYield") else None
+
+        # Ex-dividend date
+        ex_div_timestamp = info.get("exDividendDate")
+        if ex_div_timestamp:
+            try:
+                result["ex_dividend_date"] = datetime.fromtimestamp(ex_div_timestamp).strftime("%Y-%m-%d")
+            except Exception:
+                result["ex_dividend_date"] = None
+        else:
+            result["ex_dividend_date"] = None
+
+        # Dividend payment history
+        if include_history:
+            try:
+                dividends = ticker.dividends
+                if dividends is not None and not dividends.empty:
+                    recent_payments = []
+                    for date, amount in dividends.tail(8).items():
+                        recent_payments.append({
+                            "date": str(date.date()) if hasattr(date, 'date') else str(date),
+                            "amount": round(float(amount), 4),
+                        })
+                    result["recent_payments"] = list(reversed(recent_payments))  # Most recent first
+            except Exception:
+                result["recent_payments"] = []
+
+        # Stock splits
+        try:
+            splits = ticker.splits
+            if splits is not None and not splits.empty:
+                split_history = []
+                for date, ratio in splits.tail(5).items():
+                    split_history.append({
+                        "date": str(date.date()) if hasattr(date, 'date') else str(date),
+                        "ratio": f"{int(ratio)}:1" if ratio > 1 else f"1:{int(1/ratio)}" if ratio < 1 else "1:1",
+                    })
+                result["splits"] = list(reversed(split_history))
+        except Exception:
+            result["splits"] = []
+
+        # Check if this is a non-dividend paying stock
+        if not result["dividend_yield"] and not result["annual_dividend"]:
+            result["message"] = "This security does not pay dividends"
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error getting dividends for {symbol}: {e}")
+        return {"error": f"Failed to get dividend data: {str(e)}"}
+
+
+def get_financials(symbol: str, period: str = "annual") -> dict:
+    """
+    Get key financial metrics from income statement, balance sheet, and cash flow.
+
+    Args:
+        symbol: Ticker symbol
+        period: 'annual' or 'quarterly'
+
+    Returns:
+        dict with financial highlights or error
+    """
+    if not symbol:
+        return {"error": "Symbol is required"}
+
+    period = period.lower() if period else "annual"
+    if period not in ["annual", "quarterly"]:
+        period = "annual"
+
+    try:
+        import yfinance as yf
+
+        ticker = yf.Ticker(symbol.upper())
+        info = ticker.info
+
+        if not info or info.get("regularMarketPrice") is None:
+            return {"error": f"Could not find data for symbol: {symbol}"}
+
+        result = {
+            "symbol": info.get("symbol", symbol.upper()),
+            "name": info.get("longName") or info.get("shortName", "Unknown"),
+            "currency": info.get("currency", "USD"),
+            "period": period,
+        }
+
+        # Get income statement
+        try:
+            if period == "quarterly":
+                income_stmt = ticker.quarterly_income_stmt
+            else:
+                income_stmt = ticker.income_stmt
+
+            if income_stmt is not None and not income_stmt.empty:
+                # Get most recent column
+                latest = income_stmt.iloc[:, 0] if len(income_stmt.columns) > 0 else None
+                if latest is not None:
+                    total_revenue = latest.get("Total Revenue")
+                    gross_profit = latest.get("Gross Profit")
+                    operating_income = latest.get("Operating Income")
+                    net_income = latest.get("Net Income")
+
+                    result["income_highlights"] = {
+                        "total_revenue": int(total_revenue) if total_revenue else None,
+                        "gross_profit": int(gross_profit) if gross_profit else None,
+                        "operating_income": int(operating_income) if operating_income else None,
+                        "net_income": int(net_income) if net_income else None,
+                    }
+
+                    # Calculate margins
+                    if total_revenue and gross_profit:
+                        result["income_highlights"]["gross_margin"] = round((gross_profit / total_revenue) * 100, 2)
+                    if total_revenue and operating_income:
+                        result["income_highlights"]["operating_margin"] = round((operating_income / total_revenue) * 100, 2)
+                    if total_revenue and net_income:
+                        result["income_highlights"]["net_margin"] = round((net_income / total_revenue) * 100, 2)
+
+                    # Get fiscal year end date
+                    result["fiscal_period_end"] = str(income_stmt.columns[0].date()) if hasattr(income_stmt.columns[0], 'date') else str(income_stmt.columns[0])
+        except Exception as e:
+            logger.debug(f"Error getting income statement: {e}")
+            result["income_highlights"] = None
+
+        # Get balance sheet
+        try:
+            if period == "quarterly":
+                balance_sheet = ticker.quarterly_balance_sheet
+            else:
+                balance_sheet = ticker.balance_sheet
+
+            if balance_sheet is not None and not balance_sheet.empty:
+                latest = balance_sheet.iloc[:, 0] if len(balance_sheet.columns) > 0 else None
+                if latest is not None:
+                    total_assets = latest.get("Total Assets")
+                    total_debt = latest.get("Total Debt")
+                    total_cash = latest.get("Cash And Cash Equivalents")
+                    stockholders_equity = latest.get("Stockholders Equity")
+
+                    result["balance_sheet_highlights"] = {
+                        "total_assets": int(total_assets) if total_assets else None,
+                        "total_debt": int(total_debt) if total_debt else None,
+                        "total_cash": int(total_cash) if total_cash else None,
+                        "stockholders_equity": int(stockholders_equity) if stockholders_equity else None,
+                    }
+
+                    # Calculate debt to equity
+                    if total_debt and stockholders_equity and stockholders_equity != 0:
+                        result["balance_sheet_highlights"]["debt_to_equity"] = round(total_debt / stockholders_equity, 2)
+        except Exception as e:
+            logger.debug(f"Error getting balance sheet: {e}")
+            result["balance_sheet_highlights"] = None
+
+        # Get cash flow
+        try:
+            if period == "quarterly":
+                cashflow = ticker.quarterly_cashflow
+            else:
+                cashflow = ticker.cashflow
+
+            if cashflow is not None and not cashflow.empty:
+                latest = cashflow.iloc[:, 0] if len(cashflow.columns) > 0 else None
+                if latest is not None:
+                    operating_cf = latest.get("Operating Cash Flow")
+                    capex = latest.get("Capital Expenditure")
+                    free_cf = latest.get("Free Cash Flow")
+
+                    result["cash_flow_highlights"] = {
+                        "operating_cash_flow": int(operating_cf) if operating_cf else None,
+                        "capital_expenditure": int(capex) if capex else None,
+                        "free_cash_flow": int(free_cf) if free_cf else None,
+                    }
+        except Exception as e:
+            logger.debug(f"Error getting cash flow: {e}")
+            result["cash_flow_highlights"] = None
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error getting financials for {symbol}: {e}")
+        return {"error": f"Failed to get financial data: {str(e)}"}
+
+
+def get_holders(symbol: str) -> dict:
+    """
+    Get ownership information including institutional holders and insider transactions.
+
+    Args:
+        symbol: Ticker symbol
+
+    Returns:
+        dict with holder data or error
+    """
+    if not symbol:
+        return {"error": "Symbol is required"}
+
+    try:
+        import yfinance as yf
+
+        ticker = yf.Ticker(symbol.upper())
+        info = ticker.info
+
+        if not info or info.get("regularMarketPrice") is None:
+            return {"error": f"Could not find data for symbol: {symbol}"}
+
+        result = {
+            "symbol": info.get("symbol", symbol.upper()),
+            "name": info.get("longName") or info.get("shortName", "Unknown"),
+        }
+
+        # Get major holders summary
+        try:
+            major_holders = ticker.major_holders
+            if major_holders is not None and not major_holders.empty:
+                holders_dict = {}
+                for idx, row in major_holders.iterrows():
+                    value = row[0] if len(row) > 0 else None
+                    label = row[1] if len(row) > 1 else str(idx)
+                    if "insider" in str(label).lower():
+                        holders_dict["insider_percent"] = value
+                    elif "institution" in str(label).lower() and "percent" in str(label).lower():
+                        holders_dict["institution_percent"] = value
+                    elif "institution" in str(label).lower() and "float" in str(label).lower():
+                        holders_dict["institution_float_percent"] = value
+                result["ownership_summary"] = holders_dict if holders_dict else None
+        except Exception:
+            result["ownership_summary"] = None
+
+        # Get top institutional holders
+        try:
+            inst_holders = ticker.institutional_holders
+            if inst_holders is not None and not inst_holders.empty:
+                top_institutions = []
+                for _, row in inst_holders.head(10).iterrows():
+                    holder = {
+                        "name": row.get("Holder", "Unknown"),
+                        "shares": int(row.get("Shares", 0)),
+                        "value": int(row.get("Value", 0)),
+                        "percent_out": round(float(row.get("% Out", 0)) * 100, 2) if row.get("% Out") else None,
+                    }
+                    # Format date reported
+                    date_reported = row.get("Date Reported")
+                    if date_reported:
+                        holder["date_reported"] = str(date_reported.date()) if hasattr(date_reported, 'date') else str(date_reported)
+                    top_institutions.append(holder)
+                result["top_institutions"] = top_institutions
+        except Exception:
+            result["top_institutions"] = []
+
+        # Get recent insider transactions
+        try:
+            insider_txns = ticker.insider_transactions
+            if insider_txns is not None and not insider_txns.empty:
+                recent_activity = []
+                for _, row in insider_txns.head(10).iterrows():
+                    txn = {
+                        "insider": row.get("Insider", "Unknown"),
+                        "position": row.get("Position", ""),
+                        "transaction": row.get("Transaction", ""),
+                        "shares": int(row.get("Shares", 0)) if row.get("Shares") else None,
+                        "value": int(row.get("Value", 0)) if row.get("Value") else None,
+                    }
+                    # Format date
+                    start_date = row.get("Start Date")
+                    if start_date:
+                        txn["date"] = str(start_date.date()) if hasattr(start_date, 'date') else str(start_date)
+                    recent_activity.append(txn)
+                result["recent_insider_activity"] = recent_activity
+
+                # Calculate simple sentiment
+                buys = sum(1 for t in recent_activity if "buy" in str(t.get("transaction", "")).lower() or "purchase" in str(t.get("transaction", "")).lower())
+                sells = sum(1 for t in recent_activity if "sell" in str(t.get("transaction", "")).lower() or "sale" in str(t.get("transaction", "")).lower())
+                if buys > sells * 2:
+                    result["insider_sentiment"] = "Bullish"
+                elif sells > buys * 2:
+                    result["insider_sentiment"] = "Bearish"
+                else:
+                    result["insider_sentiment"] = "Neutral"
+        except Exception:
+            result["recent_insider_activity"] = []
+            result["insider_sentiment"] = "Unknown"
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error getting holders for {symbol}: {e}")
+        return {"error": f"Failed to get holder data: {str(e)}"}
+
+
+def get_analyst_ratings_sync(symbol: str) -> dict:
+    """Synchronous wrapper for get_analyst_ratings."""
+    return get_analyst_ratings(symbol)
+
+
+def get_dividends_sync(symbol: str, include_history: bool = False) -> dict:
+    """Synchronous wrapper for get_dividends."""
+    return get_dividends(symbol, include_history)
+
+
+def get_financials_sync(symbol: str, period: str = "annual") -> dict:
+    """Synchronous wrapper for get_financials."""
+    return get_financials(symbol, period)
+
+
+def get_holders_sync(symbol: str) -> dict:
+    """Synchronous wrapper for get_holders."""
+    return get_holders(symbol)
