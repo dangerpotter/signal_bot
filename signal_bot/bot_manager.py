@@ -154,6 +154,7 @@ class SignalBotManager:
                 'weather_enabled': getattr(bot, 'weather_enabled', False),
                 'finance_enabled': getattr(bot, 'finance_enabled', False),
                 'time_enabled': getattr(bot, 'time_enabled', False),
+                'wikipedia_enabled': getattr(bot, 'wikipedia_enabled', False),
                 'reaction_enabled': bot.reaction_enabled,
                 'reaction_chance_percent': bot.reaction_chance_percent,
                 'llm_reaction_enabled': bot.llm_reaction_enabled,
@@ -665,12 +666,16 @@ class SignalBotManager:
         envelope = message.get("envelope", {})
         data_message = envelope.get("dataMessage", {})
 
-        # Debug: log all incoming messages (safely encode for Windows console)
+        # Extract source name for logging
         source_name = envelope.get('sourceName', 'Unknown')
-        logger.info(f"Received message envelope: {source_name} - dataMessage keys: {list(data_message.keys()) if data_message else 'None'}")
 
         if not data_message:
-            return  # Not a data message
+            # Non-data envelopes (receipts, typing indicators) - log at debug level to reduce noise
+            logger.debug(f"Received non-data envelope from: {source_name}")
+            return
+
+        # Log actual messages at info level
+        logger.info(f"Received message envelope: {source_name} - dataMessage keys: {list(data_message.keys())}")
 
         # Get group info
         group_info = data_message.get("groupInfo", {})
@@ -697,6 +702,7 @@ class SignalBotManager:
                 bot_data['weather_enabled'] = getattr(bot, 'weather_enabled', False)
                 bot_data['finance_enabled'] = getattr(bot, 'finance_enabled', False)
                 bot_data['time_enabled'] = getattr(bot, 'time_enabled', False)
+                bot_data['wikipedia_enabled'] = getattr(bot, 'wikipedia_enabled', False)
                 bot_data['reaction_enabled'] = bot.reaction_enabled
                 bot_data['reaction_chance_percent'] = bot.reaction_chance_percent
                 bot_data['llm_reaction_enabled'] = bot.llm_reaction_enabled

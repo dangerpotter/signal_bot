@@ -232,6 +232,7 @@ class MessageLog(db.Model):
     bot_id = db.Column(db.String(50), nullable=True)  # If sent by a bot
     has_image = db.Column(db.Boolean, default=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    signal_timestamp = db.Column(db.BigInteger, nullable=True)  # Signal's message timestamp (ms) for deduplication
 
     # Relationships
     group = db.relationship("GroupConnection", back_populates="messages")
@@ -246,6 +247,7 @@ class MessageLog(db.Model):
             "bot_id": self.bot_id,
             "has_image": self.has_image,
             "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+            "signal_timestamp": self.signal_timestamp,
         }
 
 

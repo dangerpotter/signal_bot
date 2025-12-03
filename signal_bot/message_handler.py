@@ -84,13 +84,14 @@ class MessageHandler:
         """
         memory = self.get_memory_manager(group_id)
 
-        # Log incoming message
+        # Log incoming message (with Signal timestamp for deduplication)
         memory.add_message(
             sender_name=sender_name,
             content=message_text or "[Image]",
             is_bot=False,
             sender_id=sender_id,
-            has_image=bool(incoming_images)
+            has_image=bool(incoming_images),
+            signal_timestamp=message_timestamp
         )
 
         # Check for real-time memory save (e.g., "remember I prefer...")
@@ -159,6 +160,13 @@ class MessageHandler:
 
             # Parse text for styling (markdown-like -> Signal styles)
             styled_text, text_styles = self._parse_text_styles(cleaned_response)
+
+            # Strip bot name prefix if AI included it (e.g., "AI-Labo: Hello" -> "Hello")
+            bot_name = bot_data.get('name', '')
+            if bot_name and styled_text.startswith(f"{bot_name}: "):
+                styled_text = styled_text[len(f"{bot_name}: "):]
+            elif bot_name and styled_text.startswith(f"{bot_name}:"):
+                styled_text = styled_text[len(f"{bot_name}:"):]
 
             # Determine if we should quote/reply to the original message
             # - Always quote if triggered by mention or direct command
@@ -241,6 +249,22 @@ class MessageHandler:
         context_window = bot_data.get('context_window', 25)
         context_messages = memory.get_context_messages(limit=context_window)
 
+        # DEBUG: Log context before filtering
+        logger.info(f"[DEBUG] Context retrieved: {len(context_messages)} messages, trigger: '{trigger_message[:50] if trigger_message else 'None'}...'")
+        if context_messages:
+            last_content = context_messages[-1].get('content', '')
+            logger.info(f"[DEBUG] Last context msg: '{last_content[:50]}...'")
+            logger.info(f"[DEBUG] Match check: last==trigger? {last_content == trigger_message}")
+
+        # Exclude the current message from context - it was already logged to DB
+        # but will be sent separately as the prompt (to avoid duplication)
+        if context_messages and context_messages[-1].get('content') == trigger_message:
+            logger.info(f"[DEBUG] Excluding last message from context (matches trigger)")
+            context_messages = context_messages[:-1]
+
+        # DEBUG: Log final context
+        logger.info(f"[DEBUG] Final context: {len(context_messages)} messages")
+
         # Maybe inject a memory callback
         memory_callback = memory.maybe_get_memory_callback()
 
@@ -272,8 +296,20 @@ class MessageHandler:
         formatted_messages = []
         for msg in context_messages:
             role = msg["role"]
-            content = f"{msg['name']}: {msg['content']}" if msg.get("name") else msg["content"]
+            # Only add name prefix for user messages (to distinguish group members)
+            # Don't prefix assistant messages - the role already identifies them
+            if role == "user" and msg.get("name"):
+                content = f"{msg['name']}: {msg['content']}"
+            else:
+                content = msg["content"]
             formatted_messages.append({"role": role, "content": content})
+
+        # DEBUG: Log ALL messages being sent to API
+        logger.info(f"[DEBUG] ===== CONTEXT DUMP ({len(formatted_messages)} messages) =====")
+        for i, msg in enumerate(formatted_messages):
+            content_preview = msg['content'][:60].replace('\n', ' ') if msg.get('content') else 'None'
+            logger.info(f"[DEBUG] [{i}] {msg['role']}: {content_preview}...")
+        logger.info(f"[DEBUG] ===== PROMPT: {trigger_message[:60] if trigger_message else 'None'}... =====")
 
         try:
             # Determine if we should use native tool calling

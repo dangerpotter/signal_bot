@@ -26,9 +26,25 @@ class MemoryManager:
         is_bot: bool = False,
         bot_id: Optional[str] = None,
         sender_id: Optional[str] = None,
-        has_image: bool = False
-    ) -> MessageLog:
-        """Add a message to the rolling log."""
+        has_image: bool = False,
+        signal_timestamp: Optional[int] = None
+    ) -> Optional[MessageLog]:
+        """Add a message to the rolling log.
+
+        Args:
+            signal_timestamp: Signal's unique message timestamp (milliseconds) for deduplication.
+                            If provided and a message with this timestamp already exists,
+                            the existing message is returned instead of creating a duplicate.
+        """
+        # Deduplication: skip if this exact message already exists (by Signal timestamp)
+        if signal_timestamp:
+            existing = MessageLog.query.filter_by(
+                group_id=self.group_id,
+                signal_timestamp=signal_timestamp
+            ).first()
+            if existing:
+                return existing  # Already logged, skip duplicate
+
         message = MessageLog(
             group_id=self.group_id,
             sender_name=sender_name,
@@ -37,7 +53,8 @@ class MemoryManager:
             is_bot=is_bot,
             bot_id=bot_id,
             has_image=has_image,
-            timestamp=datetime.utcnow()
+            timestamp=datetime.utcnow(),
+            signal_timestamp=signal_timestamp
         )
         db.session.add(message)
         db.session.commit()
