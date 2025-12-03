@@ -280,11 +280,12 @@ class MessageHandler:
             use_tools = None
             tool_executor = None
 
-            # Check if any tools are enabled (image generation, weather, or finance)
+            # Check if any tools are enabled (image generation, weather, finance, or time)
             image_enabled = bot_data.get('image_generation_enabled', False)
             weather_enabled = bot_data.get('weather_enabled', False)
             finance_enabled = bot_data.get('finance_enabled', False)
-            any_tools_enabled = image_enabled or weather_enabled or finance_enabled
+            time_enabled = bot_data.get('time_enabled', False)
+            any_tools_enabled = image_enabled or weather_enabled or finance_enabled or time_enabled
 
             if (OPENROUTER_TOOL_CALLING_ENABLED and
                 any_tools_enabled and
@@ -294,7 +295,8 @@ class MessageHandler:
                     context="signal",
                     image_enabled=image_enabled,
                     weather_enabled=weather_enabled,
-                    finance_enabled=finance_enabled
+                    finance_enabled=finance_enabled,
+                    time_enabled=time_enabled
                 )
                 signal_executor = SignalToolExecutor(
                     bot_data=bot_data,

@@ -153,6 +153,7 @@ class SignalBotManager:
                 'web_search_enabled': bot.web_search_enabled,
                 'weather_enabled': getattr(bot, 'weather_enabled', False),
                 'finance_enabled': getattr(bot, 'finance_enabled', False),
+                'time_enabled': getattr(bot, 'time_enabled', False),
                 'reaction_enabled': bot.reaction_enabled,
                 'reaction_chance_percent': bot.reaction_chance_percent,
                 'llm_reaction_enabled': bot.llm_reaction_enabled,
@@ -694,6 +695,8 @@ class SignalBotManager:
                 bot_data['image_generation_enabled'] = bot.image_generation_enabled
                 bot_data['web_search_enabled'] = bot.web_search_enabled
                 bot_data['weather_enabled'] = getattr(bot, 'weather_enabled', False)
+                bot_data['finance_enabled'] = getattr(bot, 'finance_enabled', False)
+                bot_data['time_enabled'] = getattr(bot, 'time_enabled', False)
                 bot_data['reaction_enabled'] = bot.reaction_enabled
                 bot_data['reaction_chance_percent'] = bot.reaction_chance_percent
                 bot_data['llm_reaction_enabled'] = bot.llm_reaction_enabled

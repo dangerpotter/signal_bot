@@ -125,6 +125,12 @@ class SignalToolExecutor:
         if function_name == "get_weather":
             return self._execute_weather(arguments)
 
+        # Time tools
+        if function_name == "get_datetime":
+            return self._execute_get_datetime(arguments)
+        if function_name == "get_unix_timestamp":
+            return self._execute_get_unix_timestamp(arguments)
+
         # Finance tools
         if function_name == "get_stock_quote":
             return self._execute_stock_quote(arguments)
@@ -215,6 +221,53 @@ class SignalToolExecutor:
         except Exception as e:
             logger.error(f"Error getting weather: {e}")
             return {"success": False, "message": f"Error getting weather: {str(e)}"}
+
+    # Time tool execution methods
+
+    def _execute_get_datetime(self, arguments: dict) -> dict:
+        """Execute the get_datetime tool call."""
+        if not self.bot_data.get('time_enabled'):
+            return {"success": False, "message": "Time tool disabled for this bot"}
+
+        timezone = arguments.get("timezone", "UTC")
+
+        try:
+            from signal_bot.time_client import get_datetime_sync
+
+            result = get_datetime_sync(timezone)
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "time_data": result,
+                "message": f"Current time in {result.get('timezone', timezone)}: {result.get('datetime', 'unknown')}"
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting datetime: {e}")
+            return {"success": False, "message": f"Error getting datetime: {str(e)}"}
+
+    def _execute_get_unix_timestamp(self, arguments: dict) -> dict:
+        """Execute the get_unix_timestamp tool call."""
+        if not self.bot_data.get('time_enabled'):
+            return {"success": False, "message": "Time tool disabled for this bot"}
+
+        try:
+            from signal_bot.time_client import get_unix_timestamp_sync
+
+            result = get_unix_timestamp_sync()
+
+            return {
+                "success": True,
+                "time_data": result,
+                "message": f"Current Unix timestamp: {result.get('unix_timestamp_int', 'unknown')}"
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting Unix timestamp: {e}")
+            return {"success": False, "message": f"Error getting Unix timestamp: {str(e)}"}
 
     # Finance tool execution methods
 

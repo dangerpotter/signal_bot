@@ -21,6 +21,7 @@ A web-based management dashboard for running AI bots in Signal group chats. Conf
 - **Web Search**: Real-time web search with inline citations and source links
 - **Weather Tool**: Real-time weather data via WeatherAPI.com (toggle per-bot)
 - **Finance Tools**: Stock quotes, analyst ratings, dividends, financials, and more via Yahoo Finance (toggle per-bot)
+- **Time Tool**: Accurate time/date across timezones for multi-timezone group chats (toggle per-bot)
 
 ### Memory System
 - **Rolling Context**: Maintains a configurable window of recent messages (default 25)
@@ -108,6 +109,7 @@ python run_signal.py --bots-only  # Headless mode - bots only, no web UI
 | **Web Search** | Enable web search with citation sources |
 | **Weather Tool** | Enable weather queries via WeatherAPI.com |
 | **Finance Tools** | Enable stock/crypto data via Yahoo Finance |
+| **Time Tool** | Enable timezone-aware time/date queries |
 | **Reactions** | Enable emoji reactions to messages |
 | **Reaction Chance %** | Random animal emoji chance |
 | **LLM Reactions** | Use AI to detect funny messages |
@@ -131,6 +133,17 @@ When finance tools are enabled, bots can answer questions about stocks, crypto, 
 | **get_holders** | Institutional holders, insider transactions |
 
 Supports stocks (AAPL), ETFs (SPY), and crypto (BTC-USD).
+
+### Time Tools
+
+When time tools are enabled, bots can provide accurate time/date information across timezones:
+
+| Tool | Description |
+|------|-------------|
+| **get_datetime** | Current date/time for any IANA timezone (America/New_York, America/Chicago, etc.) |
+| **get_unix_timestamp** | Current Unix timestamp for precise time calculations |
+
+Useful for group chats with members across multiple timezones.
 
 ### Memory Settings (config_signal.py)
 
@@ -190,6 +203,7 @@ signal_bot/
 ├── trigger_logic.py        # Mention detection, random chance
 ├── weather_client.py       # WeatherAPI.com integration
 ├── finance_client.py       # Yahoo Finance integration (yfinance)
+├── time_client.py          # Timezone-aware time/date utilities
 ├── models.py               # SQLite database models
 └── config_signal.py        # Signal-specific settings
 

@@ -418,11 +418,48 @@ WEATHER_TOOL = {
     }
 }
 
+# Time/date tools for Signal bots
+TIME_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_datetime",
+            "description": "Get the current date and time for a specific timezone. Common US timezones: America/New_York (Eastern), America/Chicago (Central), America/Denver (Mountain), America/Los_Angeles (Pacific). Use UTC for universal time. Use this when users ask about the current time, date, or day of the week.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "timezone": {
+                        "type": "string",
+                        "description": "IANA timezone name (e.g., 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'UTC', 'Europe/London'). Defaults to UTC if not specified.",
+                        "default": "UTC"
+                    }
+                },
+                "required": [],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_unix_timestamp",
+            "description": "Get the current Unix timestamp (seconds since January 1, 1970 UTC). Useful for precise time calculations or when users need a universal timestamp.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False
+            }
+        }
+    }
+]
+
 def get_tools_for_context(
     context: str = "gui",
     image_enabled: bool = False,
     weather_enabled: bool = False,
-    finance_enabled: bool = False
+    finance_enabled: bool = False,
+    time_enabled: bool = False
 ) -> list:
     """
     Return appropriate tools based on context and enabled features.
@@ -432,6 +469,7 @@ def get_tools_for_context(
         image_enabled: Include image generation tool (Signal bot only)
         weather_enabled: Include weather tool (Signal bot only)
         finance_enabled: Include finance tools (Signal bot only)
+        time_enabled: Include time/date tools (Signal bot only)
 
     Returns:
         List of tool definitions appropriate for the context
@@ -444,6 +482,8 @@ def get_tools_for_context(
             tools.append(WEATHER_TOOL)
         if finance_enabled:
             tools.extend(FINANCE_TOOLS)
+        if time_enabled:
+            tools.extend(TIME_TOOLS)
         return tools
     return AGENT_TOOLS
 

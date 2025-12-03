@@ -120,6 +120,13 @@
                         </div>
                         <small class="text-muted">Yahoo Finance data for stocks, ETFs, and crypto. Includes: stock quotes, company news, symbol search, top performers by sector, price history, options chains, and earnings data. Bot responds to any ticker/company mentioned.</small>
                     </div>
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input type="checkbox" name="time_enabled" class="form-check-input" id="timeEnabled" {% if bot.time_enabled %}checked{% endif %}>
+                            <label class="form-check-label" for="timeEnabled">Enable time/date tool</label>
+                        </div>
+                        <small class="text-muted">Accurate time and date across timezones. Supports IANA timezone names like America/New_York, America/Chicago, America/Denver, America/Los_Angeles (requires tool-capable model)</small>
+                    </div>
                 </div>
             </div>
 
