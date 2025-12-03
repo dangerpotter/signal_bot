@@ -26,6 +26,7 @@ class Bot(db.Model):
     weather_enabled = db.Column(db.Boolean, default=False)  # Enable weather tool (WeatherAPI.com)
     finance_enabled = db.Column(db.Boolean, default=False)  # Enable finance tools (Yahoo Finance)
     time_enabled = db.Column(db.Boolean, default=False)  # Enable time/date tool (timezone-aware)
+    wikipedia_enabled = db.Column(db.Boolean, default=False)  # Enable Wikipedia tool
 
     # Idle news settings
     idle_news_enabled = db.Column(db.Boolean, default=False)  # Post news when group is quiet
@@ -67,6 +68,7 @@ class Bot(db.Model):
             "weather_enabled": self.weather_enabled,
             "finance_enabled": self.finance_enabled,
             "time_enabled": self.time_enabled,
+            "wikipedia_enabled": self.wikipedia_enabled,
             "idle_news_enabled": self.idle_news_enabled,
             "idle_threshold_minutes": self.idle_threshold_minutes or 15,
             "idle_check_interval_minutes": self.idle_check_interval_minutes or 5,

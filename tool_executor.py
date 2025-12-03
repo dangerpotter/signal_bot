@@ -131,6 +131,14 @@ class SignalToolExecutor:
         if function_name == "get_unix_timestamp":
             return self._execute_get_unix_timestamp(arguments)
 
+        # Wikipedia tools
+        if function_name == "search_wikipedia":
+            return self._execute_search_wikipedia(arguments)
+        if function_name == "get_wikipedia_article":
+            return self._execute_get_wikipedia_article(arguments)
+        if function_name == "get_random_wikipedia_article":
+            return self._execute_random_wikipedia_article(arguments)
+
         # Finance tools
         if function_name == "get_stock_quote":
             return self._execute_stock_quote(arguments)
@@ -268,6 +276,88 @@ class SignalToolExecutor:
         except Exception as e:
             logger.error(f"Error getting Unix timestamp: {e}")
             return {"success": False, "message": f"Error getting Unix timestamp: {str(e)}"}
+
+    # Wikipedia tool execution methods
+
+    def _execute_search_wikipedia(self, arguments: dict) -> dict:
+        """Execute the search_wikipedia tool call."""
+        if not self.bot_data.get('wikipedia_enabled'):
+            return {"success": False, "message": "Wikipedia tool disabled for this bot"}
+
+        query = arguments.get("query", "")
+        limit = arguments.get("limit", 5)
+
+        if not query:
+            return {"success": False, "message": "Search query is required"}
+
+        try:
+            from signal_bot.wikipedia_client import search_wikipedia_sync
+
+            result = search_wikipedia_sync(query, limit)
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": f"Found {result.get('count', 0)} Wikipedia articles for '{query}'"
+            }
+
+        except Exception as e:
+            logger.error(f"Error searching Wikipedia: {e}")
+            return {"success": False, "message": f"Error searching Wikipedia: {str(e)}"}
+
+    def _execute_get_wikipedia_article(self, arguments: dict) -> dict:
+        """Execute the get_wikipedia_article tool call."""
+        if not self.bot_data.get('wikipedia_enabled'):
+            return {"success": False, "message": "Wikipedia tool disabled for this bot"}
+
+        title = arguments.get("title", "")
+
+        if not title:
+            return {"success": False, "message": "Article title is required"}
+
+        try:
+            from signal_bot.wikipedia_client import get_wikipedia_summary_sync
+
+            result = get_wikipedia_summary_sync(title)
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": f"Retrieved Wikipedia article: {result.get('title', title)}"
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting Wikipedia article: {e}")
+            return {"success": False, "message": f"Error getting Wikipedia article: {str(e)}"}
+
+    def _execute_random_wikipedia_article(self, arguments: dict) -> dict:
+        """Execute the get_random_wikipedia_article tool call."""
+        if not self.bot_data.get('wikipedia_enabled'):
+            return {"success": False, "message": "Wikipedia tool disabled for this bot"}
+
+        try:
+            from signal_bot.wikipedia_client import get_random_article_sync
+
+            result = get_random_article_sync()
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": f"Random Wikipedia article: {result.get('title', 'Unknown')}"
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting random Wikipedia article: {e}")
+            return {"success": False, "message": f"Error getting random Wikipedia article: {str(e)}"}
 
     # Finance tool execution methods
 

@@ -127,6 +127,13 @@
                         </div>
                         <small class="text-muted">Accurate time and date across timezones. Supports IANA timezone names like America/New_York, America/Chicago, America/Denver, America/Los_Angeles (requires tool-capable model)</small>
                     </div>
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input type="checkbox" name="wikipedia_enabled" class="form-check-input" id="wikipediaEnabled" {% if bot.wikipedia_enabled %}checked{% endif %}>
+                            <label class="form-check-label" for="wikipediaEnabled">Enable Wikipedia tool</label>
+                        </div>
+                        <small class="text-muted">Search and retrieve Wikipedia articles. Includes article search, full summaries, and random articles (requires tool-capable model)</small>
+                    </div>
                 </div>
             </div>
 

@@ -113,6 +113,7 @@ def register_routes(app):
             bot.weather_enabled = request.form.get("weather_enabled") == "on"
             bot.finance_enabled = request.form.get("finance_enabled") == "on"
             bot.time_enabled = request.form.get("time_enabled") == "on"
+            bot.wikipedia_enabled = request.form.get("wikipedia_enabled") == "on"
             bot.idle_news_enabled = request.form.get("idle_news_enabled") == "on"
             bot.idle_threshold_minutes = int(request.form.get("idle_threshold_minutes", 15))
             bot.idle_check_interval_minutes = int(request.form.get("idle_check_interval_minutes", 5))

@@ -454,12 +454,71 @@ TIME_TOOLS = [
     }
 ]
 
+# Wikipedia tools for Signal bots
+WIKIPEDIA_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "search_wikipedia",
+            "description": "Search Wikipedia for articles matching a query. Returns titles, descriptions, and excerpts. Use this when users want to find information about a topic, person, place, concept, or event.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search terms to find Wikipedia articles (e.g., 'Albert Einstein', 'quantum mechanics', 'World War II')"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of results to return (1-20)",
+                        "default": 5
+                    }
+                },
+                "required": ["query"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_wikipedia_article",
+            "description": "Get the summary/introduction of a specific Wikipedia article. Returns the extract, description, URL, and image if available. Use this after searching to get details about a specific article, or when users ask about a specific topic.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "The exact title of the Wikipedia article (e.g., 'Albert Einstein', 'Python (programming language)')"
+                    }
+                },
+                "required": ["title"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_random_wikipedia_article",
+            "description": "Get a random Wikipedia article summary. Use this when users want to learn something new, are bored, or explicitly ask for a random fact or article.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False
+            }
+        }
+    }
+]
+
 def get_tools_for_context(
     context: str = "gui",
     image_enabled: bool = False,
     weather_enabled: bool = False,
     finance_enabled: bool = False,
-    time_enabled: bool = False
+    time_enabled: bool = False,
+    wikipedia_enabled: bool = False
 ) -> list:
     """
     Return appropriate tools based on context and enabled features.
@@ -470,6 +529,7 @@ def get_tools_for_context(
         weather_enabled: Include weather tool (Signal bot only)
         finance_enabled: Include finance tools (Signal bot only)
         time_enabled: Include time/date tools (Signal bot only)
+        wikipedia_enabled: Include Wikipedia tools (Signal bot only)
 
     Returns:
         List of tool definitions appropriate for the context
@@ -484,6 +544,8 @@ def get_tools_for_context(
             tools.extend(FINANCE_TOOLS)
         if time_enabled:
             tools.extend(TIME_TOOLS)
+        if wikipedia_enabled:
+            tools.extend(WIKIPEDIA_TOOLS)
         return tools
     return AGENT_TOOLS
 
