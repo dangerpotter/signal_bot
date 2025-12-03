@@ -21,13 +21,17 @@ sys.path.insert(0, str(Path(__file__).parent))
 from dotenv import load_dotenv
 load_dotenv()
 
+# Configure stdout for UTF-8 with error replacement (fixes Windows Unicode issues)
+if sys.stdout:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler('signal_bot.log')
+        logging.FileHandler('signal_bot.log', encoding='utf-8')
     ]
 )
 logger = logging.getLogger(__name__)
