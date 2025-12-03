@@ -152,6 +152,7 @@ class SignalBotManager:
                 'image_generation_enabled': bot.image_generation_enabled,
                 'web_search_enabled': bot.web_search_enabled,
                 'weather_enabled': getattr(bot, 'weather_enabled', False),
+                'finance_enabled': getattr(bot, 'finance_enabled', False),
                 'reaction_enabled': bot.reaction_enabled,
                 'reaction_chance_percent': bot.reaction_chance_percent,
                 'llm_reaction_enabled': bot.llm_reaction_enabled,
