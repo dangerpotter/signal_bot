@@ -59,7 +59,8 @@ class MessageHandler:
         is_mentioned: bool = False,
         message_timestamp: Optional[int] = None,
         send_typing_callback: Optional[Callable] = None,
-        stop_typing_callback: Optional[Callable] = None
+        stop_typing_callback: Optional[Callable] = None,
+        incoming_images: Optional[list[dict]] = None
     ) -> Optional[str]:
         """
         Handle an incoming message and potentially generate a response.
@@ -76,6 +77,7 @@ class MessageHandler:
             message_timestamp: Signal timestamp of the triggering message (for quotes/replies)
             send_typing_callback: Function to start typing indicator
             stop_typing_callback: Function to stop typing indicator
+            incoming_images: List of base64-encoded images from the message
 
         Returns:
             The response text if one was generated, None otherwise
@@ -85,9 +87,10 @@ class MessageHandler:
         # Log incoming message
         memory.add_message(
             sender_name=sender_name,
-            content=message_text,
+            content=message_text or "[Image]",
             is_bot=False,
-            sender_id=sender_id
+            sender_id=sender_id,
+            has_image=bool(incoming_images)
         )
 
         # Check for real-time memory save (e.g., "remember I prefer...")
@@ -142,7 +145,8 @@ class MessageHandler:
             sender_name=sender_name,
             sender_id=sender_id,
             memory_confirmation=memory_confirmation,
-            send_image_callback=send_image_callback
+            send_image_callback=send_image_callback,
+            incoming_images=incoming_images
         )
 
         # Stop typing indicator
@@ -219,7 +223,8 @@ class MessageHandler:
         sender_name: str = "",
         sender_id: str = "",
         memory_confirmation: Optional[str] = None,
-        send_image_callback: Optional[Callable[[str], None]] = None
+        send_image_callback: Optional[Callable[[str], None]] = None,
+        incoming_images: Optional[list[dict]] = None
     ) -> Optional[str]:
         """Generate an AI response using the configured model."""
         try:
@@ -253,6 +258,7 @@ class MessageHandler:
             message_content=trigger_message
         )
         if member_memories:
+            logger.info(f"Injecting member memories for {sender_name}:\n{member_memories[:500]}...")
             system_prompt += f"\n{member_memories}"
 
         # Inject memory confirmation instruction if a memory was just saved
@@ -287,9 +293,26 @@ class MessageHandler:
                 tool_executor = signal_executor.execute
                 logger.info(f"Tool calling enabled for {bot_data.get('name')}")
 
+            # Build prompt - include images if present
+            if incoming_images:
+                # Create structured content with text and images
+                prompt_content = [{"type": "text", "text": trigger_message or "What do you see in this image?"}]
+                for img in incoming_images:
+                    prompt_content.append({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": img["media_type"],
+                            "data": img["data"]
+                        }
+                    })
+                logger.info(f"Built structured prompt with {len(incoming_images)} image(s)")
+            else:
+                prompt_content = trigger_message
+
             # Call the AI API
             response = call_openrouter_api(
-                prompt=trigger_message,
+                prompt=prompt_content,
                 conversation_history=formatted_messages,
                 model=model_id,
                 system_prompt=system_prompt,

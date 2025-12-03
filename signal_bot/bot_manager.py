@@ -365,6 +365,44 @@ class SignalBotManager:
             logger.error(f"Error sending image: {e}")
             return False
 
+    async def get_attachment_data(
+        self,
+        attachment_id: str,
+        group_id: str,
+        account: str,
+        port: int = 8080
+    ) -> Optional[str]:
+        """Fetch attachment data from Signal API as base64 string.
+
+        Uses the JSON-RPC endpoint to call getAttachment command.
+        Returns base64-encoded attachment data.
+        """
+        url = f"http://localhost:{port}/api/v1/rpc"
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "getAttachment",
+            "params": {
+                "account": account,
+                "id": attachment_id,
+                "group-id": group_id
+            },
+            "id": 1
+        }
+        try:
+            client = await self._get_http_client(port)
+            response = await client.post(url, json=payload, timeout=30.0)
+            if response.status_code == 200:
+                result = response.json()
+                if "result" in result:
+                    return result["result"]  # Base64 string
+                elif "error" in result:
+                    logger.error(f"JSON-RPC error fetching attachment: {result['error']}")
+            else:
+                logger.error(f"Failed to fetch attachment: HTTP {response.status_code}")
+        except Exception as e:
+            logger.error(f"Error fetching attachment: {e}")
+        return None
+
     async def send_reaction(
         self,
         phone_number: str,
@@ -684,8 +722,26 @@ class SignalBotManager:
             message_text = data_message.get("message", "")
             message_timestamp = data_message.get("timestamp")  # For reactions
 
-            if not message_text:
-                return  # Empty message
+            # Extract image attachments
+            attachments = data_message.get("attachments", [])
+            image_attachments = []
+            for att in attachments:
+                content_type = att.get("contentType", "")
+                if content_type.startswith("image/"):
+                    attachment_id = att.get("id")
+                    if attachment_id:
+                        image_attachments.append({
+                            "content_type": content_type,
+                            "id": attachment_id,
+                            "filename": att.get("filename"),
+                            "size": att.get("size", 0)
+                        })
+
+            if image_attachments:
+                logger.info(f"Found {len(image_attachments)} image attachment(s)")
+
+            if not message_text and not image_attachments:
+                return  # Empty message with no attachments
 
             # Don't respond to own messages
             if sender_id == bot_data['phone_number']:
@@ -766,6 +822,25 @@ class SignalBotManager:
             async def stop_typing_cb():
                 await self.send_typing(bot_data['phone_number'], group_id, bot_data['signal_api_port'], stop=True)
 
+            # Process image attachments into base64
+            incoming_images = []
+            for att in image_attachments:
+                try:
+                    base64_data = await self.get_attachment_data(
+                        attachment_id=att["id"],
+                        group_id=group_id,
+                        account=bot_data['phone_number'],
+                        port=bot_data['signal_api_port']
+                    )
+                    if base64_data:
+                        incoming_images.append({
+                            "media_type": att["content_type"],
+                            "data": base64_data
+                        })
+                        logger.info(f"Processed image attachment: {att['content_type']}, {len(base64_data)} chars")
+                except Exception as e:
+                    logger.error(f"Failed to process attachment {att['id']}: {e}")
+
             # Handle the message (inside app context for DB operations)
             await self.message_handler.handle_incoming_message(
                 group_id=group_id,
@@ -778,7 +853,8 @@ class SignalBotManager:
                 send_callback=lambda t, qt=None, qa=None, m=None, ts=None: asyncio.create_task(send_text(t, qt, qa, m, ts)),
                 send_image_callback=lambda p: asyncio.create_task(send_image_cb(p)),
                 send_typing_callback=lambda: asyncio.create_task(send_typing_cb()),
-                stop_typing_callback=lambda: asyncio.create_task(stop_typing_cb())
+                stop_typing_callback=lambda: asyncio.create_task(stop_typing_cb()),
+                incoming_images=incoming_images if incoming_images else None
             )
 
             # Maybe react to the message with an emoji
@@ -791,15 +867,14 @@ class SignalBotManager:
         """
         Background task that checks for idle groups and posts news commentary.
 
-        Rules:
-        - After 15 min of no activity, starts checking every 5 min
-        - Each 5 min check has 10% chance to trigger
-        - When triggered, searches for news and posts humorous commentary
-        """
-        IDLE_THRESHOLD = 15 * 60  # 15 minutes before idle mode starts
-        CHECK_INTERVAL = 5 * 60   # Check every 5 minutes after idle
-        TRIGGER_CHANCE = 0.10     # 10% chance to post
+        Uses per-bot configurable settings:
+        - idle_threshold_minutes: How long group must be quiet (default 15)
+        - idle_check_interval_minutes: How often to check (default 5)
+        - idle_trigger_chance_percent: Chance to post each check (default 10%)
 
+        When triggered, searches for news and posts humorous commentary.
+        Requires both web_search_enabled AND idle_news_enabled to be True.
+        """
         logger.info("Idle news checker started")
 
         while self.running:
@@ -817,7 +892,7 @@ class SignalBotManager:
                         bot = Bot.query.get(assignment.bot_id)
                         group = GroupConnection.query.get(assignment.group_id)
 
-                        if bot and group and bot.enabled and group.enabled and bot.web_search_enabled:
+                        if bot and group and bot.enabled and group.enabled and bot.web_search_enabled and bot.idle_news_enabled:
                             group_bot_pairs.append({
                                 'group_id': assignment.group_id,
                                 'group_name': group.name,
@@ -828,7 +903,10 @@ class SignalBotManager:
                                     'signal_api_port': bot.signal_api_port,
                                     'model': bot.model,
                                     'system_prompt': bot.system_prompt,
-                                    'web_search_enabled': bot.web_search_enabled
+                                    'web_search_enabled': bot.web_search_enabled,
+                                    'idle_threshold_minutes': bot.idle_threshold_minutes or 15,
+                                    'idle_check_interval_minutes': bot.idle_check_interval_minutes or 5,
+                                    'idle_trigger_chance_percent': bot.idle_trigger_chance_percent or 10
                                 }
                             })
 
@@ -836,24 +914,29 @@ class SignalBotManager:
                     group_id = pair['group_id']
                     bot_data = pair['bot']
 
+                    # Get per-bot settings
+                    idle_threshold = bot_data['idle_threshold_minutes'] * 60  # Convert to seconds
+                    check_interval = bot_data['idle_check_interval_minutes'] * 60  # Convert to seconds
+                    trigger_chance = bot_data['idle_trigger_chance_percent'] / 100  # Convert to 0-1
+
                     # Get last activity time (default to startup time if never seen)
                     last_activity = self._group_last_activity.get(group_id, self._startup_time)
                     idle_time = current_time - last_activity
 
-                    # Check if we're in idle mode (15+ min of silence)
-                    if idle_time < IDLE_THRESHOLD:
+                    # Check if we're in idle mode
+                    if idle_time < idle_threshold:
                         continue
 
                     # Check if enough time has passed since last idle check
                     last_check = self._group_last_idle_check.get(group_id, 0)
-                    if current_time - last_check < CHECK_INTERVAL:
+                    if current_time - last_check < check_interval:
                         continue
 
                     # Update last check time
                     self._group_last_idle_check[group_id] = current_time
 
-                    # Roll the dice - 10% chance
-                    if random.random() > TRIGGER_CHANCE:
+                    # Roll the dice
+                    if random.random() > trigger_chance:
                         logger.debug(f"Idle check for {pair['group_name']}: dice roll failed")
                         continue
 
