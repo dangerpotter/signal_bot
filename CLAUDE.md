@@ -18,6 +18,7 @@ poetry run python main.py
 OPENROUTER_API_KEY=...   # Required - routes most models
 OPENAI_API_KEY=...       # Optional - for Sora video generation
 ANTHROPIC_API_KEY=...    # Optional - direct Claude API calls
+WEATHER_API_KEY=...      # Optional - for Signal bot weather tool (weatherapi.com)
 ```
 
 ## Project Structure
@@ -193,6 +194,7 @@ signal_bot/
 - **Smart triggering**: Responds to @mentions + configurable random chance
 - **Memory system**: Rolling 25-message window + long-term "remember when..." callbacks
 - **Image generation**: Bots can use `!image` to generate memes
+- **Weather tool**: Real-time weather data via WeatherAPI.com (toggle per-bot)
 
 ### Signal Features (Per Bot)
 - **Typing indicators**: Shows "typing..." while bot composes response (configurable)

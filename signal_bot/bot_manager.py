@@ -151,6 +151,7 @@ class SignalBotManager:
                 'random_chance_percent': bot.random_chance_percent,
                 'image_generation_enabled': bot.image_generation_enabled,
                 'web_search_enabled': bot.web_search_enabled,
+                'weather_enabled': getattr(bot, 'weather_enabled', False),
                 'reaction_enabled': bot.reaction_enabled,
                 'reaction_chance_percent': bot.reaction_chance_percent,
                 'llm_reaction_enabled': bot.llm_reaction_enabled,
@@ -691,6 +692,7 @@ class SignalBotManager:
                 bot_data['random_chance_percent'] = bot.random_chance_percent
                 bot_data['image_generation_enabled'] = bot.image_generation_enabled
                 bot_data['web_search_enabled'] = bot.web_search_enabled
+                bot_data['weather_enabled'] = getattr(bot, 'weather_enabled', False)
                 bot_data['reaction_enabled'] = bot.reaction_enabled
                 bot_data['reaction_chance_percent'] = bot.reaction_chance_percent
                 bot_data['llm_reaction_enabled'] = bot.llm_reaction_enabled
@@ -1039,53 +1041,46 @@ Search for current news and pick something good!"""
         if not bot_data.get('reaction_enabled', True):
             return
 
-        # Option 1: Random animal emoji (configurable chance)
+        # Gate ALL reactions with the percentage check
         chance = bot_data.get('reaction_chance_percent', 5)
-        if random.random() * 100 < chance:
-            emoji = random.choice(self.ANIMAL_EMOJIS)
-            await self.send_reaction(
-                bot_data['phone_number'],
-                group_id,
-                sender_id,
-                message_timestamp,
-                emoji,
-                bot_data['signal_api_port']
-            )
-            self._log_activity(
-                "reaction_sent",
-                bot_data['id'],
-                group_id,
-                f"{bot_data['name']} reacted with {emoji} (random)"
-            )
-            return
+        if random.random() * 100 >= chance:
+            return  # Failed the roll - no reaction
 
-        # Option 2: LLM-evaluated funny detection
+        # Passed the roll - now decide which emoji to use
+        emoji = None
+        reaction_type = "random"
+
+        # Option 1: Use LLM to pick contextual emoji (if enabled)
         if bot_data.get('llm_reaction_enabled', False):
-            is_funny, emoji = await self._evaluate_funny(message_text, bot_data)
-            if is_funny:
-                await self.send_reaction(
-                    bot_data['phone_number'],
-                    group_id,
-                    sender_id,
-                    message_timestamp,
-                    emoji,
-                    bot_data['signal_api_port']
-                )
-                self._log_activity(
-                    "reaction_sent",
-                    bot_data['id'],
-                    group_id,
-                    f"{bot_data['name']} reacted with {emoji} (funny detected)"
-                )
+            is_funny, llm_emoji = await self._evaluate_funny(message_text, bot_data)
+            if is_funny and llm_emoji:
+                emoji = llm_emoji
+                reaction_type = "funny detected"
+
+        # Option 2: Fall back to random animal emoji
+        if not emoji:
+            emoji = random.choice(self.ANIMAL_EMOJIS)
+            reaction_type = "random"
+
+        await self.send_reaction(
+            bot_data['phone_number'],
+            group_id,
+            sender_id,
+            message_timestamp,
+            emoji,
+            bot_data['signal_api_port']
+        )
+        self._log_activity(
+            "reaction_sent",
+            bot_data['id'],
+            group_id,
+            f"{bot_data['name']} reacted with {emoji} ({reaction_type})"
+        )
 
     async def _evaluate_funny(self, message_text: str, bot_data: dict) -> tuple[bool, str]:
         """Use LLM to evaluate if a message is funny and suggest an emoji."""
         # Quick check - skip very short messages
         if len(message_text) < 10:
-            return False, ""
-
-        # Only evaluate ~30% of messages to save API calls
-        if random.random() > 0.30:
             return False, ""
 
         try:

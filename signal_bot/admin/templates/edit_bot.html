@@ -106,6 +106,13 @@
                         </div>
                         <small class="text-muted">Uses OpenRouter's web search plugin for current info</small>
                     </div>
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input type="checkbox" name="weather_enabled" class="form-check-input" id="weatherEnabled" {% if bot.weather_enabled %}checked{% endif %}>
+                            <label class="form-check-label" for="weatherEnabled">Enable weather tool</label>
+                        </div>
+                        <small class="text-muted">Accurate weather data via WeatherAPI.com (requires tool-capable model)</small>
+                    </div>
                 </div>
             </div>
 
@@ -133,6 +140,37 @@
                             <label class="form-check-label" for="llmReaction">Use AI to detect funny messages</label>
                         </div>
                         <small class="text-muted">Uses Haiku to evaluate if messages are funny and react appropriately (costs ~$0.0001/msg)</small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-newspaper"></i> Idle News Settings
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input type="checkbox" name="idle_news_enabled" class="form-check-input" id="idleNewsEnabled" {% if bot.idle_news_enabled %}checked{% endif %}>
+                            <label class="form-check-label" for="idleNewsEnabled">Enable idle news posting</label>
+                        </div>
+                        <small class="text-muted">Post interesting news when group goes quiet (requires web search enabled)</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Idle Threshold (minutes)</label>
+                        <input type="number" name="idle_threshold_minutes" class="form-control" min="5" max="120" value="{{ bot.idle_threshold_minutes or 15 }}">
+                        <small class="text-muted">How long the group must be quiet before idle mode activates (5-120)</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Check Interval (minutes)</label>
+                        <input type="number" name="idle_check_interval_minutes" class="form-control" min="1" max="30" value="{{ bot.idle_check_interval_minutes or 5 }}">
+                        <small class="text-muted">How often to check idle groups for news posting (1-30)</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Trigger Chance (%)</label>
+                        <input type="range" name="idle_trigger_chance_percent" class="form-range" min="5" max="50" value="{{ bot.idle_trigger_chance_percent or 10 }}" id="idleChance" oninput="document.getElementById('idleChanceValue').textContent = this.value + '%'">
+                        <span id="idleChanceValue">{{ bot.idle_trigger_chance_percent or 10 }}%</span>
+                        <br><small class="text-muted">Probability of posting news each check interval (5-50%)</small>
                     </div>
                 </div>
             </div>

@@ -129,19 +129,54 @@ SIGNAL_TOOLS = [
     if tool["function"]["name"] == "generate_image"
 ]
 
+# Weather tool for Signal bots
+WEATHER_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "get_weather",
+        "description": "Get current weather conditions and forecast for a location. Use this when users ask about weather, temperature, or conditions for any city or location.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "location": {
+                    "type": "string",
+                    "description": "The location to get weather for. Can be a city name (e.g., 'London'), city and country (e.g., 'Paris, France'), US zip code (e.g., '10001'), UK postcode, or coordinates (e.g., '48.8567,2.3508')."
+                },
+                "days": {
+                    "type": "integer",
+                    "description": "Number of forecast days to include (1-7). Default is 1 for just today.",
+                    "default": 1
+                }
+            },
+            "required": ["location"],
+            "additionalProperties": False
+        }
+    }
+}
 
-def get_tools_for_context(context: str = "gui") -> list:
+def get_tools_for_context(
+    context: str = "gui",
+    image_enabled: bool = False,
+    weather_enabled: bool = False
+) -> list:
     """
-    Return appropriate tools based on context.
+    Return appropriate tools based on context and enabled features.
 
     Args:
-        context: "gui" for main app (all tools), "signal" for Signal bot (image only)
+        context: "gui" for main app (all tools), "signal" for Signal bot
+        image_enabled: Include image generation tool (Signal bot only)
+        weather_enabled: Include weather tool (Signal bot only)
 
     Returns:
         List of tool definitions appropriate for the context
     """
     if context == "signal":
-        return SIGNAL_TOOLS
+        tools = []
+        if image_enabled:
+            tools.extend(SIGNAL_TOOLS)
+        if weather_enabled:
+            tools.append(WEATHER_TOOL)
+        return tools
     return AGENT_TOOLS
 
 

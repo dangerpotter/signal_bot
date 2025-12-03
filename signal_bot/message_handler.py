@@ -231,7 +231,7 @@ class MessageHandler:
             # Import shared_utils for API calls
             from shared_utils import call_openrouter_api
             from config import AI_MODELS, OPENROUTER_TOOL_CALLING_ENABLED
-            from tool_schemas import SIGNAL_TOOLS, model_supports_tools
+            from tool_schemas import get_tools_for_context, model_supports_tools
             from tool_executor import SignalToolExecutor
         except ImportError as e:
             logger.error(f"Failed to import shared_utils: {e}")
@@ -280,18 +280,28 @@ class MessageHandler:
             use_tools = None
             tool_executor = None
 
+            # Check if any tools are enabled (image generation or weather)
+            image_enabled = bot_data.get('image_generation_enabled', False)
+            weather_enabled = bot_data.get('weather_enabled', False)
+            any_tools_enabled = image_enabled or weather_enabled
+
             if (OPENROUTER_TOOL_CALLING_ENABLED and
-                bot_data.get('image_generation_enabled') and
+                any_tools_enabled and
                 model_supports_tools(model_id)):
 
-                use_tools = SIGNAL_TOOLS
+                use_tools = get_tools_for_context(
+                    context="signal",
+                    image_enabled=image_enabled,
+                    weather_enabled=weather_enabled
+                )
                 signal_executor = SignalToolExecutor(
                     bot_data=bot_data,
                     group_id=group_id,
                     send_image_callback=send_image_callback
                 )
                 tool_executor = signal_executor.execute
-                logger.info(f"Tool calling enabled for {bot_data.get('name')}")
+                tools_list = [t['function']['name'] for t in use_tools]
+                logger.info(f"Tool calling enabled for {bot_data.get('name')}: {tools_list}")
 
             # Build prompt - include images if present
             if incoming_images:

@@ -23,6 +23,13 @@ class Bot(db.Model):
     random_chance_percent = db.Column(db.Integer, default=15)  # 0-100
     image_generation_enabled = db.Column(db.Boolean, default=True)
     web_search_enabled = db.Column(db.Boolean, default=False)  # Enable OpenRouter web search
+    weather_enabled = db.Column(db.Boolean, default=False)  # Enable weather tool (WeatherAPI.com)
+
+    # Idle news settings
+    idle_news_enabled = db.Column(db.Boolean, default=False)  # Post news when group is quiet
+    idle_threshold_minutes = db.Column(db.Integer, default=15)  # Minutes of silence before idle mode (5-120)
+    idle_check_interval_minutes = db.Column(db.Integer, default=5)  # How often to check idle groups (1-30)
+    idle_trigger_chance_percent = db.Column(db.Integer, default=10)  # Chance to post each check (5-50)
 
     # Reaction settings
     reaction_enabled = db.Column(db.Boolean, default=True)  # Enable emoji reactions
@@ -55,6 +62,11 @@ class Bot(db.Model):
             "random_chance_percent": self.random_chance_percent,
             "image_generation_enabled": self.image_generation_enabled,
             "web_search_enabled": self.web_search_enabled,
+            "weather_enabled": self.weather_enabled,
+            "idle_news_enabled": self.idle_news_enabled,
+            "idle_threshold_minutes": self.idle_threshold_minutes or 15,
+            "idle_check_interval_minutes": self.idle_check_interval_minutes or 5,
+            "idle_trigger_chance_percent": self.idle_trigger_chance_percent or 10,
             "reaction_enabled": self.reaction_enabled,
             "reaction_chance_percent": self.reaction_chance_percent,
             "llm_reaction_enabled": self.llm_reaction_enabled,
