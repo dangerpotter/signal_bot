@@ -92,24 +92,34 @@ class ToolExecutor:
 class SignalToolExecutor:
     """
     Executes tool calls for the Signal bot.
-    Limited to image generation only.
+    Supports image generation, weather, time, wikipedia, finance, and emoji reactions.
     """
 
     def __init__(
         self,
         bot_data: dict,
         group_id: str,
-        send_image_callback: Optional[Callable[[str], None]] = None
+        send_image_callback: Optional[Callable[[str], None]] = None,
+        send_reaction_callback: Optional[Callable[[str, int, str], None]] = None,
+        reaction_metadata: Optional[list[dict]] = None,
+        max_reactions: int = 3
     ):
         """
         Args:
             bot_data: Bot configuration dict
             group_id: The Signal group ID
             send_image_callback: Optional callback to send the generated image
+            send_reaction_callback: Optional callback to send emoji reactions (sender_id, timestamp, emoji)
+            reaction_metadata: List of dicts with message index, sender_id, and signal_timestamp
+            max_reactions: Maximum reactions allowed per response
         """
         self.bot_data = bot_data
         self.group_id = group_id
         self.send_image_callback = send_image_callback
+        self.send_reaction_callback = send_reaction_callback
+        self.reaction_metadata = reaction_metadata or []
+        self.max_reactions = max_reactions
+        self.reactions_sent = 0  # Track reactions sent in this response
 
     def execute(self, function_name: str, arguments: dict) -> dict:
         """
@@ -162,6 +172,10 @@ class SignalToolExecutor:
             return self._execute_financials(arguments)
         if function_name == "get_holders":
             return self._execute_holders(arguments)
+
+        # Reaction tool
+        if function_name == "react_to_message":
+            return self._execute_react_to_message(arguments)
 
         if function_name != "generate_image":
             return {"success": False, "message": f"Unsupported function: {function_name}"}
@@ -673,6 +687,66 @@ class SignalToolExecutor:
         except Exception as e:
             logger.error(f"Error getting holders: {e}")
             return {"success": False, "message": f"Error getting holders: {str(e)}"}
+
+    # Reaction tool execution method
+
+    def _execute_react_to_message(self, arguments: dict) -> dict:
+        """Execute the react_to_message tool call."""
+        if not self.bot_data.get('reaction_tool_enabled'):
+            return {"success": False, "message": "Reaction tool disabled for this bot"}
+
+        if not self.send_reaction_callback:
+            return {"success": False, "message": "Reaction callback not available"}
+
+        # Check reaction cap
+        if self.reactions_sent >= self.max_reactions:
+            return {
+                "success": False,
+                "message": f"Maximum reactions ({self.max_reactions}) already sent for this response"
+            }
+
+        message_index = arguments.get("message_index")
+        emoji = arguments.get("emoji", "")
+
+        if message_index is None:
+            return {"success": False, "message": "message_index is required"}
+
+        if not emoji:
+            return {"success": False, "message": "emoji is required"}
+
+        # Basic validation - emoji shouldn't be too long
+        if len(emoji) > 10:
+            return {"success": False, "message": "Please provide a single emoji"}
+
+        # Find the message in metadata
+        target_msg = None
+        for msg in self.reaction_metadata:
+            if msg.get("index") == message_index:
+                target_msg = msg
+                break
+
+        if not target_msg:
+            return {
+                "success": False,
+                "message": f"Message [{message_index}] not found or cannot be reacted to (may be a bot message or missing metadata)"
+            }
+
+        # Send the reaction
+        try:
+            self.send_reaction_callback(
+                target_msg["sender_id"],
+                target_msg["signal_timestamp"],
+                emoji
+            )
+            self.reactions_sent += 1
+            logger.info(f"Sent reaction {emoji} to message [{message_index}]")
+            return {
+                "success": True,
+                "message": f"Reacted with {emoji} to message [{message_index}]"
+            }
+        except Exception as e:
+            logger.error(f"Error sending reaction: {e}")
+            return {"success": False, "message": f"Failed to send reaction: {str(e)}"}
 
 
 def create_tool_executor_callback(executor: ToolExecutor) -> Callable[[str, dict], dict]:

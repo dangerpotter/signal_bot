@@ -512,13 +512,38 @@ WIKIPEDIA_TOOLS = [
     }
 ]
 
+# Reaction tool for Signal bots - allows reacting to messages with emoji
+REACTION_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "react_to_message",
+        "description": "React to a message in the conversation with an emoji. Messages are numbered [0], [1], etc. at the start of each line. React to messages you find funny, interesting, clever, or wholesome. Be selective - don't react to everything, only messages that genuinely deserve a reaction.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "message_index": {
+                    "type": "integer",
+                    "description": "The index of the message to react to (shown as [idx] at the start of each message in the conversation)"
+                },
+                "emoji": {
+                    "type": "string",
+                    "description": "A single emoji to react with (e.g., '😂', '❤️', '🔥', '💀', '👍', '🤯')"
+                }
+            },
+            "required": ["message_index", "emoji"],
+            "additionalProperties": False
+        }
+    }
+}
+
 def get_tools_for_context(
     context: str = "gui",
     image_enabled: bool = False,
     weather_enabled: bool = False,
     finance_enabled: bool = False,
     time_enabled: bool = False,
-    wikipedia_enabled: bool = False
+    wikipedia_enabled: bool = False,
+    reaction_enabled: bool = False
 ) -> list:
     """
     Return appropriate tools based on context and enabled features.
@@ -530,6 +555,7 @@ def get_tools_for_context(
         finance_enabled: Include finance tools (Signal bot only)
         time_enabled: Include time/date tools (Signal bot only)
         wikipedia_enabled: Include Wikipedia tools (Signal bot only)
+        reaction_enabled: Include emoji reaction tool (Signal bot only)
 
     Returns:
         List of tool definitions appropriate for the context
@@ -546,6 +572,8 @@ def get_tools_for_context(
             tools.extend(TIME_TOOLS)
         if wikipedia_enabled:
             tools.extend(WIKIPEDIA_TOOLS)
+        if reaction_enabled:
+            tools.append(REACTION_TOOL)
         return tools
     return AGENT_TOOLS
 

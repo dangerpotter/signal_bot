@@ -60,7 +60,8 @@ class MessageHandler:
         message_timestamp: Optional[int] = None,
         send_typing_callback: Optional[Callable] = None,
         stop_typing_callback: Optional[Callable] = None,
-        incoming_images: Optional[list[dict]] = None
+        incoming_images: Optional[list[dict]] = None,
+        send_reaction_callback: Optional[Callable[[str, int, str], None]] = None
     ) -> Optional[str]:
         """
         Handle an incoming message and potentially generate a response.
@@ -78,6 +79,7 @@ class MessageHandler:
             send_typing_callback: Function to start typing indicator
             stop_typing_callback: Function to stop typing indicator
             incoming_images: List of base64-encoded images from the message
+            send_reaction_callback: Function to send emoji reactions (sender_id, timestamp, emoji)
 
         Returns:
             The response text if one was generated, None otherwise
@@ -147,7 +149,8 @@ class MessageHandler:
             sender_id=sender_id,
             memory_confirmation=memory_confirmation,
             send_image_callback=send_image_callback,
-            incoming_images=incoming_images
+            incoming_images=incoming_images,
+            send_reaction_callback=send_reaction_callback
         )
 
         # Stop typing indicator
@@ -232,7 +235,8 @@ class MessageHandler:
         sender_id: str = "",
         memory_confirmation: Optional[str] = None,
         send_image_callback: Optional[Callable[[str], None]] = None,
-        incoming_images: Optional[list[dict]] = None
+        incoming_images: Optional[list[dict]] = None,
+        send_reaction_callback: Optional[Callable[[str, int, str], None]] = None
     ) -> Optional[str]:
         """Generate an AI response using the configured model."""
         try:
@@ -292,17 +296,36 @@ class MessageHandler:
         # Get model ID
         model_id = AI_MODELS.get(bot_data['model'], bot_data['model'])
 
-        # Format conversation for API
+        # Check if reaction tool is enabled (needed for context formatting)
+        reaction_enabled = bot_data.get('reaction_tool_enabled', False)
+
+        # Format conversation for API with message indices for reaction tool
         formatted_messages = []
-        for msg in context_messages:
+        reaction_metadata = []  # Stores metadata for messages that can be reacted to
+
+        for idx, msg in enumerate(context_messages):
             role = msg["role"]
-            # Only add name prefix for user messages (to distinguish group members)
-            # Don't prefix assistant messages - the role already identifies them
-            if role == "user" and msg.get("name"):
-                content = f"{msg['name']}: {msg['content']}"
+            # Format with index prefix when reaction tool is enabled
+            if reaction_enabled:
+                if role == "user" and msg.get("name"):
+                    content = f"[{idx}] {msg['name']}: {msg['content']}"
+                else:
+                    content = f"[{idx}] {msg['content']}"
             else:
-                content = msg["content"]
+                # Original formatting without indices
+                if role == "user" and msg.get("name"):
+                    content = f"{msg['name']}: {msg['content']}"
+                else:
+                    content = msg["content"]
             formatted_messages.append({"role": role, "content": content})
+
+            # Build reaction metadata for user messages with valid Signal metadata
+            if role == "user" and msg.get("signal_timestamp") and msg.get("sender_id"):
+                reaction_metadata.append({
+                    "index": idx,
+                    "sender_id": msg["sender_id"],
+                    "signal_timestamp": msg["signal_timestamp"]
+                })
 
         # DEBUG: Log ALL messages being sent to API
         logger.info(f"[DEBUG] ===== CONTEXT DUMP ({len(formatted_messages)} messages) =====")
@@ -316,13 +339,14 @@ class MessageHandler:
             use_tools = None
             tool_executor = None
 
-            # Check if any tools are enabled (image generation, weather, finance, time, or wikipedia)
+            # Check if any tools are enabled (image generation, weather, finance, time, wikipedia, or reaction)
             image_enabled = bot_data.get('image_generation_enabled', False)
             weather_enabled = bot_data.get('weather_enabled', False)
             finance_enabled = bot_data.get('finance_enabled', False)
             time_enabled = bot_data.get('time_enabled', False)
             wikipedia_enabled = bot_data.get('wikipedia_enabled', False)
-            any_tools_enabled = image_enabled or weather_enabled or finance_enabled or time_enabled or wikipedia_enabled
+            # reaction_enabled already set above for context formatting
+            any_tools_enabled = image_enabled or weather_enabled or finance_enabled or time_enabled or wikipedia_enabled or reaction_enabled
 
             if (OPENROUTER_TOOL_CALLING_ENABLED and
                 any_tools_enabled and
@@ -334,12 +358,16 @@ class MessageHandler:
                     weather_enabled=weather_enabled,
                     finance_enabled=finance_enabled,
                     time_enabled=time_enabled,
-                    wikipedia_enabled=wikipedia_enabled
+                    wikipedia_enabled=wikipedia_enabled,
+                    reaction_enabled=reaction_enabled
                 )
                 signal_executor = SignalToolExecutor(
                     bot_data=bot_data,
                     group_id=group_id,
-                    send_image_callback=send_image_callback
+                    send_image_callback=send_image_callback,
+                    send_reaction_callback=send_reaction_callback,
+                    reaction_metadata=reaction_metadata,
+                    max_reactions=bot_data.get('max_reactions_per_response', 3)
                 )
                 tool_executor = signal_executor.execute
                 tools_list = [t['function']['name'] for t in use_tools]

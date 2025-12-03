@@ -144,23 +144,15 @@
                 <div class="card-body">
                     <div class="mb-3">
                         <div class="form-check form-switch">
-                            <input type="checkbox" name="reaction_enabled" class="form-check-input" id="reactionEnabled" {% if bot.reaction_enabled %}checked{% endif %}>
-                            <label class="form-check-label" for="reactionEnabled">Enable emoji reactions</label>
+                            <input type="checkbox" name="reaction_tool_enabled" class="form-check-input" id="reactionToolEnabled" {% if bot.reaction_tool_enabled %}checked{% endif %}>
+                            <label class="form-check-label" for="reactionToolEnabled">Enable reaction tool</label>
                         </div>
-                        <small class="text-muted">Bot can react to messages with emoji</small>
+                        <small class="text-muted">Bot can react to messages with emoji during responses. The AI reads the conversation and decides which messages deserve reactions. (requires tool-capable model)</small>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Random Animal Emoji Chance (%)</label>
-                        <input type="range" name="reaction_chance_percent" class="form-range" min="0" max="20" value="{{ bot.reaction_chance_percent or 5 }}" id="reactionChance" oninput="document.getElementById('reactionValue').textContent = this.value + '%'">
-                        <span id="reactionValue">{{ bot.reaction_chance_percent or 5 }}%</span>
-                        <br><small class="text-muted">Chance to react with random animal emoji (free, no API cost)</small>
-                    </div>
-                    <div class="mb-3">
-                        <div class="form-check form-switch">
-                            <input type="checkbox" name="llm_reaction_enabled" class="form-check-input" id="llmReaction" {% if bot.llm_reaction_enabled %}checked{% endif %}>
-                            <label class="form-check-label" for="llmReaction">Use AI to detect funny messages</label>
-                        </div>
-                        <small class="text-muted">Uses Haiku to evaluate if messages are funny and react appropriately (costs ~$0.0001/msg)</small>
+                        <label class="form-label">Max Reactions Per Response</label>
+                        <input type="number" name="max_reactions_per_response" class="form-control" min="1" max="10" value="{{ bot.max_reactions_per_response or 3 }}">
+                        <small class="text-muted">Maximum emoji reactions the bot can add per response (1-10)</small>
                     </div>
                 </div>
             </div>

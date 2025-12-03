@@ -34,10 +34,14 @@ class Bot(db.Model):
     idle_check_interval_minutes = db.Column(db.Integer, default=5)  # How often to check idle groups (1-30)
     idle_trigger_chance_percent = db.Column(db.Integer, default=10)  # Chance to post each check (5-50)
 
-    # Reaction settings
-    reaction_enabled = db.Column(db.Boolean, default=True)  # Enable emoji reactions
-    reaction_chance_percent = db.Column(db.Integer, default=5)  # Random animal emoji chance (0-100)
-    llm_reaction_enabled = db.Column(db.Boolean, default=False)  # Use LLM to detect funny messages
+    # Reaction settings (legacy - no longer used)
+    reaction_enabled = db.Column(db.Boolean, default=True)  # DEPRECATED: Use reaction_tool_enabled
+    reaction_chance_percent = db.Column(db.Integer, default=5)  # DEPRECATED
+    llm_reaction_enabled = db.Column(db.Boolean, default=False)  # DEPRECATED
+
+    # New tool-based reaction system
+    reaction_tool_enabled = db.Column(db.Boolean, default=False)  # Enable reaction tool for AI
+    max_reactions_per_response = db.Column(db.Integer, default=3)  # Cap on reactions per response (1-10)
 
     # Signal feature settings
     typing_enabled = db.Column(db.Boolean, default=True)  # Send typing indicators while composing
@@ -73,9 +77,8 @@ class Bot(db.Model):
             "idle_threshold_minutes": self.idle_threshold_minutes or 15,
             "idle_check_interval_minutes": self.idle_check_interval_minutes or 5,
             "idle_trigger_chance_percent": self.idle_trigger_chance_percent or 10,
-            "reaction_enabled": self.reaction_enabled,
-            "reaction_chance_percent": self.reaction_chance_percent,
-            "llm_reaction_enabled": self.llm_reaction_enabled,
+            "reaction_tool_enabled": self.reaction_tool_enabled,
+            "max_reactions_per_response": self.max_reactions_per_response or 3,
             "typing_enabled": self.typing_enabled,
             "read_receipts_enabled": self.read_receipts_enabled,
             "context_window": self.context_window or 25,

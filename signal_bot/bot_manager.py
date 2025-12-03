@@ -155,9 +155,8 @@ class SignalBotManager:
                 'finance_enabled': getattr(bot, 'finance_enabled', False),
                 'time_enabled': getattr(bot, 'time_enabled', False),
                 'wikipedia_enabled': getattr(bot, 'wikipedia_enabled', False),
-                'reaction_enabled': bot.reaction_enabled,
-                'reaction_chance_percent': bot.reaction_chance_percent,
-                'llm_reaction_enabled': bot.llm_reaction_enabled,
+                'reaction_tool_enabled': getattr(bot, 'reaction_tool_enabled', False),
+                'max_reactions_per_response': getattr(bot, 'max_reactions_per_response', 3),
                 'typing_enabled': getattr(bot, 'typing_enabled', True),
                 'read_receipts_enabled': getattr(bot, 'read_receipts_enabled', False)
             }
@@ -703,9 +702,8 @@ class SignalBotManager:
                 bot_data['finance_enabled'] = getattr(bot, 'finance_enabled', False)
                 bot_data['time_enabled'] = getattr(bot, 'time_enabled', False)
                 bot_data['wikipedia_enabled'] = getattr(bot, 'wikipedia_enabled', False)
-                bot_data['reaction_enabled'] = bot.reaction_enabled
-                bot_data['reaction_chance_percent'] = bot.reaction_chance_percent
-                bot_data['llm_reaction_enabled'] = bot.llm_reaction_enabled
+                bot_data['reaction_tool_enabled'] = getattr(bot, 'reaction_tool_enabled', False)
+                bot_data['max_reactions_per_response'] = getattr(bot, 'max_reactions_per_response', 3)
                 bot_data['typing_enabled'] = getattr(bot, 'typing_enabled', True)
                 bot_data['read_receipts_enabled'] = getattr(bot, 'read_receipts_enabled', False)
 
@@ -853,6 +851,24 @@ class SignalBotManager:
                 except Exception as e:
                     logger.error(f"Failed to process attachment {att['id']}: {e}")
 
+            # Create reaction callback for tool-based reactions
+            async def send_reaction_cb(target_sender_id: str, target_timestamp: int, emoji: str):
+                """Send an emoji reaction to a specific message."""
+                await self.send_reaction(
+                    bot_data['phone_number'],
+                    group_id,
+                    target_sender_id,
+                    target_timestamp,
+                    emoji,
+                    bot_data['signal_api_port']
+                )
+                self._log_activity(
+                    "reaction_sent",
+                    bot_data['id'],
+                    group_id,
+                    f"{bot_data['name']} reacted with {emoji}"
+                )
+
             # Handle the message (inside app context for DB operations)
             await self.message_handler.handle_incoming_message(
                 group_id=group_id,
@@ -866,14 +882,9 @@ class SignalBotManager:
                 send_image_callback=lambda p: asyncio.create_task(send_image_cb(p)),
                 send_typing_callback=lambda: asyncio.create_task(send_typing_cb()),
                 stop_typing_callback=lambda: asyncio.create_task(stop_typing_cb()),
-                incoming_images=incoming_images if incoming_images else None
+                incoming_images=incoming_images if incoming_images else None,
+                send_reaction_callback=lambda sid, ts, em: asyncio.create_task(send_reaction_cb(sid, ts, em))
             )
-
-            # Maybe react to the message with an emoji
-            if message_timestamp and sender_id:
-                await self._maybe_react_to_message(
-                    bot_data, group_id, sender_id, message_timestamp, message_text
-                )
 
     async def _idle_news_checker(self):
         """
@@ -1032,113 +1043,6 @@ Search for current news and pick something good!"""
 
         except Exception as e:
             logger.error(f"Failed to generate idle news: {e}")
-
-    # Animal emojis for random reactions
-    ANIMAL_EMOJIS = [
-        "🐶", "🐱", "🐼", "🦊", "🐸", "🐧", "🦆", "🐙", "🦋", "🐢",
-        "🦝", "🐨", "🦥", "🐰", "🐻", "🦩", "🐝", "🦎", "🐳", "🐷"
-    ]
-
-    async def _maybe_react_to_message(
-        self,
-        bot_data: dict,
-        group_id: str,
-        sender_id: str,
-        message_timestamp: int,
-        message_text: str
-    ):
-        """Decide whether to react to a message and with what emoji."""
-        if not bot_data.get('reaction_enabled', True):
-            return
-
-        # Gate ALL reactions with the percentage check
-        chance = bot_data.get('reaction_chance_percent', 5)
-        if random.random() * 100 >= chance:
-            return  # Failed the roll - no reaction
-
-        # Passed the roll - now decide which emoji to use
-        emoji = None
-        reaction_type = "random"
-
-        # Option 1: Use LLM to pick contextual emoji (if enabled)
-        if bot_data.get('llm_reaction_enabled', False):
-            is_funny, llm_emoji = await self._evaluate_funny(message_text, bot_data)
-            if is_funny and llm_emoji:
-                emoji = llm_emoji
-                reaction_type = "funny detected"
-
-        # Option 2: Fall back to random animal emoji
-        if not emoji:
-            emoji = random.choice(self.ANIMAL_EMOJIS)
-            reaction_type = "random"
-
-        await self.send_reaction(
-            bot_data['phone_number'],
-            group_id,
-            sender_id,
-            message_timestamp,
-            emoji,
-            bot_data['signal_api_port']
-        )
-        self._log_activity(
-            "reaction_sent",
-            bot_data['id'],
-            group_id,
-            f"{bot_data['name']} reacted with {emoji} ({reaction_type})"
-        )
-
-    async def _evaluate_funny(self, message_text: str, bot_data: dict) -> tuple[bool, str]:
-        """Use LLM to evaluate if a message is funny and suggest an emoji."""
-        # Quick check - skip very short messages
-        if len(message_text) < 10:
-            return False, ""
-
-        try:
-            from shared_utils import call_openrouter_api
-            from config import AI_MODELS
-        except ImportError as e:
-            logger.error(f"Failed to import for funny evaluation: {e}")
-            return False, ""
-
-        # Use the bot's own configured model
-        bot_model = bot_data.get('model', '')
-        model_id = AI_MODELS.get(bot_model, bot_model)
-
-        prompt = f'''Is this message funny, clever, or reaction-worthy? Message: "{message_text}"
-
-Respond with ONLY one of:
-- NO
-- YES 😂 (if genuinely funny/hilarious)
-- YES 💀 (if dark humor or deadpan)
-- YES 🔥 (if a sick burn or roast)
-- YES ❤️ (if wholesome or sweet)
-- YES 🤯 (if mind-blowing or surprising)
-
-Be selective - most messages are NOT reaction-worthy.'''
-
-        try:
-            response = call_openrouter_api(
-                prompt=prompt,
-                conversation_history=[],
-                model=model_id,
-                system_prompt="You evaluate messages for humor. Be brief and selective.",
-                stream_callback=None,
-                web_search=False
-            )
-
-            if response and response.strip().upper().startswith("YES"):
-                # Extract emoji from response
-                parts = response.strip().split()
-                emoji = parts[-1] if len(parts) > 1 else "😂"
-                # Validate it's actually an emoji (simple check)
-                if len(emoji) <= 4:
-                    return True, emoji
-                return True, "😂"
-            return False, ""
-
-        except Exception as e:
-            logger.error(f"Funny evaluation failed: {e}")
-            return False, ""
 
     def _log_activity(self, event_type: str, bot_id: str, group_id: str, description: str):
         """Log an activity event."""

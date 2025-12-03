@@ -88,7 +88,9 @@ class MemoryManager:
                 "role": "assistant" if msg.is_bot else "user",
                 "content": msg.content,
                 "name": msg.sender_name,
-                "timestamp": msg.timestamp.isoformat() if msg.timestamp else None
+                "timestamp": msg.timestamp.isoformat() if msg.timestamp else None,
+                "sender_id": msg.sender_id,
+                "signal_timestamp": msg.signal_timestamp
             })
 
         return context

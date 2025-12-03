@@ -118,9 +118,8 @@ def register_routes(app):
             bot.idle_threshold_minutes = int(request.form.get("idle_threshold_minutes", 15))
             bot.idle_check_interval_minutes = int(request.form.get("idle_check_interval_minutes", 5))
             bot.idle_trigger_chance_percent = int(request.form.get("idle_trigger_chance_percent", 10))
-            bot.reaction_enabled = request.form.get("reaction_enabled") == "on"
-            bot.reaction_chance_percent = int(request.form.get("reaction_chance_percent", 5))
-            bot.llm_reaction_enabled = request.form.get("llm_reaction_enabled") == "on"
+            bot.reaction_tool_enabled = request.form.get("reaction_tool_enabled") == "on"
+            bot.max_reactions_per_response = int(request.form.get("max_reactions_per_response", 3))
             bot.typing_enabled = request.form.get("typing_enabled") == "on"
             bot.read_receipts_enabled = request.form.get("read_receipts_enabled") == "on"
 
