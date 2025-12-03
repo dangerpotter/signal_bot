@@ -419,22 +419,34 @@ def format_response_with_citations(text: str, annotations: list) -> str:
     return modified_text + sources_section
 
 
-def call_openrouter_responses_api(prompt, conversation_history, model, system_prompt, tools=None, tool_executor=None):
-    """Call the OpenRouter Responses API with web search and optional function tools.
+def call_openrouter_responses_api(
+    prompt,
+    conversation_history,
+    model,
+    system_prompt,
+    tools=None,
+    tool_executor=None,
+    stream_callback=None
+):
+    """Call the OpenRouter Responses API with web search, tool calling, and streaming support.
 
-    This API returns citation annotations for web search results and supports tool calling.
+    This API returns citation annotations for web search results and supports tool calling
+    with proper multi-turn follow-up requests.
 
     Args:
         prompt: The current user message
         conversation_history: List of previous messages
         model: The model ID to use
         system_prompt: System prompt for the model
-        tools: Optional list of function tool schemas
+        tools: Optional list of function tool schemas (OpenAI format)
         tool_executor: Optional callback function(name, args) -> result to execute tool calls
+        stream_callback: Optional function(chunk: str) to call with each streaming token
 
     Returns:
         Formatted response string with citations, or None on error
     """
+    import uuid as uuid_module
+
     try:
         headers = {
             "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}",
@@ -492,6 +504,7 @@ def call_openrouter_responses_api(prompt, conversation_history, model, system_pr
                         "type": "function",
                         "name": tool["function"]["name"],
                         "description": tool["function"].get("description", ""),
+                        "strict": None,
                         "parameters": tool["function"].get("parameters", {})
                     })
 
@@ -501,7 +514,8 @@ def call_openrouter_responses_api(prompt, conversation_history, model, system_pr
             "tools": api_tools,
             "tool_choice": "auto",
             "max_output_tokens": 4000,
-            "temperature": 1
+            "temperature": 1,
+            "stream": stream_callback is not None
         }
         _add_openrouter_transforms(payload)
 
@@ -509,74 +523,151 @@ def call_openrouter_responses_api(prompt, conversation_history, model, system_pr
         print(f"  Model: {openrouter_model}")
         print(f"  Messages: {len(input_messages)}")
         print(f"  Web search: ENABLED")
+        print(f"  Streaming: {stream_callback is not None}")
         if tools:
             print(f"  Function tools: {[t['function']['name'] for t in tools if t.get('type') == 'function']}")
 
-        response = requests.post(
-            "https://openrouter.ai/api/v1/responses",
-            headers=headers,
-            json=payload,
-            timeout=120
-        )
-
-        print(f"[OpenRouter Responses API] Response status: {response.status_code}")
-
-        if response.status_code == 200:
-            response_data = response.json()
-
-            # Extract output items
-            output = response_data.get("output", [])
-            text = ""
-            annotations = []
-            function_calls = []
-
-            for item in output:
-                if item.get("type") == "message":
-                    for content in item.get("content", []):
-                        if content.get("type") == "output_text":
-                            text = content.get("text", "")
-                            annotations = content.get("annotations", [])
-                elif item.get("type") == "function_call":
-                    function_calls.append(item)
-
-            # Handle function calls if present and we have an executor
-            if function_calls and tool_executor:
-                print(f"[OpenRouter Responses API] Processing {len(function_calls)} function call(s)")
-
-                for fc in function_calls:
-                    func_name = fc.get("name")
-                    func_args = fc.get("arguments", "{}")
-                    call_id = fc.get("call_id", fc.get("id", ""))
-
-                    print(f"[OpenRouter Responses API] Executing tool: {func_name}")
-                    try:
-                        import json
-                        args_dict = json.loads(func_args) if isinstance(func_args, str) else func_args
-                        tool_result = tool_executor(func_name, args_dict)
-                        print(f"[OpenRouter Responses API] Tool result: {str(tool_result)[:200]}")
-
-                        # For image generation, the tool executor handles sending the image
-                        # We can return a simple confirmation or the text response
-                        if func_name == "generate_image" and tool_result:
-                            # Image was generated, return text if any, or empty string to indicate success
-                            if text:
-                                formatted_response = format_response_with_citations(text, annotations)
-                                return formatted_response
-                            return ""  # Image sent separately, return empty to indicate handled
-
-                    except Exception as e:
-                        print(f"[OpenRouter Responses API] Tool execution error: {e}")
-
-            if text:
-                # Format response with citations
-                formatted_response = format_response_with_citations(text, annotations)
-                print(f"[OpenRouter Responses API] Response received, {len(annotations)} citations found")
-                return formatted_response
+        def make_request(req_payload, stream=False):
+            """Make a request to the Responses API, handling streaming if enabled."""
+            if stream:
+                return _responses_api_streaming_request(headers, req_payload, stream_callback)
             else:
-                print("[OpenRouter Responses API] Empty text in response")
-                return None
+                response = requests.post(
+                    "https://openrouter.ai/api/v1/responses",
+                    headers=headers,
+                    json=req_payload,
+                    timeout=120
+                )
+                if response.status_code == 200:
+                    return response.json()
+                else:
+                    print(f"[OpenRouter Responses API] Error: {response.status_code} - {response.text[:500]}")
+                    return None
+
+        response_data = make_request(payload, stream=stream_callback is not None)
+        if not response_data:
+            return None
+
+        print(f"[OpenRouter Responses API] Response received")
+
+        # Extract output items
+        output = response_data.get("output", [])
+        text = ""
+        annotations = []
+        function_calls = []
+
+        for item in output:
+            if item.get("type") == "message":
+                for content in item.get("content", []):
+                    if content.get("type") == "output_text":
+                        text = content.get("text", "")
+                        annotations = content.get("annotations", [])
+            elif item.get("type") == "function_call":
+                function_calls.append(item)
+
+        # Handle function calls with proper multi-turn follow-up
+        if function_calls and tool_executor:
+            print(f"[OpenRouter Responses API] Processing {len(function_calls)} function call(s)")
+
+            # Execute all tools and collect results
+            tool_results = []
+            image_generated = False
+
+            for fc in function_calls:
+                func_name = fc.get("name")
+                func_args = fc.get("arguments", "{}")
+                call_id = fc.get("call_id", fc.get("id", ""))
+                fc_id = fc.get("id", f"fc_{uuid_module.uuid4().hex[:8]}")
+
+                print(f"[OpenRouter Responses API] Executing tool: {func_name}")
+                try:
+                    args_dict = json.loads(func_args) if isinstance(func_args, str) else func_args
+                    tool_result = tool_executor(func_name, args_dict)
+                    print(f"[OpenRouter Responses API] Tool result: {str(tool_result)[:200]}")
+
+                    # Track if image was generated (handled separately by executor)
+                    if func_name == "generate_image" and tool_result:
+                        image_generated = True
+
+                    tool_results.append({
+                        "function_call": {
+                            "type": "function_call",
+                            "id": fc_id,
+                            "call_id": call_id,
+                            "name": func_name,
+                            "arguments": func_args if isinstance(func_args, str) else json.dumps(func_args)
+                        },
+                        "output": {
+                            "type": "function_call_output",
+                            "id": f"fco_{uuid_module.uuid4().hex[:8]}",
+                            "call_id": call_id,
+                            "output": json.dumps(tool_result) if isinstance(tool_result, dict) else str(tool_result)
+                        }
+                    })
+
+                except Exception as e:
+                    print(f"[OpenRouter Responses API] Tool execution error: {e}")
+                    tool_results.append({
+                        "function_call": {
+                            "type": "function_call",
+                            "id": fc_id,
+                            "call_id": call_id,
+                            "name": func_name,
+                            "arguments": func_args if isinstance(func_args, str) else json.dumps(func_args)
+                        },
+                        "output": {
+                            "type": "function_call_output",
+                            "id": f"fco_{uuid_module.uuid4().hex[:8]}",
+                            "call_id": call_id,
+                            "output": json.dumps({"error": str(e)})
+                        }
+                    })
+
+            # Build follow-up request with tool results
+            if tool_results:
+                follow_up_input = list(input_messages)  # Copy original messages
+
+                # Add each function call and its output
+                for tr in tool_results:
+                    follow_up_input.append(tr["function_call"])
+                    follow_up_input.append(tr["output"])
+
+                follow_up_payload = {
+                    "model": openrouter_model,
+                    "input": follow_up_input,
+                    "tools": api_tools,
+                    "tool_choice": "auto",
+                    "max_output_tokens": 4000,
+                    "temperature": 1,
+                    "stream": stream_callback is not None
+                }
+                _add_openrouter_transforms(follow_up_payload)
+
+                print(f"[OpenRouter Responses API] Making follow-up request with {len(tool_results)} tool result(s)")
+                follow_up_response = make_request(follow_up_payload, stream=stream_callback is not None)
+
+                if follow_up_response:
+                    # Extract text from follow-up response
+                    follow_up_output = follow_up_response.get("output", [])
+                    for item in follow_up_output:
+                        if item.get("type") == "message":
+                            for content in item.get("content", []):
+                                if content.get("type") == "output_text":
+                                    text = content.get("text", "")
+                                    annotations = content.get("annotations", [])
+
+                # If image was generated and we have text, return it
+                # If image was generated but no text, return empty (image sent separately)
+                if image_generated and not text:
+                    return ""
+
+        if text:
+            # Format response with citations
+            formatted_response = format_response_with_citations(text, annotations)
+            print(f"[OpenRouter Responses API] Response received, {len(annotations)} citations found")
+            return formatted_response
         else:
-            print(f"[OpenRouter Responses API] Error: {response.status_code} - {response.text[:500]}")
+            print("[OpenRouter Responses API] Empty text in response")
             return None
 
     except requests.exceptions.Timeout:
@@ -584,6 +675,150 @@ def call_openrouter_responses_api(prompt, conversation_history, model, system_pr
         return None
     except Exception as e:
         print(f"[OpenRouter Responses API] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+def _responses_api_streaming_request(headers, payload, stream_callback):
+    """Handle streaming requests to the Responses API.
+
+    Parses Server-Sent Events and calls stream_callback with text deltas.
+    Returns the complete response structure when done.
+
+    Args:
+        headers: Request headers
+        payload: Request payload (should have stream=True)
+        stream_callback: Function to call with each text chunk
+
+    Returns:
+        Complete response dict with output items, or None on error
+    """
+    try:
+        response = requests.post(
+            "https://openrouter.ai/api/v1/responses",
+            headers=headers,
+            json=payload,
+            timeout=180,
+            stream=True
+        )
+
+        if response.status_code != 200:
+            print(f"[OpenRouter Responses API Stream] Error: {response.status_code} - {response.text[:500]}")
+            return None
+
+        # Track state for building final response
+        response_id = None
+        output_items = {}  # id -> item
+        current_text = ""
+        current_annotations = []
+        function_calls = []
+
+        for line in response.iter_lines():
+            if not line:
+                continue
+
+            line_text = line.decode('utf-8')
+            if not line_text.startswith('data: '):
+                continue
+
+            data_str = line_text[6:]  # Remove 'data: ' prefix
+            if data_str.strip() == '[DONE]':
+                break
+
+            try:
+                event = json.loads(data_str)
+                event_type = event.get('type', '')
+
+                if event_type == 'response.created':
+                    resp = event.get('response', {})
+                    response_id = resp.get('id')
+
+                elif event_type == 'response.output_item.added':
+                    item = event.get('item', {})
+                    item_id = item.get('id')
+                    if item_id:
+                        output_items[item_id] = item
+                    # Track function calls
+                    if item.get('type') == 'function_call':
+                        function_calls.append(item)
+
+                elif event_type == 'response.content_part.delta':
+                    # Text delta - stream it to callback
+                    delta = event.get('delta', '')
+                    if delta and stream_callback:
+                        stream_callback(delta)
+                    current_text += delta
+
+                elif event_type == 'response.content_part.done':
+                    # Content part completed - extract annotations
+                    part = event.get('part', {})
+                    if part.get('type') == 'output_text':
+                        current_annotations = part.get('annotations', [])
+
+                elif event_type == 'response.output_item.done':
+                    # Update output item with final state
+                    item = event.get('item', {})
+                    item_id = item.get('id')
+                    if item_id:
+                        output_items[item_id] = item
+                    # Track completed function calls
+                    if item.get('type') == 'function_call':
+                        # Update or add to function_calls
+                        for i, fc in enumerate(function_calls):
+                            if fc.get('id') == item_id:
+                                function_calls[i] = item
+                                break
+                        else:
+                            function_calls.append(item)
+
+                elif event_type == 'response.function_call_arguments.delta':
+                    # Function call arguments being streamed
+                    pass  # We'll get the full args in output_item.done
+
+                elif event_type == 'response.function_call_arguments.done':
+                    # Function call arguments complete
+                    pass  # We'll get the full item in output_item.done
+
+                elif event_type == 'response.done':
+                    # Final response with usage stats
+                    pass
+
+            except json.JSONDecodeError:
+                continue
+
+        # Build final response structure
+        final_output = []
+
+        # Add message with collected text if present
+        if current_text:
+            final_output.append({
+                "type": "message",
+                "role": "assistant",
+                "content": [{
+                    "type": "output_text",
+                    "text": current_text,
+                    "annotations": current_annotations
+                }]
+            })
+
+        # Add function calls
+        for fc in function_calls:
+            final_output.append(fc)
+
+        return {
+            "id": response_id,
+            "output": final_output,
+            "status": "completed"
+        }
+
+    except requests.exceptions.Timeout:
+        print("[OpenRouter Responses API Stream] Request timed out")
+        return None
+    except Exception as e:
+        print(f"[OpenRouter Responses API Stream] Error: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 
@@ -610,7 +845,8 @@ def call_openrouter_api(
         print(f"[OpenRouter] Web search enabled, using Responses API for citations")
         result = call_openrouter_responses_api(
             prompt, conversation_history, model, system_prompt,
-            tools=tools, tool_executor=tool_executor
+            tools=tools, tool_executor=tool_executor,
+            stream_callback=stream_callback
         )
         if result is not None:  # None could mean image was sent separately
             return result

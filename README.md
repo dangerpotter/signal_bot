@@ -131,6 +131,12 @@ OPENROUTER_TOOL_CALLING_ENABLED = True # Native function calling (falls back to 
 
 **Native Tool Calling**: Commands like `!image` use OpenRouter's native function calling when the model supports it. Falls back to regex parsing for older models.
 
+**Responses API** (used when web search is enabled):
+- Uses OpenRouter's Responses API for web search with inline citations
+- Proper multi-turn tool calling: executes tools and sends results back for natural language responses
+- Streaming support for real-time token delivery
+- Citation annotations formatted with numbered footnotes and sources section
+
 ## Database
 
 SQLite database (`signal_bot.db`) with tables:
