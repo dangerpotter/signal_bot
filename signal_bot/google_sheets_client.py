@@ -2864,6 +2864,428 @@ def set_alignment_sync(
     return _run_async(_set_alignment())
 
 
+def set_text_direction_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    range_notation: str,
+    direction: str
+) -> dict:
+    """
+    Set text direction for cells (left-to-right or right-to-left).
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        range_notation: Range in A1 notation (e.g., "A1:D10")
+        direction: Text direction - "left_to_right" or "right_to_left"
+    """
+
+    DIRECTIONS = {
+        "left_to_right": "LEFT_TO_RIGHT",
+        "right_to_left": "RIGHT_TO_LEFT"
+    }
+
+    async def _set_text_direction():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        text_direction = DIRECTIONS.get(direction.lower().replace("-", "_"))
+        if not text_direction:
+            return {"error": f"Invalid direction '{direction}'. Use: left_to_right, right_to_left"}
+
+        # Get spreadsheet metadata for sheetId
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        sheet_id = metadata["sheets"][0]["sheet_id"]
+
+        # Parse range notation
+        try:
+            if ':' in range_notation:
+                start_cell, end_cell = range_notation.split(':')
+            else:
+                start_cell = end_cell = range_notation
+
+            start_col_str = ''.join(c for c in start_cell if c.isalpha())
+            start_row_str = ''.join(c for c in start_cell if c.isdigit())
+            start_col, _ = parse_column_range(start_col_str)
+            start_row = int(start_row_str) - 1 if start_row_str else 0
+
+            end_col_str = ''.join(c for c in end_cell if c.isalpha())
+            end_row_str = ''.join(c for c in end_cell if c.isdigit())
+            end_col, _ = parse_column_range(end_col_str)
+            end_col += 1
+            end_row = int(end_row_str) if end_row_str else start_row + 1
+
+        except Exception as e:
+            return {"error": f"Invalid range '{range_notation}': {e}"}
+
+        request = {
+            "repeatCell": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": start_row,
+                    "endRowIndex": end_row,
+                    "startColumnIndex": start_col,
+                    "endColumnIndex": end_col
+                },
+                "cell": {
+                    "userEnteredFormat": {
+                        "textDirection": text_direction
+                    }
+                },
+                "fields": "userEnteredFormat.textDirection"
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        return {
+            "success": True,
+            "range": range_notation,
+            "direction": direction,
+            "message": f"Set text direction to {direction.replace('_', '-')} on {range_notation}"
+        }
+
+    return _run_async(_set_text_direction())
+
+
+def set_text_rotation_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    range_notation: str,
+    angle: int = None,
+    vertical: bool = None
+) -> dict:
+    """
+    Set text rotation for cells.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        range_notation: Range in A1 notation (e.g., "A1:D10")
+        angle: Rotation angle in degrees (-90 to 90)
+        vertical: If True, stack characters vertically
+    """
+
+    async def _set_text_rotation():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        if angle is None and vertical is None:
+            return {"error": "Must specify either 'angle' or 'vertical'"}
+
+        if angle is not None and vertical:
+            return {"error": "Cannot specify both 'angle' and 'vertical'. Choose one."}
+
+        if angle is not None and (angle < -90 or angle > 90):
+            return {"error": f"Angle must be between -90 and 90 degrees. Got: {angle}"}
+
+        # Get spreadsheet metadata for sheetId
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        sheet_id = metadata["sheets"][0]["sheet_id"]
+
+        # Parse range notation
+        try:
+            if ':' in range_notation:
+                start_cell, end_cell = range_notation.split(':')
+            else:
+                start_cell = end_cell = range_notation
+
+            start_col_str = ''.join(c for c in start_cell if c.isalpha())
+            start_row_str = ''.join(c for c in start_cell if c.isdigit())
+            start_col, _ = parse_column_range(start_col_str)
+            start_row = int(start_row_str) - 1 if start_row_str else 0
+
+            end_col_str = ''.join(c for c in end_cell if c.isalpha())
+            end_row_str = ''.join(c for c in end_cell if c.isdigit())
+            end_col, _ = parse_column_range(end_col_str)
+            end_col += 1
+            end_row = int(end_row_str) if end_row_str else start_row + 1
+
+        except Exception as e:
+            return {"error": f"Invalid range '{range_notation}': {e}"}
+
+        # Build text rotation object
+        text_rotation = {}
+        if vertical:
+            text_rotation["vertical"] = True
+        else:
+            text_rotation["angle"] = angle
+
+        request = {
+            "repeatCell": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": start_row,
+                    "endRowIndex": end_row,
+                    "startColumnIndex": start_col,
+                    "endColumnIndex": end_col
+                },
+                "cell": {
+                    "userEnteredFormat": {
+                        "textRotation": text_rotation
+                    }
+                },
+                "fields": "userEnteredFormat.textRotation"
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        rotation_desc = "vertical" if vertical else f"{angle} degrees"
+        return {
+            "success": True,
+            "range": range_notation,
+            "angle": angle,
+            "vertical": vertical,
+            "message": f"Set text rotation to {rotation_desc} on {range_notation}"
+        }
+
+    return _run_async(_set_text_rotation())
+
+
+def set_cell_padding_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    range_notation: str,
+    top: int = None,
+    right: int = None,
+    bottom: int = None,
+    left: int = None
+) -> dict:
+    """
+    Set inner padding for cells.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        range_notation: Range in A1 notation (e.g., "A1:D10")
+        top: Top padding in pixels
+        right: Right padding in pixels
+        bottom: Bottom padding in pixels
+        left: Left padding in pixels
+    """
+
+    async def _set_cell_padding():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        if top is None and right is None and bottom is None and left is None:
+            return {"error": "At least one padding value (top, right, bottom, left) must be specified"}
+
+        # Get spreadsheet metadata for sheetId
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        sheet_id = metadata["sheets"][0]["sheet_id"]
+
+        # Parse range notation
+        try:
+            if ':' in range_notation:
+                start_cell, end_cell = range_notation.split(':')
+            else:
+                start_cell = end_cell = range_notation
+
+            start_col_str = ''.join(c for c in start_cell if c.isalpha())
+            start_row_str = ''.join(c for c in start_cell if c.isdigit())
+            start_col, _ = parse_column_range(start_col_str)
+            start_row = int(start_row_str) - 1 if start_row_str else 0
+
+            end_col_str = ''.join(c for c in end_cell if c.isalpha())
+            end_row_str = ''.join(c for c in end_cell if c.isdigit())
+            end_col, _ = parse_column_range(end_col_str)
+            end_col += 1
+            end_row = int(end_row_str) if end_row_str else start_row + 1
+
+        except Exception as e:
+            return {"error": f"Invalid range '{range_notation}': {e}"}
+
+        # Build padding object - must include all four values
+        padding = {
+            "top": top if top is not None else 0,
+            "right": right if right is not None else 0,
+            "bottom": bottom if bottom is not None else 0,
+            "left": left if left is not None else 0
+        }
+
+        request = {
+            "repeatCell": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": start_row,
+                    "endRowIndex": end_row,
+                    "startColumnIndex": start_col,
+                    "endColumnIndex": end_col
+                },
+                "cell": {
+                    "userEnteredFormat": {
+                        "padding": padding
+                    }
+                },
+                "fields": "userEnteredFormat.padding"
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        padding_desc = []
+        if top is not None:
+            padding_desc.append(f"top={top}px")
+        if right is not None:
+            padding_desc.append(f"right={right}px")
+        if bottom is not None:
+            padding_desc.append(f"bottom={bottom}px")
+        if left is not None:
+            padding_desc.append(f"left={left}px")
+
+        return {
+            "success": True,
+            "range": range_notation,
+            "padding": padding,
+            "message": f"Set padding ({', '.join(padding_desc)}) on {range_notation}"
+        }
+
+    return _run_async(_set_cell_padding())
+
+
+def set_rich_text_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    cell: str,
+    text: str,
+    runs: list
+) -> dict:
+    """
+    Apply mixed formatting within a single cell using text format runs.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        cell: Single cell in A1 notation (e.g., "A1")
+        text: The full text content of the cell
+        runs: Array of format runs, each with 'start' index and optional formatting
+    """
+
+    async def _set_rich_text():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        if not runs or len(runs) == 0:
+            return {"error": "At least one format run is required"}
+
+        # Get spreadsheet metadata for sheetId
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        sheet_id = metadata["sheets"][0]["sheet_id"]
+
+        # Parse cell notation (single cell only)
+        try:
+            # Remove sheet name if present
+            cell_ref = cell.split('!')[-1] if '!' in cell else cell
+
+            col_str = ''.join(c for c in cell_ref if c.isalpha())
+            row_str = ''.join(c for c in cell_ref if c.isdigit())
+            col, _ = parse_column_range(col_str)
+            row = int(row_str) - 1 if row_str else 0
+
+        except Exception as e:
+            return {"error": f"Invalid cell '{cell}': {e}"}
+
+        # Build text format runs
+        text_format_runs = []
+        for run in runs:
+            if "start" not in run:
+                return {"error": "Each run must have a 'start' index"}
+
+            format_run = {
+                "startIndex": run["start"],
+                "format": {}
+            }
+
+            # Build format object
+            fmt = format_run["format"]
+
+            if run.get("bold") is not None:
+                fmt["bold"] = run["bold"]
+            if run.get("italic") is not None:
+                fmt["italic"] = run["italic"]
+            if run.get("underline") is not None:
+                fmt["underline"] = run["underline"]
+            if run.get("strikethrough") is not None:
+                fmt["strikethrough"] = run["strikethrough"]
+            if run.get("font_size") is not None:
+                fmt["fontSize"] = run["font_size"]
+            if run.get("font_family") is not None:
+                fmt["fontFamily"] = run["font_family"]
+
+            # Handle color
+            if run.get("color"):
+                color = parse_color(run["color"])
+                if color:
+                    fmt["foregroundColor"] = color
+
+            text_format_runs.append(format_run)
+
+        # Sort runs by start index
+        text_format_runs.sort(key=lambda r: r["startIndex"])
+
+        # Build the request using updateCells
+        request = {
+            "updateCells": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": row,
+                    "endRowIndex": row + 1,
+                    "startColumnIndex": col,
+                    "endColumnIndex": col + 1
+                },
+                "rows": [{
+                    "values": [{
+                        "userEnteredValue": {"stringValue": text},
+                        "textFormatRuns": text_format_runs
+                    }]
+                }],
+                "fields": "userEnteredValue,textFormatRuns"
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        return {
+            "success": True,
+            "cell": cell,
+            "text": text,
+            "runs_applied": len(runs),
+            "message": f"Applied {len(runs)} format run(s) to rich text in {cell}"
+        }
+
+    return _run_async(_set_rich_text())
+
+
 # =============================================================================
 # BATCH 6: Charts
 # =============================================================================
@@ -5381,3 +5803,1751 @@ def delete_developer_metadata_sync(
         return await delete_developer_metadata(access_token, spreadsheet_id, metadata_id)
 
     return _run_async(_delete_metadata())
+
+
+# ============================================================================
+# BATCH 12: Sheet Properties Extensions
+# ============================================================================
+
+def hide_sheet_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    sheet_name: str
+) -> dict:
+    """
+    Hide a sheet tab from view.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        sheet_name: Name of the sheet to hide
+    """
+    async def _hide_sheet():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        # Get spreadsheet metadata to find sheet ID
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        # Find sheet by name
+        sheet_id = None
+        for s in metadata.get("sheets", []):
+            if s["title"].lower() == sheet_name.lower():
+                sheet_id = s["sheet_id"]
+                break
+
+        if sheet_id is None:
+            return {"error": f"Sheet '{sheet_name}' not found"}
+
+        # Check if this is the only visible sheet
+        visible_count = sum(1 for s in metadata.get("sheets", []) if not s.get("hidden", False))
+        if visible_count <= 1:
+            return {"error": "Cannot hide the only visible sheet. At least one sheet must remain visible."}
+
+        request = {
+            "updateSheetProperties": {
+                "properties": {
+                    "sheetId": sheet_id,
+                    "hidden": True
+                },
+                "fields": "hidden"
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        return {
+            "success": True,
+            "sheet": sheet_name,
+            "hidden": True,
+            "message": f"Sheet '{sheet_name}' is now hidden"
+        }
+
+    return _run_async(_hide_sheet())
+
+
+def show_sheet_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    sheet_name: str
+) -> dict:
+    """
+    Show (unhide) a hidden sheet tab.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        sheet_name: Name of the sheet to show
+    """
+    async def _show_sheet():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        # Get spreadsheet metadata to find sheet ID
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        # Find sheet by name
+        sheet_id = None
+        for s in metadata.get("sheets", []):
+            if s["title"].lower() == sheet_name.lower():
+                sheet_id = s["sheet_id"]
+                break
+
+        if sheet_id is None:
+            return {"error": f"Sheet '{sheet_name}' not found"}
+
+        request = {
+            "updateSheetProperties": {
+                "properties": {
+                    "sheetId": sheet_id,
+                    "hidden": False
+                },
+                "fields": "hidden"
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        return {
+            "success": True,
+            "sheet": sheet_name,
+            "hidden": False,
+            "message": f"Sheet '{sheet_name}' is now visible"
+        }
+
+    return _run_async(_show_sheet())
+
+
+def set_tab_color_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    sheet_name: str,
+    color: str
+) -> dict:
+    """
+    Set the color of a sheet tab.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        sheet_name: Name of the sheet
+        color: Color as hex code (#FF0000) or name (red, blue, green, etc.)
+    """
+    async def _set_tab_color():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        # Get spreadsheet metadata to find sheet ID
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        # Find sheet by name
+        sheet_id = None
+        for s in metadata.get("sheets", []):
+            if s["title"].lower() == sheet_name.lower():
+                sheet_id = s["sheet_id"]
+                break
+
+        if sheet_id is None:
+            return {"error": f"Sheet '{sheet_name}' not found"}
+
+        # Parse color
+        rgb = parse_color(color)
+
+        request = {
+            "updateSheetProperties": {
+                "properties": {
+                    "sheetId": sheet_id,
+                    "tabColorStyle": {
+                        "rgbColor": rgb
+                    }
+                },
+                "fields": "tabColorStyle"
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        return {
+            "success": True,
+            "sheet": sheet_name,
+            "color": color,
+            "message": f"Set tab color for '{sheet_name}' to {color}"
+        }
+
+    return _run_async(_set_tab_color())
+
+
+def set_right_to_left_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    sheet_name: str,
+    right_to_left: bool = True
+) -> dict:
+    """
+    Set whether a sheet uses right-to-left layout.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        sheet_name: Name of the sheet
+        right_to_left: True for RTL, False for LTR
+    """
+    async def _set_rtl():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        # Get spreadsheet metadata to find sheet ID
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        # Find sheet by name
+        sheet_id = None
+        for s in metadata.get("sheets", []):
+            if s["title"].lower() == sheet_name.lower():
+                sheet_id = s["sheet_id"]
+                break
+
+        if sheet_id is None:
+            return {"error": f"Sheet '{sheet_name}' not found"}
+
+        request = {
+            "updateSheetProperties": {
+                "properties": {
+                    "sheetId": sheet_id,
+                    "rightToLeft": right_to_left
+                },
+                "fields": "rightToLeft"
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        direction = "right-to-left" if right_to_left else "left-to-right"
+        return {
+            "success": True,
+            "sheet": sheet_name,
+            "right_to_left": right_to_left,
+            "message": f"Set '{sheet_name}' to {direction} layout"
+        }
+
+    return _run_async(_set_rtl())
+
+
+def get_sheet_properties_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    sheet_name: str = None
+) -> dict:
+    """
+    Get properties of a specific sheet or all sheets.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        sheet_name: Optional name of specific sheet (if None, returns all sheets)
+    """
+    async def _get_props():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        # Get spreadsheet metadata
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        sheets_info = []
+        for s in metadata.get("sheets", []):
+            sheet_info = {
+                "sheet_id": s["sheet_id"],
+                "title": s["title"],
+                "index": s.get("index", 0),
+                "hidden": s.get("hidden", False),
+                "right_to_left": s.get("right_to_left", False),
+                "row_count": s.get("row_count"),
+                "column_count": s.get("column_count"),
+                "frozen_row_count": s.get("frozen_row_count", 0),
+                "frozen_column_count": s.get("frozen_column_count", 0),
+                "tab_color": s.get("tab_color")
+            }
+
+            if sheet_name and s["title"].lower() == sheet_name.lower():
+                return {
+                    "success": True,
+                    "sheet": sheet_info,
+                    "message": f"Properties for sheet '{s['title']}'"
+                }
+
+            sheets_info.append(sheet_info)
+
+        if sheet_name:
+            return {"error": f"Sheet '{sheet_name}' not found"}
+
+        return {
+            "success": True,
+            "sheets": sheets_info,
+            "count": len(sheets_info),
+            "message": f"Found {len(sheets_info)} sheet(s)"
+        }
+
+    return _run_async(_get_props())
+
+
+# ============================================================================
+# BATCH 13: Protected Ranges Management
+# ============================================================================
+
+def list_protected_ranges_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    sheet_name: str = None
+) -> dict:
+    """
+    List all protected ranges in a spreadsheet or specific sheet.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        sheet_name: Optional sheet name to filter by
+    """
+    async def _list_protected():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        # Get full spreadsheet data including protected ranges
+        url = f"{SHEETS_API_BASE}/{spreadsheet_id}?fields=sheets(properties,protectedRanges)"
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                url,
+                headers={"Authorization": f"Bearer {access_token}"}
+            )
+
+            if response.status_code != 200:
+                return {"error": f"Failed to get spreadsheet: {response.text}"}
+
+            data = response.json()
+
+        protected_ranges = []
+        for sheet in data.get("sheets", []):
+            sheet_title = sheet.get("properties", {}).get("title", "")
+            sheet_id = sheet.get("properties", {}).get("sheetId", 0)
+
+            # Skip if filtering by sheet name and doesn't match
+            if sheet_name and sheet_title.lower() != sheet_name.lower():
+                continue
+
+            for pr in sheet.get("protectedRanges", []):
+                range_info = pr.get("range", {})
+
+                # Convert grid range to A1 notation
+                start_row = range_info.get("startRowIndex", 0) + 1
+                end_row = range_info.get("endRowIndex", start_row)
+                start_col = range_info.get("startColumnIndex", 0)
+                end_col = range_info.get("endColumnIndex", start_col + 1)
+
+                # Convert column indices to letters
+                def col_to_letter(col):
+                    result = ""
+                    while col >= 0:
+                        result = chr(col % 26 + ord('A')) + result
+                        col = col // 26 - 1
+                    return result
+
+                range_a1 = f"{col_to_letter(start_col)}{start_row}:{col_to_letter(end_col - 1)}{end_row}"
+
+                # Check if this protects the entire sheet
+                is_full_sheet = (
+                    range_info.get("startRowIndex") is None and
+                    range_info.get("endRowIndex") is None and
+                    range_info.get("startColumnIndex") is None and
+                    range_info.get("endColumnIndex") is None
+                )
+
+                protected_ranges.append({
+                    "protected_range_id": pr.get("protectedRangeId"),
+                    "sheet": sheet_title,
+                    "range": "Entire sheet" if is_full_sheet else range_a1,
+                    "description": pr.get("description", ""),
+                    "warning_only": pr.get("warningOnly", False),
+                    "editors": pr.get("editors", {}),
+                    "requesting_user_can_edit": pr.get("requestingUserCanEdit", False)
+                })
+
+        return {
+            "success": True,
+            "protected_ranges": protected_ranges,
+            "count": len(protected_ranges),
+            "message": f"Found {len(protected_ranges)} protected range(s)"
+        }
+
+    return _run_async(_list_protected())
+
+
+def update_protected_range_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    protected_range_id: int,
+    description: str = None,
+    warning_only: bool = None,
+    editors: list = None
+) -> dict:
+    """
+    Update a protected range's settings.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        protected_range_id: ID of the protected range to update
+        description: New description
+        warning_only: If True, show warning but allow editing
+        editors: List of email addresses who can edit
+    """
+    async def _update_protected():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        # Build the update request
+        protected_range = {"protectedRangeId": protected_range_id}
+        fields = []
+
+        if description is not None:
+            protected_range["description"] = description
+            fields.append("description")
+
+        if warning_only is not None:
+            protected_range["warningOnly"] = warning_only
+            fields.append("warningOnly")
+
+        if editors is not None:
+            protected_range["editors"] = {"users": editors}
+            fields.append("editors")
+
+        if not fields:
+            return {"error": "No fields to update. Specify description, warning_only, or editors."}
+
+        request = {
+            "updateProtectedRange": {
+                "protectedRange": protected_range,
+                "fields": ",".join(fields)
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        return {
+            "success": True,
+            "protected_range_id": protected_range_id,
+            "updated_fields": fields,
+            "message": f"Updated protected range {protected_range_id}"
+        }
+
+    return _run_async(_update_protected())
+
+
+def delete_protected_range_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    protected_range_id: int
+) -> dict:
+    """
+    Remove protection from a range.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        protected_range_id: ID of the protected range to delete
+    """
+    async def _delete_protected():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        request = {
+            "deleteProtectedRange": {
+                "protectedRangeId": protected_range_id
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        return {
+            "success": True,
+            "protected_range_id": protected_range_id,
+            "message": f"Removed protection from range {protected_range_id}"
+        }
+
+    return _run_async(_delete_protected())
+
+
+def protect_sheet_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    sheet_name: str,
+    description: str = None,
+    warning_only: bool = False,
+    editors: list = None,
+    unprotected_ranges: list = None
+) -> dict:
+    """
+    Protect an entire sheet with optional unprotected ranges.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        sheet_name: Name of the sheet to protect
+        description: Description of why the sheet is protected
+        warning_only: If True, show warning but allow editing
+        editors: List of email addresses who can edit (if None, owner only)
+        unprotected_ranges: List of A1 ranges within the sheet that remain editable
+                           (e.g., ["A1:B10", "D5:E20"])
+    """
+    async def _protect_sheet():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        # Get spreadsheet metadata to find sheet ID
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        # Find sheet by name
+        sheet_id = None
+        for s in metadata.get("sheets", []):
+            if s["title"].lower() == sheet_name.lower():
+                sheet_id = s["sheet_id"]
+                break
+
+        if sheet_id is None:
+            return {"error": f"Sheet '{sheet_name}' not found"}
+
+        # Build protected range request for entire sheet
+        protected_range = {
+            "range": {"sheetId": sheet_id},  # No row/col indices = entire sheet
+            "warningOnly": warning_only
+        }
+
+        if description:
+            protected_range["description"] = description
+
+        if editors:
+            protected_range["editors"] = {"users": editors}
+
+        # Add unprotected ranges if specified
+        if unprotected_ranges:
+            unprotected = []
+            for range_notation in unprotected_ranges:
+                try:
+                    if ':' in range_notation:
+                        start_cell, end_cell = range_notation.split(':')
+                    else:
+                        start_cell = end_cell = range_notation
+
+                    start_col_str = ''.join(c for c in start_cell if c.isalpha())
+                    start_row_str = ''.join(c for c in start_cell if c.isdigit())
+                    start_col, _ = parse_column_range(start_col_str)
+                    start_row = int(start_row_str) - 1 if start_row_str else 0
+
+                    end_col_str = ''.join(c for c in end_cell if c.isalpha())
+                    end_row_str = ''.join(c for c in end_cell if c.isdigit())
+                    end_col, _ = parse_column_range(end_col_str)
+                    end_col += 1
+                    end_row = int(end_row_str) if end_row_str else start_row + 1
+
+                    unprotected.append({
+                        "sheetId": sheet_id,
+                        "startRowIndex": start_row,
+                        "endRowIndex": end_row,
+                        "startColumnIndex": start_col,
+                        "endColumnIndex": end_col
+                    })
+                except Exception as e:
+                    return {"error": f"Invalid unprotected range '{range_notation}': {e}"}
+
+            protected_range["unprotectedRanges"] = unprotected
+
+        request = {
+            "addProtectedRange": {
+                "protectedRange": protected_range
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        # Extract protected range ID from response
+        protected_range_id = None
+        if "replies" in result:
+            for reply in result["replies"]:
+                if "addProtectedRange" in reply:
+                    protected_range_id = reply["addProtectedRange"]["protectedRange"]["protectedRangeId"]
+                    break
+
+        mode = "warning" if warning_only else "locked"
+        unprotected_msg = f" with {len(unprotected_ranges)} unprotected range(s)" if unprotected_ranges else ""
+        return {
+            "success": True,
+            "sheet": sheet_name,
+            "protected_range_id": protected_range_id,
+            "mode": mode,
+            "message": f"Protected sheet '{sheet_name}' ({mode} mode){unprotected_msg}"
+        }
+
+    return _run_async(_protect_sheet())
+
+
+# ============================================================================
+# BATCH 14: Filter Views Enhancement
+# ============================================================================
+
+def list_filter_views_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    sheet_name: str = None
+) -> dict:
+    """
+    List all filter views in a spreadsheet.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        sheet_name: Optional sheet name to filter by
+    """
+    async def _list_views():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        # Get full spreadsheet data including filter views
+        url = f"{SHEETS_API_BASE}/{spreadsheet_id}?fields=sheets(properties,filterViews)"
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                url,
+                headers={"Authorization": f"Bearer {access_token}"}
+            )
+
+            if response.status_code != 200:
+                return {"error": f"Failed to get spreadsheet: {response.text}"}
+
+            data = response.json()
+
+        filter_views = []
+        for sheet in data.get("sheets", []):
+            sheet_title = sheet.get("properties", {}).get("title", "")
+
+            # Skip if filtering by sheet name and doesn't match
+            if sheet_name and sheet_title.lower() != sheet_name.lower():
+                continue
+
+            for fv in sheet.get("filterViews", []):
+                range_info = fv.get("range", {})
+
+                # Convert grid range to A1 notation
+                start_row = range_info.get("startRowIndex", 0) + 1
+                end_row = range_info.get("endRowIndex", start_row)
+                start_col = range_info.get("startColumnIndex", 0)
+                end_col = range_info.get("endColumnIndex", start_col + 1)
+
+                def col_to_letter(col):
+                    result = ""
+                    while col >= 0:
+                        result = chr(col % 26 + ord('A')) + result
+                        col = col // 26 - 1
+                    return result
+
+                range_a1 = f"{col_to_letter(start_col)}{start_row}:{col_to_letter(end_col - 1)}{end_row}"
+
+                filter_views.append({
+                    "filter_view_id": fv.get("filterViewId"),
+                    "title": fv.get("title", "Untitled"),
+                    "sheet": sheet_title,
+                    "range": range_a1,
+                    "sort_specs": fv.get("sortSpecs", []),
+                    "filter_specs": fv.get("filterSpecs", [])
+                })
+
+        return {
+            "success": True,
+            "filter_views": filter_views,
+            "count": len(filter_views),
+            "message": f"Found {len(filter_views)} filter view(s)"
+        }
+
+    return _run_async(_list_views())
+
+
+# ============================================================================
+# BATCH 15: Dimension Groups (Row/Column Grouping)
+# ============================================================================
+
+def create_row_group_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    sheet_name: str,
+    start_row: int,
+    end_row: int
+) -> dict:
+    """
+    Create a row group (collapsible rows).
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        sheet_name: Name of the sheet
+        start_row: First row of the group (1-indexed)
+        end_row: Last row of the group (1-indexed, inclusive)
+    """
+    async def _create_group():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        sheet_id = None
+        for s in metadata.get("sheets", []):
+            if s["title"].lower() == sheet_name.lower():
+                sheet_id = s["sheet_id"]
+                break
+
+        if sheet_id is None:
+            return {"error": f"Sheet '{sheet_name}' not found"}
+
+        request = {
+            "addDimensionGroup": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "dimension": "ROWS",
+                    "startIndex": start_row - 1,  # Convert to 0-indexed
+                    "endIndex": end_row  # End is exclusive
+                }
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        return {
+            "success": True,
+            "sheet": sheet_name,
+            "rows": f"{start_row}-{end_row}",
+            "message": f"Created row group for rows {start_row}-{end_row}"
+        }
+
+    return _run_async(_create_group())
+
+
+def create_column_group_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    sheet_name: str,
+    start_column: str,
+    end_column: str
+) -> dict:
+    """
+    Create a column group (collapsible columns).
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        sheet_name: Name of the sheet
+        start_column: First column letter (e.g., 'B')
+        end_column: Last column letter (e.g., 'D', inclusive)
+    """
+    async def _create_group():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        sheet_id = None
+        for s in metadata.get("sheets", []):
+            if s["title"].lower() == sheet_name.lower():
+                sheet_id = s["sheet_id"]
+                break
+
+        if sheet_id is None:
+            return {"error": f"Sheet '{sheet_name}' not found"}
+
+        # Convert column letters to indices
+        start_idx, _ = parse_column_range(start_column.upper())
+        end_idx, _ = parse_column_range(end_column.upper())
+
+        request = {
+            "addDimensionGroup": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "dimension": "COLUMNS",
+                    "startIndex": start_idx,
+                    "endIndex": end_idx + 1  # End is exclusive
+                }
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        return {
+            "success": True,
+            "sheet": sheet_name,
+            "columns": f"{start_column}-{end_column}",
+            "message": f"Created column group for columns {start_column}-{end_column}"
+        }
+
+    return _run_async(_create_group())
+
+
+def delete_row_group_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    sheet_name: str,
+    start_row: int,
+    end_row: int
+) -> dict:
+    """
+    Delete a row group (ungroup rows).
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        sheet_name: Name of the sheet
+        start_row: First row of the group (1-indexed)
+        end_row: Last row of the group (1-indexed, inclusive)
+    """
+    async def _delete_group():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        sheet_id = None
+        for s in metadata.get("sheets", []):
+            if s["title"].lower() == sheet_name.lower():
+                sheet_id = s["sheet_id"]
+                break
+
+        if sheet_id is None:
+            return {"error": f"Sheet '{sheet_name}' not found"}
+
+        request = {
+            "deleteDimensionGroup": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "dimension": "ROWS",
+                    "startIndex": start_row - 1,
+                    "endIndex": end_row
+                }
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        return {
+            "success": True,
+            "sheet": sheet_name,
+            "rows": f"{start_row}-{end_row}",
+            "message": f"Deleted row group for rows {start_row}-{end_row}"
+        }
+
+    return _run_async(_delete_group())
+
+
+def delete_column_group_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    sheet_name: str,
+    start_column: str,
+    end_column: str
+) -> dict:
+    """
+    Delete a column group (ungroup columns).
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        sheet_name: Name of the sheet
+        start_column: First column letter
+        end_column: Last column letter
+    """
+    async def _delete_group():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        sheet_id = None
+        for s in metadata.get("sheets", []):
+            if s["title"].lower() == sheet_name.lower():
+                sheet_id = s["sheet_id"]
+                break
+
+        if sheet_id is None:
+            return {"error": f"Sheet '{sheet_name}' not found"}
+
+        start_idx, _ = parse_column_range(start_column.upper())
+        end_idx, _ = parse_column_range(end_column.upper())
+
+        request = {
+            "deleteDimensionGroup": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "dimension": "COLUMNS",
+                    "startIndex": start_idx,
+                    "endIndex": end_idx + 1
+                }
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        return {
+            "success": True,
+            "sheet": sheet_name,
+            "columns": f"{start_column}-{end_column}",
+            "message": f"Deleted column group for columns {start_column}-{end_column}"
+        }
+
+    return _run_async(_delete_group())
+
+
+def update_dimension_group_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    sheet_name: str,
+    dimension: str,
+    start_index: int,
+    end_index: int,
+    collapsed: bool
+) -> dict:
+    """
+    Collapse or expand a dimension group.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        sheet_name: Name of the sheet
+        dimension: 'ROWS' or 'COLUMNS'
+        start_index: Start index (1-indexed for rows, column letter for columns)
+        end_index: End index
+        collapsed: True to collapse, False to expand
+    """
+    async def _update_group():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        sheet_id = None
+        for s in metadata.get("sheets", []):
+            if s["title"].lower() == sheet_name.lower():
+                sheet_id = s["sheet_id"]
+                break
+
+        if sheet_id is None:
+            return {"error": f"Sheet '{sheet_name}' not found"}
+
+        dim = dimension.upper()
+        if dim not in ("ROWS", "COLUMNS"):
+            return {"error": "dimension must be 'ROWS' or 'COLUMNS'"}
+
+        # Convert to 0-indexed
+        if dim == "ROWS":
+            s_idx = start_index - 1
+            e_idx = end_index
+        else:
+            s_idx, _ = parse_column_range(str(start_index).upper())
+            e_idx, _ = parse_column_range(str(end_index).upper())
+            e_idx += 1
+
+        request = {
+            "updateDimensionGroup": {
+                "dimensionGroup": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "dimension": dim,
+                        "startIndex": s_idx,
+                        "endIndex": e_idx
+                    },
+                    "collapsed": collapsed
+                },
+                "fields": "collapsed"
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        state = "collapsed" if collapsed else "expanded"
+        return {
+            "success": True,
+            "sheet": sheet_name,
+            "dimension": dim,
+            "collapsed": collapsed,
+            "message": f"Group is now {state}"
+        }
+
+    return _run_async(_update_group())
+
+
+def set_group_control_position_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    sheet_name: str,
+    row_control_after: bool = None,
+    column_control_after: bool = None
+) -> dict:
+    """
+    Set whether group +/- controls appear before or after the grouped rows/columns.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        sheet_name: Name of the sheet
+        row_control_after: True to show row group controls below the group
+        column_control_after: True to show column group controls after the group
+    """
+    async def _set_control():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        sheet_id = None
+        for s in metadata.get("sheets", []):
+            if s["title"].lower() == sheet_name.lower():
+                sheet_id = s["sheet_id"]
+                break
+
+        if sheet_id is None:
+            return {"error": f"Sheet '{sheet_name}' not found"}
+
+        properties = {"sheetId": sheet_id}
+        fields = []
+
+        if row_control_after is not None:
+            properties["gridProperties"] = properties.get("gridProperties", {})
+            properties["gridProperties"]["rowGroupControlAfter"] = row_control_after
+            fields.append("gridProperties.rowGroupControlAfter")
+
+        if column_control_after is not None:
+            properties["gridProperties"] = properties.get("gridProperties", {})
+            properties["gridProperties"]["columnGroupControlAfter"] = column_control_after
+            fields.append("gridProperties.columnGroupControlAfter")
+
+        if not fields:
+            return {"error": "Specify row_control_after or column_control_after"}
+
+        request = {
+            "updateSheetProperties": {
+                "properties": properties,
+                "fields": ",".join(fields)
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        return {
+            "success": True,
+            "sheet": sheet_name,
+            "message": f"Updated group control positions"
+        }
+
+    return _run_async(_set_control())
+
+
+# ============================================================================
+# BATCH 16: Slicers
+# ============================================================================
+
+def list_slicers_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    sheet_name: str = None
+) -> dict:
+    """
+    List all slicers in a spreadsheet.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        sheet_name: Optional sheet name to filter by
+    """
+    async def _list_slicers():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        url = f"{SHEETS_API_BASE}/{spreadsheet_id}?fields=sheets(properties,slicers)"
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                url,
+                headers={"Authorization": f"Bearer {access_token}"}
+            )
+
+            if response.status_code != 200:
+                return {"error": f"Failed to get spreadsheet: {response.text}"}
+
+            data = response.json()
+
+        slicers = []
+        for sheet in data.get("sheets", []):
+            sheet_title = sheet.get("properties", {}).get("title", "")
+
+            if sheet_name and sheet_title.lower() != sheet_name.lower():
+                continue
+
+            for slicer in sheet.get("slicers", []):
+                spec = slicer.get("spec", {})
+                position = slicer.get("position", {})
+
+                slicers.append({
+                    "slicer_id": slicer.get("slicerId"),
+                    "title": spec.get("title", "Untitled"),
+                    "sheet": sheet_title,
+                    "column_index": spec.get("columnIndex"),
+                    "apply_to_pivot_tables": spec.get("applyToPivotTables", True),
+                    "position": {
+                        "anchor_row": position.get("overlayPosition", {}).get("anchorCell", {}).get("rowIndex", 0),
+                        "anchor_col": position.get("overlayPosition", {}).get("anchorCell", {}).get("columnIndex", 0)
+                    }
+                })
+
+        return {
+            "success": True,
+            "slicers": slicers,
+            "count": len(slicers),
+            "message": f"Found {len(slicers)} slicer(s)"
+        }
+
+    return _run_async(_list_slicers())
+
+
+def create_slicer_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    sheet_name: str,
+    data_range: str,
+    column_index: int,
+    title: str = None,
+    anchor_row: int = 0,
+    anchor_col: int = 0,
+    apply_to_pivot_tables: bool = True
+) -> dict:
+    """
+    Create a slicer for interactive data filtering.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        sheet_name: Name of the sheet
+        data_range: Range the slicer filters (e.g., "A1:E100")
+        column_index: 0-based column index in the data range to filter by
+        title: Title for the slicer
+        anchor_row: Row to position the slicer (0-indexed)
+        anchor_col: Column to position the slicer (0-indexed)
+        apply_to_pivot_tables: Whether slicer affects pivot tables
+    """
+    async def _create_slicer():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        sheet_id = None
+        for s in metadata.get("sheets", []):
+            if s["title"].lower() == sheet_name.lower():
+                sheet_id = s["sheet_id"]
+                break
+
+        if sheet_id is None:
+            return {"error": f"Sheet '{sheet_name}' not found"}
+
+        # Parse the data range
+        try:
+            if ':' in data_range:
+                start_cell, end_cell = data_range.split(':')
+            else:
+                return {"error": "data_range must include start and end (e.g., 'A1:E100')"}
+
+            start_col_str = ''.join(c for c in start_cell if c.isalpha())
+            start_row_str = ''.join(c for c in start_cell if c.isdigit())
+            start_col, _ = parse_column_range(start_col_str)
+            start_row = int(start_row_str) - 1 if start_row_str else 0
+
+            end_col_str = ''.join(c for c in end_cell if c.isalpha())
+            end_row_str = ''.join(c for c in end_cell if c.isdigit())
+            end_col, _ = parse_column_range(end_col_str)
+            end_col += 1
+            end_row = int(end_row_str) if end_row_str else start_row + 1
+
+        except Exception as e:
+            return {"error": f"Invalid data_range '{data_range}': {e}"}
+
+        slicer_spec = {
+            "dataRange": {
+                "sheetId": sheet_id,
+                "startRowIndex": start_row,
+                "endRowIndex": end_row,
+                "startColumnIndex": start_col,
+                "endColumnIndex": end_col
+            },
+            "columnIndex": column_index,
+            "applyToPivotTables": apply_to_pivot_tables
+        }
+
+        if title:
+            slicer_spec["title"] = title
+
+        request = {
+            "addSlicer": {
+                "slicer": {
+                    "spec": slicer_spec,
+                    "position": {
+                        "overlayPosition": {
+                            "anchorCell": {
+                                "sheetId": sheet_id,
+                                "rowIndex": anchor_row,
+                                "columnIndex": anchor_col
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        slicer_id = None
+        if "replies" in result:
+            for reply in result["replies"]:
+                if "addSlicer" in reply:
+                    slicer_id = reply["addSlicer"]["slicer"]["slicerId"]
+                    break
+
+        return {
+            "success": True,
+            "slicer_id": slicer_id,
+            "title": title or "Untitled",
+            "sheet": sheet_name,
+            "message": f"Created slicer '{title or 'Untitled'}' on column {column_index}"
+        }
+
+    return _run_async(_create_slicer())
+
+
+def update_slicer_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    slicer_id: int,
+    title: str = None,
+    column_index: int = None,
+    apply_to_pivot_tables: bool = None
+) -> dict:
+    """
+    Update a slicer's settings.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        slicer_id: ID of the slicer to update
+        title: New title
+        column_index: New column to filter by
+        apply_to_pivot_tables: Whether to apply to pivot tables
+    """
+    async def _update_slicer():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        spec = {}
+        fields = []
+
+        if title is not None:
+            spec["title"] = title
+            fields.append("title")
+
+        if column_index is not None:
+            spec["columnIndex"] = column_index
+            fields.append("columnIndex")
+
+        if apply_to_pivot_tables is not None:
+            spec["applyToPivotTables"] = apply_to_pivot_tables
+            fields.append("applyToPivotTables")
+
+        if not fields:
+            return {"error": "No fields to update"}
+
+        request = {
+            "updateSlicerSpec": {
+                "slicerId": slicer_id,
+                "spec": spec,
+                "fields": ",".join(fields)
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        return {
+            "success": True,
+            "slicer_id": slicer_id,
+            "updated_fields": fields,
+            "message": f"Updated slicer {slicer_id}"
+        }
+
+    return _run_async(_update_slicer())
+
+
+def delete_slicer_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    slicer_id: int
+) -> dict:
+    """
+    Delete a slicer.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        slicer_id: ID of the slicer to delete
+    """
+    async def _delete_slicer():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        request = {
+            "deleteSlicer": {
+                "slicerId": slicer_id
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        return {
+            "success": True,
+            "slicer_id": slicer_id,
+            "message": f"Deleted slicer {slicer_id}"
+        }
+
+    return _run_async(_delete_slicer())
+
+
+# ============================================================================
+# BATCH 17: Tables (Structured Data)
+# ============================================================================
+
+# Column types supported by Google Sheets Tables
+TABLE_COLUMN_TYPES = [
+    "TEXT", "DOUBLE", "CURRENCY", "PERCENT", "DATE", "TIME", "DATE_TIME",
+    "BOOLEAN", "DROPDOWN", "FILES_CHIP", "PEOPLE_CHIP", "FINANCE_CHIP",
+    "PLACE_CHIP", "RATINGS_CHIP"
+]
+
+
+def list_tables_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    sheet_name: str = None
+) -> dict:
+    """
+    List all tables in a spreadsheet.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        sheet_name: Optional sheet name to filter by
+    """
+    async def _list_tables():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        url = f"{SHEETS_API_BASE}/{spreadsheet_id}?fields=sheets(properties,tables)"
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                url,
+                headers={"Authorization": f"Bearer {access_token}"}
+            )
+
+            if response.status_code != 200:
+                return {"error": f"Failed to get spreadsheet: {response.text}"}
+
+            data = response.json()
+
+        tables = []
+        for sheet in data.get("sheets", []):
+            sheet_title = sheet.get("properties", {}).get("title", "")
+
+            if sheet_name and sheet_title.lower() != sheet_name.lower():
+                continue
+
+            for table in sheet.get("tables", []):
+                range_info = table.get("range", {})
+
+                # Convert to A1 notation
+                start_row = range_info.get("startRowIndex", 0) + 1
+                end_row = range_info.get("endRowIndex", start_row)
+                start_col = range_info.get("startColumnIndex", 0)
+                end_col = range_info.get("endColumnIndex", start_col + 1)
+
+                def col_to_letter(col):
+                    result = ""
+                    while col >= 0:
+                        result = chr(col % 26 + ord('A')) + result
+                        col = col // 26 - 1
+                    return result
+
+                range_a1 = f"{col_to_letter(start_col)}{start_row}:{col_to_letter(end_col - 1)}{end_row}"
+
+                columns = []
+                for col in table.get("columnProperties", []):
+                    columns.append({
+                        "index": col.get("columnIndex"),
+                        "name": col.get("columnName"),
+                        "type": col.get("columnType", "TEXT")
+                    })
+
+                tables.append({
+                    "table_id": table.get("tableId"),
+                    "name": table.get("name"),
+                    "sheet": sheet_title,
+                    "range": range_a1,
+                    "columns": columns,
+                    "column_count": len(columns)
+                })
+
+        return {
+            "success": True,
+            "tables": tables,
+            "count": len(tables),
+            "message": f"Found {len(tables)} table(s)"
+        }
+
+    return _run_async(_list_tables())
+
+
+def create_table_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    sheet_name: str,
+    range_notation: str,
+    name: str,
+    columns: list
+) -> dict:
+    """
+    Create a structured table.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        sheet_name: Name of the sheet
+        range_notation: Range for the table (e.g., "A1:E20")
+        name: Name for the table (must be unique)
+        columns: List of column definitions, each with:
+                 - name: Column header name
+                 - type: Column type (TEXT, DOUBLE, CURRENCY, PERCENT, DATE,
+                         TIME, DATE_TIME, BOOLEAN, DROPDOWN, FILES_CHIP,
+                         PEOPLE_CHIP, FINANCE_CHIP, PLACE_CHIP, RATINGS_CHIP)
+                 - dropdown_values: List of values if type is DROPDOWN
+    """
+    async def _create_table():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        sheet_id = None
+        for s in metadata.get("sheets", []):
+            if s["title"].lower() == sheet_name.lower():
+                sheet_id = s["sheet_id"]
+                break
+
+        if sheet_id is None:
+            return {"error": f"Sheet '{sheet_name}' not found"}
+
+        # Parse range
+        try:
+            if ':' in range_notation:
+                start_cell, end_cell = range_notation.split(':')
+            else:
+                return {"error": "range_notation must include start and end"}
+
+            start_col_str = ''.join(c for c in start_cell if c.isalpha())
+            start_row_str = ''.join(c for c in start_cell if c.isdigit())
+            start_col, _ = parse_column_range(start_col_str)
+            start_row = int(start_row_str) - 1 if start_row_str else 0
+
+            end_col_str = ''.join(c for c in end_cell if c.isalpha())
+            end_row_str = ''.join(c for c in end_cell if c.isdigit())
+            end_col, _ = parse_column_range(end_col_str)
+            end_col += 1
+            end_row = int(end_row_str) if end_row_str else start_row + 1
+
+        except Exception as e:
+            return {"error": f"Invalid range '{range_notation}': {e}"}
+
+        # Build column properties
+        column_props = []
+        for i, col_def in enumerate(columns):
+            col_name = col_def.get("name", f"Column {i + 1}")
+            col_type = col_def.get("type", "TEXT").upper()
+
+            if col_type not in TABLE_COLUMN_TYPES:
+                return {"error": f"Invalid column type '{col_type}'. Valid types: {', '.join(TABLE_COLUMN_TYPES)}"}
+
+            col_prop = {
+                "columnIndex": i,
+                "columnName": col_name,
+                "columnType": col_type
+            }
+
+            # Handle dropdown validation
+            if col_type == "DROPDOWN" and "dropdown_values" in col_def:
+                col_prop["dataValidationRule"] = {
+                    "condition": {
+                        "type": "ONE_OF_LIST",
+                        "values": [{"userEnteredValue": v} for v in col_def["dropdown_values"]]
+                    }
+                }
+
+            column_props.append(col_prop)
+
+        request = {
+            "addTable": {
+                "table": {
+                    "name": name,
+                    "range": {
+                        "sheetId": sheet_id,
+                        "startRowIndex": start_row,
+                        "endRowIndex": end_row,
+                        "startColumnIndex": start_col,
+                        "endColumnIndex": end_col
+                    },
+                    "columnProperties": column_props
+                }
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        table_id = None
+        if "replies" in result:
+            for reply in result["replies"]:
+                if "addTable" in reply:
+                    table_id = reply["addTable"]["table"]["tableId"]
+                    break
+
+        return {
+            "success": True,
+            "table_id": table_id,
+            "name": name,
+            "sheet": sheet_name,
+            "range": range_notation,
+            "column_count": len(columns),
+            "message": f"Created table '{name}' with {len(columns)} columns"
+        }
+
+    return _run_async(_create_table())
+
+
+def delete_table_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    table_id: str
+) -> dict:
+    """
+    Delete a table (data remains, just loses table structure).
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        table_id: ID of the table to delete
+    """
+    async def _delete_table():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        request = {
+            "deleteTable": {
+                "tableId": table_id
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        return {
+            "success": True,
+            "table_id": table_id,
+            "message": f"Deleted table {table_id}"
+        }
+
+    return _run_async(_delete_table())
+
+
+def update_table_column_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    table_id: str,
+    column_index: int,
+    column_name: str = None,
+    column_type: str = None,
+    dropdown_values: list = None
+) -> dict:
+    """
+    Update a table column's properties.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        table_id: ID of the table
+        column_index: 0-based index of the column to update
+        column_name: New column name
+        column_type: New column type
+        dropdown_values: New dropdown values (if type is DROPDOWN)
+    """
+    async def _update_column():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        column_prop = {"columnIndex": column_index}
+        fields = []
+
+        if column_name is not None:
+            column_prop["columnName"] = column_name
+            fields.append("columnName")
+
+        if column_type is not None:
+            col_type = column_type.upper()
+            if col_type not in TABLE_COLUMN_TYPES:
+                return {"error": f"Invalid column type '{col_type}'"}
+            column_prop["columnType"] = col_type
+            fields.append("columnType")
+
+        if dropdown_values is not None:
+            column_prop["dataValidationRule"] = {
+                "condition": {
+                    "type": "ONE_OF_LIST",
+                    "values": [{"userEnteredValue": v} for v in dropdown_values]
+                }
+            }
+            fields.append("dataValidationRule")
+
+        if not fields:
+            return {"error": "No fields to update"}
+
+        request = {
+            "updateTable": {
+                "table": {
+                    "tableId": table_id,
+                    "columnProperties": [column_prop]
+                },
+                "fields": ",".join([f"columnProperties.{f}" for f in fields])
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        return {
+            "success": True,
+            "table_id": table_id,
+            "column_index": column_index,
+            "updated_fields": fields,
+            "message": f"Updated table column {column_index}"
+        }
+
+    return _run_async(_update_column())

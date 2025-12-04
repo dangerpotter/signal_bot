@@ -1267,6 +1267,170 @@ SHEETS_TOOLS = [
             }
         }
     },
+    # Batch 10: Additional Cell Formatting
+    {
+        "type": "function",
+        "function": {
+            "name": "set_text_direction",
+            "description": "Set text direction for cells. Use for right-to-left languages like Arabic, Hebrew, or Persian. Can also force left-to-right for specific cells.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "range": {
+                        "type": "string",
+                        "description": "Range in A1 notation (e.g., 'A1:D10')"
+                    },
+                    "direction": {
+                        "type": "string",
+                        "enum": ["left_to_right", "right_to_left"],
+                        "description": "Text direction: 'left_to_right' (default for English) or 'right_to_left' (for Arabic, Hebrew, etc.)"
+                    }
+                },
+                "required": ["spreadsheet_id", "range", "direction"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_text_rotation",
+            "description": "Rotate text within cells. Use for angled column headers, vertical labels, or creative layouts. Can specify an angle or make text stack vertically.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "range": {
+                        "type": "string",
+                        "description": "Range in A1 notation (e.g., 'A1:D10')"
+                    },
+                    "angle": {
+                        "type": "integer",
+                        "description": "Rotation angle in degrees, from -90 to 90. Positive angles tilt upward, negative tilt downward. Use 0 to reset to horizontal."
+                    },
+                    "vertical": {
+                        "type": "boolean",
+                        "description": "If true, stack characters vertically (one letter per line). Cannot be combined with angle."
+                    }
+                },
+                "required": ["spreadsheet_id", "range"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_cell_padding",
+            "description": "Set inner padding (spacing) within cells. Adds space between the cell content and its borders. Use to improve readability or create visual breathing room.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "range": {
+                        "type": "string",
+                        "description": "Range in A1 notation (e.g., 'A1:D10')"
+                    },
+                    "top": {
+                        "type": "integer",
+                        "description": "Top padding in pixels"
+                    },
+                    "right": {
+                        "type": "integer",
+                        "description": "Right padding in pixels"
+                    },
+                    "bottom": {
+                        "type": "integer",
+                        "description": "Bottom padding in pixels"
+                    },
+                    "left": {
+                        "type": "integer",
+                        "description": "Left padding in pixels"
+                    }
+                },
+                "required": ["spreadsheet_id", "range"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_rich_text",
+            "description": "Apply mixed formatting within a single cell. Different parts of the text can have different formatting (bold, italic, colors, etc.). Useful for highlighting specific words or creating styled cell content.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "cell": {
+                        "type": "string",
+                        "description": "Single cell in A1 notation (e.g., 'A1', 'Sheet1!B2')"
+                    },
+                    "text": {
+                        "type": "string",
+                        "description": "The full text content of the cell"
+                    },
+                    "runs": {
+                        "type": "array",
+                        "description": "Array of format runs. Each run starts at an index and applies formatting until the next run.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "start": {
+                                    "type": "integer",
+                                    "description": "Character index where this format starts (0-based)"
+                                },
+                                "bold": {
+                                    "type": "boolean",
+                                    "description": "Make text bold"
+                                },
+                                "italic": {
+                                    "type": "boolean",
+                                    "description": "Make text italic"
+                                },
+                                "underline": {
+                                    "type": "boolean",
+                                    "description": "Underline text"
+                                },
+                                "strikethrough": {
+                                    "type": "boolean",
+                                    "description": "Strikethrough text"
+                                },
+                                "color": {
+                                    "type": "string",
+                                    "description": "Text color as hex (#FF0000) or name (red, blue, etc.)"
+                                },
+                                "font_size": {
+                                    "type": "integer",
+                                    "description": "Font size in points"
+                                },
+                                "font_family": {
+                                    "type": "string",
+                                    "description": "Font name (e.g., 'Arial', 'Times New Roman')"
+                                }
+                            },
+                            "required": ["start"]
+                        }
+                    }
+                },
+                "required": ["spreadsheet_id", "cell", "text", "runs"],
+                "additionalProperties": False
+            }
+        }
+    },
     # Batch 6: Charts
     {
         "type": "function",
@@ -2092,6 +2256,702 @@ SHEETS_TOOLS = [
                     }
                 },
                 "required": ["spreadsheet_id", "metadata_id"],
+                "additionalProperties": False
+            }
+        }
+    },
+    # Sheet Properties Extensions
+    {
+        "type": "function",
+        "function": {
+            "name": "hide_sheet",
+            "description": "Hide a sheet tab from view. Hidden sheets still exist and can be accessed by name, but won't appear in the tab bar. Use to declutter the spreadsheet UI or hide work-in-progress sheets.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "sheet_name": {
+                        "type": "string",
+                        "description": "Name of the sheet to hide"
+                    }
+                },
+                "required": ["spreadsheet_id", "sheet_name"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "show_sheet",
+            "description": "Show (unhide) a hidden sheet tab. Makes a previously hidden sheet visible in the tab bar again.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "sheet_name": {
+                        "type": "string",
+                        "description": "Name of the hidden sheet to show"
+                    }
+                },
+                "required": ["spreadsheet_id", "sheet_name"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_tab_color",
+            "description": "Set the color of a sheet tab. Useful for visually organizing sheets by category (e.g., red for expenses, green for income, blue for reports).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "sheet_name": {
+                        "type": "string",
+                        "description": "Name of the sheet"
+                    },
+                    "color": {
+                        "type": "string",
+                        "description": "Tab color - hex code like '#FF0000' or name like 'red', 'blue', 'green', 'yellow', 'orange', 'purple', 'pink'"
+                    }
+                },
+                "required": ["spreadsheet_id", "sheet_name", "color"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_right_to_left",
+            "description": "Set whether a sheet uses right-to-left layout. Use for languages like Arabic, Hebrew, Persian that read right-to-left. Affects text direction, column order, and scrolling.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "sheet_name": {
+                        "type": "string",
+                        "description": "Name of the sheet"
+                    },
+                    "right_to_left": {
+                        "type": "boolean",
+                        "description": "True for right-to-left layout, False for left-to-right (default: True)"
+                    }
+                },
+                "required": ["spreadsheet_id", "sheet_name"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_sheet_properties",
+            "description": "Get properties of a specific sheet or all sheets in a spreadsheet. Returns visibility (hidden), tab color, frozen rows/columns, row/column counts, and RTL setting.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "sheet_name": {
+                        "type": "string",
+                        "description": "Optional: Name of specific sheet. If omitted, returns properties for all sheets."
+                    }
+                },
+                "required": ["spreadsheet_id"],
+                "additionalProperties": False
+            }
+        }
+    },
+    # Protected Ranges Management
+    {
+        "type": "function",
+        "function": {
+            "name": "list_protected_ranges",
+            "description": "List all protected ranges in a spreadsheet. Shows which cells are locked, who can edit them, and whether they show warnings. Use before modifying protections.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "sheet_name": {
+                        "type": "string",
+                        "description": "Optional: Filter to show only protections on this sheet"
+                    }
+                },
+                "required": ["spreadsheet_id"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_protected_range",
+            "description": "Update settings for an existing protected range. Can change description, switch between warning/locked mode, or modify who can edit.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "protected_range_id": {
+                        "type": "integer",
+                        "description": "ID of the protected range (from list_protected_ranges)"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "New description explaining why this range is protected"
+                    },
+                    "warning_only": {
+                        "type": "boolean",
+                        "description": "True to show warning but allow editing, False to lock completely"
+                    },
+                    "editors": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of email addresses who can edit this range"
+                    }
+                },
+                "required": ["spreadsheet_id", "protected_range_id"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_protected_range",
+            "description": "Remove protection from a range, allowing anyone with sheet access to edit it. Use list_protected_ranges first to find the ID.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "protected_range_id": {
+                        "type": "integer",
+                        "description": "ID of the protected range to unprotect"
+                    }
+                },
+                "required": ["spreadsheet_id", "protected_range_id"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "protect_sheet",
+            "description": "Protect an entire sheet while optionally leaving some ranges editable. Use for templates, forms, or dashboards where only certain cells should be changed.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "sheet_name": {
+                        "type": "string",
+                        "description": "Name of the sheet to protect"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Description of why the sheet is protected"
+                    },
+                    "warning_only": {
+                        "type": "boolean",
+                        "description": "True to show warning but allow editing (default: False = locked)"
+                    },
+                    "editors": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of email addresses who can edit the protected areas"
+                    },
+                    "unprotected_ranges": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of A1 ranges that remain editable (e.g., ['B2:B100', 'D2:D100'] for input columns)"
+                    }
+                },
+                "required": ["spreadsheet_id", "sheet_name"],
+                "additionalProperties": False
+            }
+        }
+    },
+    # Filter Views
+    {
+        "type": "function",
+        "function": {
+            "name": "list_filter_views",
+            "description": "List all saved filter views in a spreadsheet. Filter views allow different users to see different filtered views of the same data without affecting others.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "sheet_name": {
+                        "type": "string",
+                        "description": "Optional: Filter to show only views on this sheet"
+                    }
+                },
+                "required": ["spreadsheet_id"],
+                "additionalProperties": False
+            }
+        }
+    },
+    # Dimension Groups (Row/Column Grouping)
+    {
+        "type": "function",
+        "function": {
+            "name": "create_row_group",
+            "description": "Create a collapsible row group. Use to organize data hierarchically - e.g., group monthly rows under a quarter header, or detail rows under a category.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "sheet_name": {
+                        "type": "string",
+                        "description": "Name of the sheet"
+                    },
+                    "start_row": {
+                        "type": "integer",
+                        "description": "First row of the group (1-indexed)"
+                    },
+                    "end_row": {
+                        "type": "integer",
+                        "description": "Last row of the group (inclusive)"
+                    }
+                },
+                "required": ["spreadsheet_id", "sheet_name", "start_row", "end_row"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_column_group",
+            "description": "Create a collapsible column group. Use to hide related columns together - e.g., group detailed breakdown columns that can be expanded when needed.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "sheet_name": {
+                        "type": "string",
+                        "description": "Name of the sheet"
+                    },
+                    "start_column": {
+                        "type": "string",
+                        "description": "First column letter (e.g., 'B')"
+                    },
+                    "end_column": {
+                        "type": "string",
+                        "description": "Last column letter (e.g., 'D', inclusive)"
+                    }
+                },
+                "required": ["spreadsheet_id", "sheet_name", "start_column", "end_column"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_row_group",
+            "description": "Remove a row group (ungroup rows). The rows remain but are no longer collapsible.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "sheet_name": {
+                        "type": "string",
+                        "description": "Name of the sheet"
+                    },
+                    "start_row": {
+                        "type": "integer",
+                        "description": "First row of the group"
+                    },
+                    "end_row": {
+                        "type": "integer",
+                        "description": "Last row of the group"
+                    }
+                },
+                "required": ["spreadsheet_id", "sheet_name", "start_row", "end_row"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_column_group",
+            "description": "Remove a column group (ungroup columns). The columns remain but are no longer collapsible.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "sheet_name": {
+                        "type": "string",
+                        "description": "Name of the sheet"
+                    },
+                    "start_column": {
+                        "type": "string",
+                        "description": "First column letter"
+                    },
+                    "end_column": {
+                        "type": "string",
+                        "description": "Last column letter"
+                    }
+                },
+                "required": ["spreadsheet_id", "sheet_name", "start_column", "end_column"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "collapse_expand_group",
+            "description": "Collapse or expand a row/column group. Collapsed groups hide their contents; expanded groups show them.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "sheet_name": {
+                        "type": "string",
+                        "description": "Name of the sheet"
+                    },
+                    "dimension": {
+                        "type": "string",
+                        "enum": ["ROWS", "COLUMNS"],
+                        "description": "Whether this is a row or column group"
+                    },
+                    "start_index": {
+                        "type": "string",
+                        "description": "Start of group: row number (e.g., '5') for ROWS, column letter (e.g., 'B') for COLUMNS"
+                    },
+                    "end_index": {
+                        "type": "string",
+                        "description": "End of group: row number for ROWS, column letter for COLUMNS"
+                    },
+                    "collapsed": {
+                        "type": "boolean",
+                        "description": "True to collapse (hide), False to expand (show)"
+                    }
+                },
+                "required": ["spreadsheet_id", "sheet_name", "dimension", "start_index", "end_index", "collapsed"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_group_control_position",
+            "description": "Set where the +/- group controls appear. By default they appear before the grouped rows/columns; this can change them to appear after.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "sheet_name": {
+                        "type": "string",
+                        "description": "Name of the sheet"
+                    },
+                    "row_control_after": {
+                        "type": "boolean",
+                        "description": "True to show row group controls below the group instead of above"
+                    },
+                    "column_control_after": {
+                        "type": "boolean",
+                        "description": "True to show column group controls after the group instead of before"
+                    }
+                },
+                "required": ["spreadsheet_id", "sheet_name"],
+                "additionalProperties": False
+            }
+        }
+    },
+    # Slicers
+    {
+        "type": "function",
+        "function": {
+            "name": "list_slicers",
+            "description": "List all slicers in a spreadsheet. Slicers are interactive filter widgets that let users filter data visually.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "sheet_name": {
+                        "type": "string",
+                        "description": "Optional: Filter to show only slicers on this sheet"
+                    }
+                },
+                "required": ["spreadsheet_id"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_slicer",
+            "description": "Create a slicer widget for interactive data filtering. Slicers show a list of unique values from a column and let users click to filter.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "sheet_name": {
+                        "type": "string",
+                        "description": "Name of the sheet"
+                    },
+                    "data_range": {
+                        "type": "string",
+                        "description": "Range the slicer filters (e.g., 'A1:E100')"
+                    },
+                    "column_index": {
+                        "type": "integer",
+                        "description": "0-based column index in the data range to filter by"
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Title for the slicer"
+                    },
+                    "anchor_row": {
+                        "type": "integer",
+                        "description": "Row to position the slicer (0-indexed, default: 0)"
+                    },
+                    "anchor_col": {
+                        "type": "integer",
+                        "description": "Column to position the slicer (0-indexed, default: 0)"
+                    }
+                },
+                "required": ["spreadsheet_id", "sheet_name", "data_range", "column_index"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_slicer",
+            "description": "Update a slicer's settings like title or which column it filters.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "slicer_id": {
+                        "type": "integer",
+                        "description": "ID of the slicer (from list_slicers)"
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "New title for the slicer"
+                    },
+                    "column_index": {
+                        "type": "integer",
+                        "description": "New column index to filter by"
+                    }
+                },
+                "required": ["spreadsheet_id", "slicer_id"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_slicer",
+            "description": "Delete a slicer widget.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "slicer_id": {
+                        "type": "integer",
+                        "description": "ID of the slicer to delete"
+                    }
+                },
+                "required": ["spreadsheet_id", "slicer_id"],
+                "additionalProperties": False
+            }
+        }
+    },
+    # Tables (Structured Data)
+    {
+        "type": "function",
+        "function": {
+            "name": "list_tables",
+            "description": "List all structured tables in a spreadsheet. Tables have typed columns and automatic formatting.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "sheet_name": {
+                        "type": "string",
+                        "description": "Optional: Filter to show only tables on this sheet"
+                    }
+                },
+                "required": ["spreadsheet_id"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_table",
+            "description": "Create a structured table with typed columns. Tables support column types like TEXT, DOUBLE, CURRENCY, PERCENT, DATE, TIME, DATE_TIME, BOOLEAN, DROPDOWN, and chip types (FILES_CHIP, PEOPLE_CHIP, FINANCE_CHIP, PLACE_CHIP, RATINGS_CHIP).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "sheet_name": {
+                        "type": "string",
+                        "description": "Name of the sheet"
+                    },
+                    "range_notation": {
+                        "type": "string",
+                        "description": "Range for the table (e.g., 'A1:E20')"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Unique name for the table"
+                    },
+                    "columns": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string", "description": "Column header name"},
+                                "type": {"type": "string", "description": "Column type: TEXT, DOUBLE, CURRENCY, PERCENT, DATE, TIME, DATE_TIME, BOOLEAN, DROPDOWN, FILES_CHIP, PEOPLE_CHIP, FINANCE_CHIP, PLACE_CHIP, RATINGS_CHIP"},
+                                "dropdown_values": {"type": "array", "items": {"type": "string"}, "description": "Values for DROPDOWN type"}
+                            },
+                            "required": ["name"]
+                        },
+                        "description": "Column definitions with name and type"
+                    }
+                },
+                "required": ["spreadsheet_id", "sheet_name", "range_notation", "name", "columns"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_table",
+            "description": "Delete a table (data remains, just loses table structure and formatting).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "table_id": {
+                        "type": "string",
+                        "description": "ID of the table to delete (from list_tables)"
+                    }
+                },
+                "required": ["spreadsheet_id", "table_id"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_table_column",
+            "description": "Update a table column's name, type, or dropdown values.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "table_id": {
+                        "type": "string",
+                        "description": "ID of the table"
+                    },
+                    "column_index": {
+                        "type": "integer",
+                        "description": "0-based index of the column to update"
+                    },
+                    "column_name": {
+                        "type": "string",
+                        "description": "New column name"
+                    },
+                    "column_type": {
+                        "type": "string",
+                        "description": "New column type"
+                    },
+                    "dropdown_values": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "New dropdown values (for DROPDOWN type)"
+                    }
+                },
+                "required": ["spreadsheet_id", "table_id", "column_index"],
                 "additionalProperties": False
             }
         }

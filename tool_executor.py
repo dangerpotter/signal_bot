@@ -304,6 +304,76 @@ class SignalToolExecutor:
         if function_name == "delete_developer_metadata":
             return self._execute_delete_developer_metadata(arguments)
 
+        # Additional Cell Formatting tools (Batch 10)
+        if function_name == "set_text_direction":
+            return self._execute_set_text_direction(arguments)
+        if function_name == "set_text_rotation":
+            return self._execute_set_text_rotation(arguments)
+        if function_name == "set_cell_padding":
+            return self._execute_set_cell_padding(arguments)
+        if function_name == "set_rich_text":
+            return self._execute_set_rich_text(arguments)
+
+        # Sheet properties extension tools
+        if function_name == "hide_sheet":
+            return self._execute_hide_sheet(arguments)
+        if function_name == "show_sheet":
+            return self._execute_show_sheet(arguments)
+        if function_name == "set_tab_color":
+            return self._execute_set_tab_color(arguments)
+        if function_name == "set_right_to_left":
+            return self._execute_set_right_to_left(arguments)
+        if function_name == "get_sheet_properties":
+            return self._execute_get_sheet_properties(arguments)
+
+        # Protected ranges management tools
+        if function_name == "list_protected_ranges":
+            return self._execute_list_protected_ranges(arguments)
+        if function_name == "update_protected_range":
+            return self._execute_update_protected_range(arguments)
+        if function_name == "delete_protected_range":
+            return self._execute_delete_protected_range(arguments)
+        if function_name == "protect_sheet":
+            return self._execute_protect_sheet(arguments)
+
+        # Filter views
+        if function_name == "list_filter_views":
+            return self._execute_list_filter_views(arguments)
+
+        # Dimension groups (row/column grouping)
+        if function_name == "create_row_group":
+            return self._execute_create_row_group(arguments)
+        if function_name == "create_column_group":
+            return self._execute_create_column_group(arguments)
+        if function_name == "delete_row_group":
+            return self._execute_delete_row_group(arguments)
+        if function_name == "delete_column_group":
+            return self._execute_delete_column_group(arguments)
+        if function_name == "collapse_expand_group":
+            return self._execute_collapse_expand_group(arguments)
+        if function_name == "set_group_control_position":
+            return self._execute_set_group_control_position(arguments)
+
+        # Slicers
+        if function_name == "list_slicers":
+            return self._execute_list_slicers(arguments)
+        if function_name == "create_slicer":
+            return self._execute_create_slicer(arguments)
+        if function_name == "update_slicer":
+            return self._execute_update_slicer(arguments)
+        if function_name == "delete_slicer":
+            return self._execute_delete_slicer(arguments)
+
+        # Tables
+        if function_name == "list_tables":
+            return self._execute_list_tables(arguments)
+        if function_name == "create_table":
+            return self._execute_create_table(arguments)
+        if function_name == "delete_table":
+            return self._execute_delete_table(arguments)
+        if function_name == "update_table_column":
+            return self._execute_update_table_column(arguments)
+
         # Member memory tools
         if function_name == "save_member_memory":
             return self._execute_save_member_memory(arguments)
@@ -1910,6 +1980,177 @@ class SignalToolExecutor:
             logger.error(f"Error setting alignment: {e}")
             return {"success": False, "message": f"Error setting alignment: {str(e)}"}
 
+    # Batch 10: Additional Cell Formatting tool execution methods
+
+    def _execute_set_text_direction(self, arguments: dict) -> dict:
+        """Execute the set_text_direction tool call."""
+        if not self.bot_data.get('sheets_enabled'):
+            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        range_notation = arguments.get("range", "").strip()
+        direction = arguments.get("direction", "").strip()
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not range_notation:
+            return {"success": False, "message": "range is required (e.g., 'A1:D10')"}
+        if not direction:
+            return {"success": False, "message": "direction is required (left_to_right or right_to_left)"}
+
+        try:
+            from signal_bot.google_sheets_client import set_text_direction_sync
+
+            result = set_text_direction_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                range_notation=range_notation,
+                direction=direction
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Set text direction to {direction} on {range_notation}")
+            }
+
+        except Exception as e:
+            logger.error(f"Error setting text direction: {e}")
+            return {"success": False, "message": f"Error setting text direction: {str(e)}"}
+
+    def _execute_set_text_rotation(self, arguments: dict) -> dict:
+        """Execute the set_text_rotation tool call."""
+        if not self.bot_data.get('sheets_enabled'):
+            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        range_notation = arguments.get("range", "").strip()
+        angle = arguments.get("angle")
+        vertical = arguments.get("vertical")
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not range_notation:
+            return {"success": False, "message": "range is required (e.g., 'A1:D10')"}
+        if angle is None and not vertical:
+            return {"success": False, "message": "Either 'angle' or 'vertical' must be specified"}
+
+        try:
+            from signal_bot.google_sheets_client import set_text_rotation_sync
+
+            result = set_text_rotation_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                range_notation=range_notation,
+                angle=angle,
+                vertical=vertical
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            rotation_desc = "vertical" if vertical else f"{angle} degrees"
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Set text rotation to {rotation_desc} on {range_notation}")
+            }
+
+        except Exception as e:
+            logger.error(f"Error setting text rotation: {e}")
+            return {"success": False, "message": f"Error setting text rotation: {str(e)}"}
+
+    def _execute_set_cell_padding(self, arguments: dict) -> dict:
+        """Execute the set_cell_padding tool call."""
+        if not self.bot_data.get('sheets_enabled'):
+            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        range_notation = arguments.get("range", "").strip()
+        top = arguments.get("top")
+        right = arguments.get("right")
+        bottom = arguments.get("bottom")
+        left = arguments.get("left")
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not range_notation:
+            return {"success": False, "message": "range is required (e.g., 'A1:D10')"}
+        if top is None and right is None and bottom is None and left is None:
+            return {"success": False, "message": "At least one padding value (top, right, bottom, left) must be specified"}
+
+        try:
+            from signal_bot.google_sheets_client import set_cell_padding_sync
+
+            result = set_cell_padding_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                range_notation=range_notation,
+                top=top,
+                right=right,
+                bottom=bottom,
+                left=left
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Set cell padding on {range_notation}")
+            }
+
+        except Exception as e:
+            logger.error(f"Error setting cell padding: {e}")
+            return {"success": False, "message": f"Error setting cell padding: {str(e)}"}
+
+    def _execute_set_rich_text(self, arguments: dict) -> dict:
+        """Execute the set_rich_text tool call."""
+        if not self.bot_data.get('sheets_enabled'):
+            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        cell = arguments.get("cell", "").strip()
+        text = arguments.get("text", "")
+        runs = arguments.get("runs", [])
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not cell:
+            return {"success": False, "message": "cell is required (e.g., 'A1')"}
+        if not text:
+            return {"success": False, "message": "text is required"}
+        if not runs or len(runs) == 0:
+            return {"success": False, "message": "At least one format run is required"}
+
+        try:
+            from signal_bot.google_sheets_client import set_rich_text_sync
+
+            result = set_rich_text_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                cell=cell,
+                text=text,
+                runs=runs
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Applied {len(runs)} format run(s) to {cell}")
+            }
+
+        except Exception as e:
+            logger.error(f"Error setting rich text: {e}")
+            return {"success": False, "message": f"Error setting rich text: {str(e)}"}
+
     # Batch 6: Charts tool execution methods
 
     def _execute_create_chart(self, arguments: dict) -> dict:
@@ -3280,6 +3521,948 @@ class SignalToolExecutor:
         except Exception as e:
             logger.error(f"Error listing group members: {e}")
             return {"success": False, "message": f"Error listing members: {str(e)}"}
+
+    # =========================================================================
+    # Sheet Properties Extension Tools
+    # =========================================================================
+
+    def _execute_hide_sheet(self, arguments: dict) -> dict:
+        """Execute the hide_sheet tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "")
+        sheet_name = arguments.get("sheet_name", "")
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not sheet_name:
+            return {"success": False, "message": "sheet_name is required"}
+
+        try:
+            from signal_bot.google_sheets_client import hide_sheet_sync
+
+            result = hide_sheet_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                sheet_name=sheet_name
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Sheet '{sheet_name}' is now hidden")
+            }
+
+        except Exception as e:
+            logger.error(f"Error hiding sheet: {e}")
+            return {"success": False, "message": f"Error hiding sheet: {str(e)}"}
+
+    def _execute_show_sheet(self, arguments: dict) -> dict:
+        """Execute the show_sheet tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "")
+        sheet_name = arguments.get("sheet_name", "")
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not sheet_name:
+            return {"success": False, "message": "sheet_name is required"}
+
+        try:
+            from signal_bot.google_sheets_client import show_sheet_sync
+
+            result = show_sheet_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                sheet_name=sheet_name
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Sheet '{sheet_name}' is now visible")
+            }
+
+        except Exception as e:
+            logger.error(f"Error showing sheet: {e}")
+            return {"success": False, "message": f"Error showing sheet: {str(e)}"}
+
+    def _execute_set_tab_color(self, arguments: dict) -> dict:
+        """Execute the set_tab_color tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "")
+        sheet_name = arguments.get("sheet_name", "")
+        color = arguments.get("color", "")
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not sheet_name:
+            return {"success": False, "message": "sheet_name is required"}
+        if not color:
+            return {"success": False, "message": "color is required"}
+
+        try:
+            from signal_bot.google_sheets_client import set_tab_color_sync
+
+            result = set_tab_color_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                sheet_name=sheet_name,
+                color=color
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Set tab color for '{sheet_name}' to {color}")
+            }
+
+        except Exception as e:
+            logger.error(f"Error setting tab color: {e}")
+            return {"success": False, "message": f"Error setting tab color: {str(e)}"}
+
+    def _execute_set_right_to_left(self, arguments: dict) -> dict:
+        """Execute the set_right_to_left tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "")
+        sheet_name = arguments.get("sheet_name", "")
+        right_to_left = arguments.get("right_to_left", True)
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not sheet_name:
+            return {"success": False, "message": "sheet_name is required"}
+
+        try:
+            from signal_bot.google_sheets_client import set_right_to_left_sync
+
+            result = set_right_to_left_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                sheet_name=sheet_name,
+                right_to_left=right_to_left
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Set RTL for '{sheet_name}'")
+            }
+
+        except Exception as e:
+            logger.error(f"Error setting RTL: {e}")
+            return {"success": False, "message": f"Error setting RTL: {str(e)}"}
+
+    def _execute_get_sheet_properties(self, arguments: dict) -> dict:
+        """Execute the get_sheet_properties tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "")
+        sheet_name = arguments.get("sheet_name")  # Optional
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+
+        try:
+            from signal_bot.google_sheets_client import get_sheet_properties_sync
+
+            result = get_sheet_properties_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                sheet_name=sheet_name
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", "Sheet properties retrieved")
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting sheet properties: {e}")
+            return {"success": False, "message": f"Error getting sheet properties: {str(e)}"}
+
+    # =========================================================================
+    # Protected Ranges Management Tools
+    # =========================================================================
+
+    def _execute_list_protected_ranges(self, arguments: dict) -> dict:
+        """Execute the list_protected_ranges tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "")
+        sheet_name = arguments.get("sheet_name")  # Optional
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+
+        try:
+            from signal_bot.google_sheets_client import list_protected_ranges_sync
+
+            result = list_protected_ranges_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                sheet_name=sheet_name
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", "Protected ranges retrieved")
+            }
+
+        except Exception as e:
+            logger.error(f"Error listing protected ranges: {e}")
+            return {"success": False, "message": f"Error listing protected ranges: {str(e)}"}
+
+    def _execute_update_protected_range(self, arguments: dict) -> dict:
+        """Execute the update_protected_range tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "")
+        protected_range_id = arguments.get("protected_range_id")
+        description = arguments.get("description")
+        warning_only = arguments.get("warning_only")
+        editors = arguments.get("editors")
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if protected_range_id is None:
+            return {"success": False, "message": "protected_range_id is required"}
+
+        try:
+            from signal_bot.google_sheets_client import update_protected_range_sync
+
+            result = update_protected_range_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                protected_range_id=protected_range_id,
+                description=description,
+                warning_only=warning_only,
+                editors=editors
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", "Protected range updated")
+            }
+
+        except Exception as e:
+            logger.error(f"Error updating protected range: {e}")
+            return {"success": False, "message": f"Error updating protected range: {str(e)}"}
+
+    def _execute_delete_protected_range(self, arguments: dict) -> dict:
+        """Execute the delete_protected_range tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "")
+        protected_range_id = arguments.get("protected_range_id")
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if protected_range_id is None:
+            return {"success": False, "message": "protected_range_id is required"}
+
+        try:
+            from signal_bot.google_sheets_client import delete_protected_range_sync
+
+            result = delete_protected_range_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                protected_range_id=protected_range_id
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", "Protection removed")
+            }
+
+        except Exception as e:
+            logger.error(f"Error deleting protected range: {e}")
+            return {"success": False, "message": f"Error deleting protected range: {str(e)}"}
+
+    def _execute_protect_sheet(self, arguments: dict) -> dict:
+        """Execute the protect_sheet tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "")
+        sheet_name = arguments.get("sheet_name", "")
+        description = arguments.get("description")
+        warning_only = arguments.get("warning_only", False)
+        editors = arguments.get("editors")
+        unprotected_ranges = arguments.get("unprotected_ranges")
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not sheet_name:
+            return {"success": False, "message": "sheet_name is required"}
+
+        try:
+            from signal_bot.google_sheets_client import protect_sheet_sync
+
+            result = protect_sheet_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                sheet_name=sheet_name,
+                description=description,
+                warning_only=warning_only,
+                editors=editors,
+                unprotected_ranges=unprotected_ranges
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Sheet '{sheet_name}' protected")
+            }
+
+        except Exception as e:
+            logger.error(f"Error protecting sheet: {e}")
+            return {"success": False, "message": f"Error protecting sheet: {str(e)}"}
+
+    # =========================================================================
+    # Filter Views Tools
+    # =========================================================================
+
+    def _execute_list_filter_views(self, arguments: dict) -> dict:
+        """Execute the list_filter_views tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "")
+        sheet_name = arguments.get("sheet_name")
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+
+        try:
+            from signal_bot.google_sheets_client import list_filter_views_sync
+
+            result = list_filter_views_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                sheet_name=sheet_name
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", "Filter views retrieved")
+            }
+
+        except Exception as e:
+            logger.error(f"Error listing filter views: {e}")
+            return {"success": False, "message": f"Error listing filter views: {str(e)}"}
+
+    # =========================================================================
+    # Dimension Groups (Row/Column Grouping) Tools
+    # =========================================================================
+
+    def _execute_create_row_group(self, arguments: dict) -> dict:
+        """Execute the create_row_group tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "")
+        sheet_name = arguments.get("sheet_name", "")
+        start_row = arguments.get("start_row")
+        end_row = arguments.get("end_row")
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not sheet_name:
+            return {"success": False, "message": "sheet_name is required"}
+        if start_row is None or end_row is None:
+            return {"success": False, "message": "start_row and end_row are required"}
+
+        try:
+            from signal_bot.google_sheets_client import create_row_group_sync
+
+            result = create_row_group_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                sheet_name=sheet_name,
+                start_row=start_row,
+                end_row=end_row
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Created row group {start_row}-{end_row}")
+            }
+
+        except Exception as e:
+            logger.error(f"Error creating row group: {e}")
+            return {"success": False, "message": f"Error creating row group: {str(e)}"}
+
+    def _execute_create_column_group(self, arguments: dict) -> dict:
+        """Execute the create_column_group tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "")
+        sheet_name = arguments.get("sheet_name", "")
+        start_column = arguments.get("start_column", "")
+        end_column = arguments.get("end_column", "")
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not sheet_name:
+            return {"success": False, "message": "sheet_name is required"}
+        if not start_column or not end_column:
+            return {"success": False, "message": "start_column and end_column are required"}
+
+        try:
+            from signal_bot.google_sheets_client import create_column_group_sync
+
+            result = create_column_group_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                sheet_name=sheet_name,
+                start_column=start_column,
+                end_column=end_column
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Created column group {start_column}-{end_column}")
+            }
+
+        except Exception as e:
+            logger.error(f"Error creating column group: {e}")
+            return {"success": False, "message": f"Error creating column group: {str(e)}"}
+
+    def _execute_delete_row_group(self, arguments: dict) -> dict:
+        """Execute the delete_row_group tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "")
+        sheet_name = arguments.get("sheet_name", "")
+        start_row = arguments.get("start_row")
+        end_row = arguments.get("end_row")
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not sheet_name:
+            return {"success": False, "message": "sheet_name is required"}
+        if start_row is None or end_row is None:
+            return {"success": False, "message": "start_row and end_row are required"}
+
+        try:
+            from signal_bot.google_sheets_client import delete_row_group_sync
+
+            result = delete_row_group_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                sheet_name=sheet_name,
+                start_row=start_row,
+                end_row=end_row
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Deleted row group {start_row}-{end_row}")
+            }
+
+        except Exception as e:
+            logger.error(f"Error deleting row group: {e}")
+            return {"success": False, "message": f"Error deleting row group: {str(e)}"}
+
+    def _execute_delete_column_group(self, arguments: dict) -> dict:
+        """Execute the delete_column_group tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "")
+        sheet_name = arguments.get("sheet_name", "")
+        start_column = arguments.get("start_column", "")
+        end_column = arguments.get("end_column", "")
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not sheet_name:
+            return {"success": False, "message": "sheet_name is required"}
+        if not start_column or not end_column:
+            return {"success": False, "message": "start_column and end_column are required"}
+
+        try:
+            from signal_bot.google_sheets_client import delete_column_group_sync
+
+            result = delete_column_group_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                sheet_name=sheet_name,
+                start_column=start_column,
+                end_column=end_column
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Deleted column group {start_column}-{end_column}")
+            }
+
+        except Exception as e:
+            logger.error(f"Error deleting column group: {e}")
+            return {"success": False, "message": f"Error deleting column group: {str(e)}"}
+
+    def _execute_collapse_expand_group(self, arguments: dict) -> dict:
+        """Execute the collapse_expand_group tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "")
+        sheet_name = arguments.get("sheet_name", "")
+        dimension = arguments.get("dimension", "")
+        start_index = arguments.get("start_index", "")
+        end_index = arguments.get("end_index", "")
+        collapsed = arguments.get("collapsed", True)
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not sheet_name:
+            return {"success": False, "message": "sheet_name is required"}
+        if not dimension:
+            return {"success": False, "message": "dimension is required (ROWS or COLUMNS)"}
+        if not start_index or not end_index:
+            return {"success": False, "message": "start_index and end_index are required"}
+
+        try:
+            from signal_bot.google_sheets_client import update_dimension_group_sync
+
+            # Convert string indices to appropriate types
+            if dimension.upper() == "ROWS":
+                s_idx = int(start_index)
+                e_idx = int(end_index)
+            else:
+                s_idx = start_index
+                e_idx = end_index
+
+            result = update_dimension_group_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                sheet_name=sheet_name,
+                dimension=dimension,
+                start_index=s_idx,
+                end_index=e_idx,
+                collapsed=collapsed
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", "Group updated")
+            }
+
+        except Exception as e:
+            logger.error(f"Error updating dimension group: {e}")
+            return {"success": False, "message": f"Error updating dimension group: {str(e)}"}
+
+    def _execute_set_group_control_position(self, arguments: dict) -> dict:
+        """Execute the set_group_control_position tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "")
+        sheet_name = arguments.get("sheet_name", "")
+        row_control_after = arguments.get("row_control_after")
+        column_control_after = arguments.get("column_control_after")
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not sheet_name:
+            return {"success": False, "message": "sheet_name is required"}
+
+        try:
+            from signal_bot.google_sheets_client import set_group_control_position_sync
+
+            result = set_group_control_position_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                sheet_name=sheet_name,
+                row_control_after=row_control_after,
+                column_control_after=column_control_after
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", "Group control position updated")
+            }
+
+        except Exception as e:
+            logger.error(f"Error setting group control position: {e}")
+            return {"success": False, "message": f"Error setting group control position: {str(e)}"}
+
+    # ==================== Slicers ====================
+
+    def _execute_list_slicers(self, arguments: dict) -> dict:
+        """Execute the list_slicers tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "")
+        sheet_name = arguments.get("sheet_name")
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+
+        try:
+            from signal_bot.google_sheets_client import list_slicers_sync
+
+            result = list_slicers_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                sheet_name=sheet_name
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": f"Found {len(result.get('slicers', []))} slicers"
+            }
+
+        except Exception as e:
+            logger.error(f"Error listing slicers: {e}")
+            return {"success": False, "message": f"Error listing slicers: {str(e)}"}
+
+    def _execute_create_slicer(self, arguments: dict) -> dict:
+        """Execute the create_slicer tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "")
+        data_range = arguments.get("data_range", "")
+        filter_column_index = arguments.get("filter_column_index")
+        title = arguments.get("title")
+        row_index = arguments.get("row_index", 0)
+        column_index = arguments.get("column_index", 0)
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not data_range:
+            return {"success": False, "message": "data_range is required"}
+        if filter_column_index is None:
+            return {"success": False, "message": "filter_column_index is required"}
+
+        try:
+            from signal_bot.google_sheets_client import create_slicer_sync
+
+            result = create_slicer_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                data_range=data_range,
+                filter_column_index=filter_column_index,
+                title=title,
+                row_index=row_index,
+                column_index=column_index
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": f"Slicer created with ID {result.get('slicer_id')}"
+            }
+
+        except Exception as e:
+            logger.error(f"Error creating slicer: {e}")
+            return {"success": False, "message": f"Error creating slicer: {str(e)}"}
+
+    def _execute_update_slicer(self, arguments: dict) -> dict:
+        """Execute the update_slicer tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "")
+        slicer_id = arguments.get("slicer_id")
+        title = arguments.get("title")
+        filter_values = arguments.get("filter_values")
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if slicer_id is None:
+            return {"success": False, "message": "slicer_id is required"}
+
+        try:
+            from signal_bot.google_sheets_client import update_slicer_sync
+
+            result = update_slicer_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                slicer_id=slicer_id,
+                title=title,
+                filter_values=filter_values
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": f"Slicer {slicer_id} updated"
+            }
+
+        except Exception as e:
+            logger.error(f"Error updating slicer: {e}")
+            return {"success": False, "message": f"Error updating slicer: {str(e)}"}
+
+    def _execute_delete_slicer(self, arguments: dict) -> dict:
+        """Execute the delete_slicer tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "")
+        slicer_id = arguments.get("slicer_id")
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if slicer_id is None:
+            return {"success": False, "message": "slicer_id is required"}
+
+        try:
+            from signal_bot.google_sheets_client import delete_slicer_sync
+
+            result = delete_slicer_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                slicer_id=slicer_id
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": f"Slicer {slicer_id} deleted"
+            }
+
+        except Exception as e:
+            logger.error(f"Error deleting slicer: {e}")
+            return {"success": False, "message": f"Error deleting slicer: {str(e)}"}
+
+    # ==================== Tables ====================
+
+    def _execute_list_tables(self, arguments: dict) -> dict:
+        """Execute the list_tables tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "")
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+
+        try:
+            from signal_bot.google_sheets_client import list_tables_sync
+
+            result = list_tables_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": f"Found {len(result.get('tables', []))} tables"
+            }
+
+        except Exception as e:
+            logger.error(f"Error listing tables: {e}")
+            return {"success": False, "message": f"Error listing tables: {str(e)}"}
+
+    def _execute_create_table(self, arguments: dict) -> dict:
+        """Execute the create_table tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "")
+        range_str = arguments.get("range", "")
+        columns = arguments.get("columns", [])
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not range_str:
+            return {"success": False, "message": "range is required"}
+        if not columns:
+            return {"success": False, "message": "columns is required (list of column definitions)"}
+
+        try:
+            from signal_bot.google_sheets_client import create_table_sync
+
+            result = create_table_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                range_str=range_str,
+                columns=columns
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": f"Table created with ID {result.get('table_id')}"
+            }
+
+        except Exception as e:
+            logger.error(f"Error creating table: {e}")
+            return {"success": False, "message": f"Error creating table: {str(e)}"}
+
+    def _execute_delete_table(self, arguments: dict) -> dict:
+        """Execute the delete_table tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "")
+        table_id = arguments.get("table_id", "")
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not table_id:
+            return {"success": False, "message": "table_id is required"}
+
+        try:
+            from signal_bot.google_sheets_client import delete_table_sync
+
+            result = delete_table_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                table_id=table_id
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": f"Table {table_id} deleted"
+            }
+
+        except Exception as e:
+            logger.error(f"Error deleting table: {e}")
+            return {"success": False, "message": f"Error deleting table: {str(e)}"}
+
+    def _execute_update_table_column(self, arguments: dict) -> dict:
+        """Execute the update_table_column tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "")
+        table_id = arguments.get("table_id", "")
+        column_index = arguments.get("column_index")
+        name = arguments.get("name")
+        column_type = arguments.get("column_type")
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not table_id:
+            return {"success": False, "message": "table_id is required"}
+        if column_index is None:
+            return {"success": False, "message": "column_index is required"}
+
+        try:
+            from signal_bot.google_sheets_client import update_table_column_sync
+
+            result = update_table_column_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                table_id=table_id,
+                column_index=column_index,
+                name=name,
+                column_type=column_type
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": f"Column {column_index} updated in table {table_id}"
+            }
+
+        except Exception as e:
+            logger.error(f"Error updating table column: {e}")
+            return {"success": False, "message": f"Error updating table column: {str(e)}"}
 
 
 def create_tool_executor_callback(executor: ToolExecutor) -> Callable[[str, dict], dict]:

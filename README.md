@@ -22,6 +22,7 @@ A web-based management dashboard for running AI bots in Signal group chats. Conf
 - **Weather Tool**: Real-time weather data via WeatherAPI.com (toggle per-bot)
 - **Finance Tools**: Stock quotes, analyst ratings, dividends, financials, and more via Yahoo Finance (toggle per-bot)
 - **Time Tool**: Accurate time/date across timezones for multi-timezone group chats (toggle per-bot)
+- **Google Sheets**: Full spreadsheet management with 90+ tools - create sheets, track expenses, charts, pivot tables, and more (OAuth per-bot)
 
 ### Memory System
 - **Rolling Context**: Maintains a configurable window of recent messages (default 25)
@@ -145,6 +146,29 @@ When time tools are enabled, bots can provide accurate time/date information acr
 
 Useful for group chats with members across multiple timezones.
 
+### Google Sheets Integration (90+ Tools)
+
+Connect each bot to Google via OAuth for full spreadsheet management. Setup:
+1. Create OAuth credentials in [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+2. Enable **Google Sheets API** and **Google Drive API**
+3. Add redirect URI: `http://localhost:5000/oauth/google/callback`
+4. Enter Client ID and Secret in bot settings, click "Connect to Google"
+
+| Category | Tools |
+|----------|-------|
+| **Core Operations** | `create_spreadsheet`, `list_spreadsheets`, `read_sheet`, `write_to_sheet`, `add_row_to_sheet`, `search_sheets`, `clear_range`, `delete_rows`, `delete_columns`, `insert_rows`, `insert_columns` |
+| **Sheet Management** | `add_sheet`, `delete_sheet`, `rename_sheet`, `freeze_rows`, `freeze_columns`, `hide_sheet`, `show_sheet`, `set_tab_color`, `get_sheet_properties` |
+| **Formatting** | `format_columns`, `conditional_format`, `data_validation`, `alternating_colors`, `set_borders`, `set_alignment`, `add_note`, `merge_cells`, `unmerge_cells` |
+| **Charts** | `create_chart` (bar, line, pie, area, scatter), `list_charts`, `update_chart`, `delete_chart` |
+| **Pivot Tables** | `create_pivot_table`, `delete_pivot_table` |
+| **Filters & Slicers** | `set_basic_filter`, `clear_basic_filter`, `create_filter_view`, `delete_filter_view`, `list_filter_views`, `create_slicer`, `update_slicer`, `delete_slicer`, `list_slicers` |
+| **Dimension Groups** | `create_row_group`, `create_column_group`, `delete_row_group`, `delete_column_group`, `collapse_expand_group`, `set_group_control_position` |
+| **Protected Ranges** | `protect_range`, `protect_sheet`, `list_protected_ranges`, `update_protected_range`, `delete_protected_range` |
+| **Tables** | `create_table`, `delete_table`, `list_tables`, `update_table_column` (supports all column types: TEXT, DOUBLE, CURRENCY, PERCENT, DATE, BOOLEAN, DROPDOWN, chip types) |
+| **Properties** | `set_spreadsheet_timezone`, `set_spreadsheet_locale`, `set_spreadsheet_theme`, `get_spreadsheet_properties`, `set_developer_metadata`, `get_developer_metadata` |
+
+Features per-group spreadsheet registry, automatic attribution, and token refresh.
+
 ### Memory Settings (config_signal.py)
 
 ```python
@@ -186,6 +210,7 @@ SQLite database (`signal_bot.db`) with tables:
 - `prompt_templates` - Reusable system prompts
 - `custom_models` - User-added OpenRouter models
 - `activity_logs` - Admin activity feed
+- `sheets_registry` - Google Sheets per group
 
 ## Project Structure
 
@@ -204,6 +229,8 @@ signal_bot/
 ├── weather_client.py       # WeatherAPI.com integration
 ├── finance_client.py       # Yahoo Finance integration (yfinance)
 ├── time_client.py          # Timezone-aware time/date utilities
+├── google_sheets_client.py # Google Sheets/Drive API (90+ tools)
+├── wikipedia_client.py     # Wikipedia REST API integration
 ├── models.py               # SQLite database models
 └── config_signal.py        # Signal-specific settings
 
