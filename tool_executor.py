@@ -246,6 +246,64 @@ class SignalToolExecutor:
         if function_name == "delete_pivot_table":
             return self._execute_delete_pivot_table(arguments)
 
+        # Text formatting & color tools (Batch 1)
+        if function_name == "set_text_format":
+            return self._execute_set_text_format(arguments)
+        if function_name == "set_text_color":
+            return self._execute_set_text_color(arguments)
+        if function_name == "set_background_color":
+            return self._execute_set_background_color(arguments)
+        if function_name == "add_hyperlink":
+            return self._execute_add_hyperlink(arguments)
+
+        # Filtering tools (Batch 2)
+        if function_name == "set_basic_filter":
+            return self._execute_set_basic_filter(arguments)
+        if function_name == "clear_basic_filter":
+            return self._execute_clear_basic_filter(arguments)
+        if function_name == "create_filter_view":
+            return self._execute_create_filter_view(arguments)
+        if function_name == "delete_filter_view":
+            return self._execute_delete_filter_view(arguments)
+
+        # Named & protected range tools (Batch 3)
+        if function_name == "create_named_range":
+            return self._execute_create_named_range(arguments)
+        if function_name == "delete_named_range":
+            return self._execute_delete_named_range(arguments)
+        if function_name == "list_named_ranges":
+            return self._execute_list_named_ranges(arguments)
+        if function_name == "protect_range":
+            return self._execute_protect_range(arguments)
+
+        # Find/Replace & Copy/Paste tools (Batch 4)
+        if function_name == "find_replace":
+            return self._execute_find_replace(arguments)
+        if function_name == "copy_paste":
+            return self._execute_copy_paste(arguments)
+        if function_name == "cut_paste":
+            return self._execute_cut_paste(arguments)
+
+        # Spreadsheet Properties tools (Batch 8)
+        if function_name == "set_spreadsheet_timezone":
+            return self._execute_set_spreadsheet_timezone(arguments)
+        if function_name == "set_spreadsheet_locale":
+            return self._execute_set_spreadsheet_locale(arguments)
+        if function_name == "set_recalculation_interval":
+            return self._execute_set_recalculation_interval(arguments)
+        if function_name == "get_spreadsheet_properties":
+            return self._execute_get_spreadsheet_properties(arguments)
+        if function_name == "set_spreadsheet_theme":
+            return self._execute_set_spreadsheet_theme(arguments)
+
+        # Developer Metadata tools (Batch 9)
+        if function_name == "set_developer_metadata":
+            return self._execute_set_developer_metadata(arguments)
+        if function_name == "get_developer_metadata":
+            return self._execute_get_developer_metadata(arguments)
+        if function_name == "delete_developer_metadata":
+            return self._execute_delete_developer_metadata(arguments)
+
         # Member memory tools
         if function_name == "save_member_memory":
             return self._execute_save_member_memory(arguments)
@@ -2087,6 +2145,905 @@ class SignalToolExecutor:
         except Exception as e:
             logger.error(f"Error deleting pivot table: {e}")
             return {"success": False, "message": f"Error deleting pivot table: {str(e)}"}
+
+    # Text formatting & color tool execution methods (Batch 1)
+
+    def _execute_set_text_format(self, arguments: dict) -> dict:
+        """Execute the set_text_format tool call."""
+        if not self.bot_data.get('sheets_enabled'):
+            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        range_notation = arguments.get("range", "").strip()
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not range_notation:
+            return {"success": False, "message": "range is required (e.g., 'A1:D10')"}
+
+        try:
+            from signal_bot.google_sheets_client import set_text_format_sync
+
+            result = set_text_format_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                range_notation=range_notation,
+                bold=arguments.get("bold"),
+                italic=arguments.get("italic"),
+                underline=arguments.get("underline"),
+                strikethrough=arguments.get("strikethrough"),
+                font_family=arguments.get("font_family"),
+                font_size=arguments.get("font_size")
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Applied text formatting to {range_notation}")
+            }
+
+        except Exception as e:
+            logger.error(f"Error setting text format: {e}")
+            return {"success": False, "message": f"Error setting text format: {str(e)}"}
+
+    def _execute_set_text_color(self, arguments: dict) -> dict:
+        """Execute the set_text_color tool call."""
+        if not self.bot_data.get('sheets_enabled'):
+            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        range_notation = arguments.get("range", "").strip()
+        color = arguments.get("color", "").strip()
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not range_notation:
+            return {"success": False, "message": "range is required (e.g., 'A1:D10')"}
+        if not color:
+            return {"success": False, "message": "color is required (e.g., '#FF0000' or 'red')"}
+
+        try:
+            from signal_bot.google_sheets_client import set_text_color_sync
+
+            result = set_text_color_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                range_notation=range_notation,
+                color=color
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Set text color to {color} on {range_notation}")
+            }
+
+        except Exception as e:
+            logger.error(f"Error setting text color: {e}")
+            return {"success": False, "message": f"Error setting text color: {str(e)}"}
+
+    def _execute_set_background_color(self, arguments: dict) -> dict:
+        """Execute the set_background_color tool call."""
+        if not self.bot_data.get('sheets_enabled'):
+            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        range_notation = arguments.get("range", "").strip()
+        color = arguments.get("color", "").strip()
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not range_notation:
+            return {"success": False, "message": "range is required (e.g., 'A1:D10')"}
+        if not color:
+            return {"success": False, "message": "color is required (e.g., '#FFFF00' or 'yellow')"}
+
+        try:
+            from signal_bot.google_sheets_client import set_background_color_sync
+
+            result = set_background_color_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                range_notation=range_notation,
+                color=color
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Set background color to {color} on {range_notation}")
+            }
+
+        except Exception as e:
+            logger.error(f"Error setting background color: {e}")
+            return {"success": False, "message": f"Error setting background color: {str(e)}"}
+
+    def _execute_add_hyperlink(self, arguments: dict) -> dict:
+        """Execute the add_hyperlink tool call."""
+        if not self.bot_data.get('sheets_enabled'):
+            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        cell = arguments.get("cell", "").strip()
+        url = arguments.get("url", "").strip()
+        display_text = arguments.get("display_text", "").strip() if arguments.get("display_text") else None
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not cell:
+            return {"success": False, "message": "cell is required (e.g., 'A1')"}
+        if not url:
+            return {"success": False, "message": "url is required"}
+
+        try:
+            from signal_bot.google_sheets_client import add_hyperlink_sync
+
+            result = add_hyperlink_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                cell=cell,
+                url=url,
+                display_text=display_text
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Added hyperlink to {cell}")
+            }
+
+        except Exception as e:
+            logger.error(f"Error adding hyperlink: {e}")
+            return {"success": False, "message": f"Error adding hyperlink: {str(e)}"}
+
+    # Filtering tool execution methods (Batch 2)
+
+    def _execute_set_basic_filter(self, arguments: dict) -> dict:
+        """Execute the set_basic_filter tool call."""
+        if not self.bot_data.get('sheets_enabled'):
+            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        range_notation = arguments.get("range", "").strip()
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not range_notation:
+            return {"success": False, "message": "range is required (e.g., 'A1:E100')"}
+
+        try:
+            from signal_bot.google_sheets_client import set_basic_filter_sync
+
+            result = set_basic_filter_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                range_notation=range_notation
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Enabled filter on {range_notation}")
+            }
+
+        except Exception as e:
+            logger.error(f"Error setting basic filter: {e}")
+            return {"success": False, "message": f"Error setting basic filter: {str(e)}"}
+
+    def _execute_clear_basic_filter(self, arguments: dict) -> dict:
+        """Execute the clear_basic_filter tool call."""
+        if not self.bot_data.get('sheets_enabled'):
+            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        sheet_name = arguments.get("sheet_name", "").strip() if arguments.get("sheet_name") else None
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+
+        try:
+            from signal_bot.google_sheets_client import clear_basic_filter_sync
+
+            result = clear_basic_filter_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                sheet_name=sheet_name
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", "Cleared filter")
+            }
+
+        except Exception as e:
+            logger.error(f"Error clearing basic filter: {e}")
+            return {"success": False, "message": f"Error clearing basic filter: {str(e)}"}
+
+    def _execute_create_filter_view(self, arguments: dict) -> dict:
+        """Execute the create_filter_view tool call."""
+        if not self.bot_data.get('sheets_enabled'):
+            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        title = arguments.get("title", "").strip()
+        range_notation = arguments.get("range", "").strip()
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not title:
+            return {"success": False, "message": "title is required"}
+        if not range_notation:
+            return {"success": False, "message": "range is required (e.g., 'A1:E100')"}
+
+        try:
+            from signal_bot.google_sheets_client import create_filter_view_sync
+
+            result = create_filter_view_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                title=title,
+                range_notation=range_notation
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Created filter view '{title}'")
+            }
+
+        except Exception as e:
+            logger.error(f"Error creating filter view: {e}")
+            return {"success": False, "message": f"Error creating filter view: {str(e)}"}
+
+    def _execute_delete_filter_view(self, arguments: dict) -> dict:
+        """Execute the delete_filter_view tool call."""
+        if not self.bot_data.get('sheets_enabled'):
+            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        filter_view_id = arguments.get("filter_view_id")
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if filter_view_id is None:
+            return {"success": False, "message": "filter_view_id is required"}
+
+        try:
+            from signal_bot.google_sheets_client import delete_filter_view_sync
+
+            result = delete_filter_view_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                filter_view_id=int(filter_view_id)
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Deleted filter view {filter_view_id}")
+            }
+
+        except Exception as e:
+            logger.error(f"Error deleting filter view: {e}")
+            return {"success": False, "message": f"Error deleting filter view: {str(e)}"}
+
+    # Named & protected range tool execution methods (Batch 3)
+
+    def _execute_create_named_range(self, arguments: dict) -> dict:
+        """Execute the create_named_range tool call."""
+        if not self.bot_data.get('sheets_enabled'):
+            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        name = arguments.get("name", "").strip()
+        range_notation = arguments.get("range", "").strip()
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not name:
+            return {"success": False, "message": "name is required"}
+        if not range_notation:
+            return {"success": False, "message": "range is required (e.g., 'A2:A100')"}
+
+        try:
+            from signal_bot.google_sheets_client import create_named_range_sync
+
+            result = create_named_range_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                name=name,
+                range_notation=range_notation
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Created named range '{name}'")
+            }
+
+        except Exception as e:
+            logger.error(f"Error creating named range: {e}")
+            return {"success": False, "message": f"Error creating named range: {str(e)}"}
+
+    def _execute_delete_named_range(self, arguments: dict) -> dict:
+        """Execute the delete_named_range tool call."""
+        if not self.bot_data.get('sheets_enabled'):
+            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        named_range_id = arguments.get("named_range_id", "").strip()
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not named_range_id:
+            return {"success": False, "message": "named_range_id is required"}
+
+        try:
+            from signal_bot.google_sheets_client import delete_named_range_sync
+
+            result = delete_named_range_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                named_range_id=named_range_id
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Deleted named range")
+            }
+
+        except Exception as e:
+            logger.error(f"Error deleting named range: {e}")
+            return {"success": False, "message": f"Error deleting named range: {str(e)}"}
+
+    def _execute_list_named_ranges(self, arguments: dict) -> dict:
+        """Execute the list_named_ranges tool call."""
+        if not self.bot_data.get('sheets_enabled'):
+            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+
+        try:
+            from signal_bot.google_sheets_client import list_named_ranges_sync
+
+            result = list_named_ranges_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", "Listed named ranges")
+            }
+
+        except Exception as e:
+            logger.error(f"Error listing named ranges: {e}")
+            return {"success": False, "message": f"Error listing named ranges: {str(e)}"}
+
+    def _execute_protect_range(self, arguments: dict) -> dict:
+        """Execute the protect_range tool call."""
+        if not self.bot_data.get('sheets_enabled'):
+            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        range_notation = arguments.get("range", "").strip()
+        description = arguments.get("description", "").strip() if arguments.get("description") else None
+        warning_only = arguments.get("warning_only", False)
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not range_notation:
+            return {"success": False, "message": "range is required (e.g., 'A1:D10')"}
+
+        try:
+            from signal_bot.google_sheets_client import protect_range_sync
+
+            result = protect_range_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                range_notation=range_notation,
+                description=description,
+                warning_only=warning_only
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Protected {range_notation}")
+            }
+
+        except Exception as e:
+            logger.error(f"Error protecting range: {e}")
+            return {"success": False, "message": f"Error protecting range: {str(e)}"}
+
+    # Find/Replace & Copy/Paste tool execution methods (Batch 4)
+
+    def _execute_find_replace(self, arguments: dict) -> dict:
+        """Execute the find_replace tool call."""
+        if not self.bot_data.get('sheets_enabled'):
+            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        find = arguments.get("find", "")
+        replacement = arguments.get("replacement", "")
+        range_notation = arguments.get("range", "").strip() if arguments.get("range") else None
+        match_case = arguments.get("match_case", False)
+        match_entire_cell = arguments.get("match_entire_cell", False)
+        search_formulas = arguments.get("search_formulas", False)
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not find:
+            return {"success": False, "message": "find text is required"}
+
+        try:
+            from signal_bot.google_sheets_client import find_replace_sync
+
+            result = find_replace_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                find=find,
+                replacement=replacement,
+                range_notation=range_notation,
+                match_case=match_case,
+                match_entire_cell=match_entire_cell,
+                search_formulas=search_formulas
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Find/replace completed")
+            }
+
+        except Exception as e:
+            logger.error(f"Error in find/replace: {e}")
+            return {"success": False, "message": f"Error in find/replace: {str(e)}"}
+
+    def _execute_copy_paste(self, arguments: dict) -> dict:
+        """Execute the copy_paste tool call."""
+        if not self.bot_data.get('sheets_enabled'):
+            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        source_range = arguments.get("source_range", "").strip()
+        destination_range = arguments.get("destination_range", "").strip()
+        paste_type = arguments.get("paste_type", "all").strip()
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not source_range:
+            return {"success": False, "message": "source_range is required"}
+        if not destination_range:
+            return {"success": False, "message": "destination_range is required"}
+
+        try:
+            from signal_bot.google_sheets_client import copy_paste_sync
+
+            result = copy_paste_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                source_range=source_range,
+                destination_range=destination_range,
+                paste_type=paste_type
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Copied {source_range} to {destination_range}")
+            }
+
+        except Exception as e:
+            logger.error(f"Error in copy/paste: {e}")
+            return {"success": False, "message": f"Error in copy/paste: {str(e)}"}
+
+    def _execute_cut_paste(self, arguments: dict) -> dict:
+        """Execute the cut_paste tool call."""
+        if not self.bot_data.get('sheets_enabled'):
+            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        source_range = arguments.get("source_range", "").strip()
+        destination = arguments.get("destination", "").strip()
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not source_range:
+            return {"success": False, "message": "source_range is required"}
+        if not destination:
+            return {"success": False, "message": "destination is required"}
+
+        try:
+            from signal_bot.google_sheets_client import cut_paste_sync
+
+            result = cut_paste_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                source_range=source_range,
+                destination=destination
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Moved {source_range} to {destination}")
+            }
+
+        except Exception as e:
+            logger.error(f"Error in cut/paste: {e}")
+            return {"success": False, "message": f"Error in cut/paste: {str(e)}"}
+
+    # Spreadsheet Properties tool execution methods (Batch 8)
+
+    def _execute_set_spreadsheet_timezone(self, arguments: dict) -> dict:
+        """Execute the set_spreadsheet_timezone tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        timezone = arguments.get("timezone", "").strip()
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not timezone:
+            return {"success": False, "message": "timezone is required"}
+
+        try:
+            from signal_bot.google_sheets_client import set_spreadsheet_timezone_sync
+
+            result = set_spreadsheet_timezone_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                timezone=timezone
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Timezone set to {timezone}")
+            }
+
+        except Exception as e:
+            logger.error(f"Error setting timezone: {e}")
+            return {"success": False, "message": f"Error setting timezone: {str(e)}"}
+
+    def _execute_set_spreadsheet_locale(self, arguments: dict) -> dict:
+        """Execute the set_spreadsheet_locale tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        locale = arguments.get("locale", "").strip()
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not locale:
+            return {"success": False, "message": "locale is required"}
+
+        try:
+            from signal_bot.google_sheets_client import set_spreadsheet_locale_sync
+
+            result = set_spreadsheet_locale_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                locale=locale
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Locale set to {locale}")
+            }
+
+        except Exception as e:
+            logger.error(f"Error setting locale: {e}")
+            return {"success": False, "message": f"Error setting locale: {str(e)}"}
+
+    def _execute_set_recalculation_interval(self, arguments: dict) -> dict:
+        """Execute the set_recalculation_interval tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        interval = arguments.get("interval", "").strip()
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not interval:
+            return {"success": False, "message": "interval is required"}
+
+        valid_intervals = ["on_change", "minute", "hour"]
+        if interval.lower() not in valid_intervals:
+            return {"success": False, "message": f"Invalid interval. Must be one of: {', '.join(valid_intervals)}"}
+
+        try:
+            from signal_bot.google_sheets_client import set_recalculation_interval_sync
+
+            result = set_recalculation_interval_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                interval=interval
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Recalculation interval set to {interval}")
+            }
+
+        except Exception as e:
+            logger.error(f"Error setting recalculation interval: {e}")
+            return {"success": False, "message": f"Error setting recalculation interval: {str(e)}"}
+
+    def _execute_get_spreadsheet_properties(self, arguments: dict) -> dict:
+        """Execute the get_spreadsheet_properties tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+
+        try:
+            from signal_bot.google_sheets_client import get_spreadsheet_properties_sync
+
+            result = get_spreadsheet_properties_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": f"Properties for '{result.get('title', 'spreadsheet')}'"
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting spreadsheet properties: {e}")
+            return {"success": False, "message": f"Error getting properties: {str(e)}"}
+
+    def _execute_set_spreadsheet_theme(self, arguments: dict) -> dict:
+        """Execute the set_spreadsheet_theme tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+
+        # Extract optional theme parameters
+        primary_font = arguments.get("primary_font")
+        text_color = arguments.get("text_color")
+        background_color = arguments.get("background_color")
+        accent1 = arguments.get("accent1")
+        accent2 = arguments.get("accent2")
+        accent3 = arguments.get("accent3")
+        accent4 = arguments.get("accent4")
+        accent5 = arguments.get("accent5")
+        accent6 = arguments.get("accent6")
+        link_color = arguments.get("link_color")
+
+        # Check at least one parameter is provided
+        if not any([primary_font, text_color, background_color, accent1, accent2, accent3, accent4, accent5, accent6, link_color]):
+            return {"success": False, "message": "At least one theme property (primary_font or a color) is required"}
+
+        try:
+            from signal_bot.google_sheets_client import set_spreadsheet_theme_sync
+
+            result = set_spreadsheet_theme_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                primary_font=primary_font,
+                text_color=text_color,
+                background_color=background_color,
+                accent1=accent1,
+                accent2=accent2,
+                accent3=accent3,
+                accent4=accent4,
+                accent5=accent5,
+                accent6=accent6,
+                link_color=link_color
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", "Theme updated")
+            }
+
+        except Exception as e:
+            logger.error(f"Error setting theme: {e}")
+            return {"success": False, "message": f"Error setting theme: {str(e)}"}
+
+    # Developer Metadata tool execution methods (Batch 9)
+
+    def _execute_set_developer_metadata(self, arguments: dict) -> dict:
+        """Execute the set_developer_metadata tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        key = arguments.get("key", "").strip()
+        value = arguments.get("value", "").strip()
+        location = arguments.get("location", "spreadsheet").strip().lower()
+        sheet_name = arguments.get("sheet_name")
+        start_index = arguments.get("start_index")
+        end_index = arguments.get("end_index")
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not key:
+            return {"success": False, "message": "key is required"}
+        if not value:
+            return {"success": False, "message": "value is required"}
+
+        valid_locations = ["spreadsheet", "sheet", "row", "column"]
+        if location not in valid_locations:
+            return {"success": False, "message": f"Invalid location. Must be one of: {', '.join(valid_locations)}"}
+
+        try:
+            from signal_bot.google_sheets_client import set_developer_metadata_sync
+
+            result = set_developer_metadata_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                key=key,
+                value=value,
+                location=location,
+                sheet_name=sheet_name,
+                start_index=start_index,
+                end_index=end_index
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Metadata '{key}' set")
+            }
+
+        except Exception as e:
+            logger.error(f"Error setting developer metadata: {e}")
+            return {"success": False, "message": f"Error setting metadata: {str(e)}"}
+
+    def _execute_get_developer_metadata(self, arguments: dict) -> dict:
+        """Execute the get_developer_metadata tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        key = arguments.get("key")  # Optional
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+
+        try:
+            from signal_bot.google_sheets_client import get_developer_metadata_sync
+
+            result = get_developer_metadata_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                key=key.strip() if key else None
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Found {result.get('count', 0)} metadata entries")
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting developer metadata: {e}")
+            return {"success": False, "message": f"Error getting metadata: {str(e)}"}
+
+    def _execute_delete_developer_metadata(self, arguments: dict) -> dict:
+        """Execute the delete_developer_metadata tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        metadata_id = arguments.get("metadata_id")
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if metadata_id is None:
+            return {"success": False, "message": "metadata_id is required"}
+
+        try:
+            from signal_bot.google_sheets_client import delete_developer_metadata_sync
+
+            result = delete_developer_metadata_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                metadata_id=int(metadata_id)
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Deleted metadata {metadata_id}")
+            }
+
+        except Exception as e:
+            logger.error(f"Error deleting developer metadata: {e}")
+            return {"success": False, "message": f"Error deleting metadata: {str(e)}"}
 
     # Member memory tool execution methods
 

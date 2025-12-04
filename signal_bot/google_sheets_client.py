@@ -40,6 +40,66 @@ SCOPES = [
 
 
 # ============================================================================
+# Color Helper
+# ============================================================================
+
+def parse_color(color_input: str) -> dict:
+    """
+    Parse color from hex code or name to Google Sheets RGB format (0-1 floats).
+
+    Supports:
+    - Hex: "#FF0000", "#f00", "#FF0000FF" (with alpha)
+    - Names: "red", "blue", "green", "yellow", "orange", "purple", "pink",
+             "black", "white", "gray", "lightgray", "darkgray", "cyan", "magenta"
+
+    Args:
+        color_input: Color as hex code or named color
+
+    Returns:
+        Dict with 'red', 'green', 'blue' keys (0-1 floats), optionally 'alpha'
+    """
+    NAMED_COLORS = {
+        "red": {"red": 1.0, "green": 0.0, "blue": 0.0},
+        "green": {"red": 0.0, "green": 0.8, "blue": 0.0},
+        "blue": {"red": 0.0, "green": 0.0, "blue": 1.0},
+        "yellow": {"red": 1.0, "green": 1.0, "blue": 0.0},
+        "orange": {"red": 1.0, "green": 0.647, "blue": 0.0},
+        "purple": {"red": 0.5, "green": 0.0, "blue": 0.5},
+        "pink": {"red": 1.0, "green": 0.753, "blue": 0.796},
+        "black": {"red": 0.0, "green": 0.0, "blue": 0.0},
+        "white": {"red": 1.0, "green": 1.0, "blue": 1.0},
+        "gray": {"red": 0.5, "green": 0.5, "blue": 0.5},
+        "lightgray": {"red": 0.827, "green": 0.827, "blue": 0.827},
+        "darkgray": {"red": 0.412, "green": 0.412, "blue": 0.412},
+        "cyan": {"red": 0.0, "green": 1.0, "blue": 1.0},
+        "magenta": {"red": 1.0, "green": 0.0, "blue": 1.0},
+    }
+
+    color = color_input.strip().lower()
+
+    # Named color
+    if color in NAMED_COLORS:
+        return NAMED_COLORS[color]
+
+    # Hex color
+    if color.startswith("#"):
+        hex_str = color[1:]
+        if len(hex_str) == 3:  # #RGB -> #RRGGBB
+            hex_str = ''.join(c * 2 for c in hex_str)
+        if len(hex_str) in (6, 8):
+            r = int(hex_str[0:2], 16) / 255.0
+            g = int(hex_str[2:4], 16) / 255.0
+            b = int(hex_str[4:6], 16) / 255.0
+            result = {"red": r, "green": g, "blue": b}
+            if len(hex_str) == 8:
+                result["alpha"] = int(hex_str[6:8], 16) / 255.0
+            return result
+
+    # Default to red if unrecognized
+    return NAMED_COLORS["red"]
+
+
+# ============================================================================
 # OAuth Helper Functions
 # ============================================================================
 
@@ -3419,3 +3479,1905 @@ def refresh_pivot_table_sync(
         }
 
     return _run_async(_refresh())
+
+
+# =============================================================================
+# BATCH 8: Text Formatting & Colors
+# =============================================================================
+
+def set_text_format_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    range_notation: str,
+    bold: bool = None,
+    italic: bool = None,
+    underline: bool = None,
+    strikethrough: bool = None,
+    font_family: str = None,
+    font_size: int = None
+) -> dict:
+    """
+    Apply rich text formatting to a range of cells.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        range_notation: Range in A1 notation (e.g., "A1:D10")
+        bold: Make text bold
+        italic: Make text italic
+        underline: Underline text
+        strikethrough: Strikethrough text
+        font_family: Font name (e.g., "Arial", "Times New Roman")
+        font_size: Font size in points
+    """
+
+    async def _format():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        # Check at least one format option provided
+        if all(v is None for v in [bold, italic, underline, strikethrough, font_family, font_size]):
+            return {"error": "At least one formatting option must be specified"}
+
+        # Get spreadsheet metadata for sheetId
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        sheet_id = metadata["sheets"][0]["sheet_id"]
+
+        # Parse range notation
+        try:
+            if ':' in range_notation:
+                start_cell, end_cell = range_notation.split(':')
+            else:
+                start_cell = end_cell = range_notation
+
+            start_col_str = ''.join(c for c in start_cell if c.isalpha())
+            start_row_str = ''.join(c for c in start_cell if c.isdigit())
+            start_col, _ = parse_column_range(start_col_str)
+            start_row = int(start_row_str) - 1 if start_row_str else 0
+
+            end_col_str = ''.join(c for c in end_cell if c.isalpha())
+            end_row_str = ''.join(c for c in end_cell if c.isdigit())
+            end_col, _ = parse_column_range(end_col_str)
+            end_col += 1
+            end_row = int(end_row_str) if end_row_str else start_row + 1
+
+        except Exception as e:
+            return {"error": f"Invalid range '{range_notation}': {e}"}
+
+        # Build text format
+        text_format = {}
+        fields = []
+
+        if bold is not None:
+            text_format["bold"] = bold
+            fields.append("userEnteredFormat.textFormat.bold")
+        if italic is not None:
+            text_format["italic"] = italic
+            fields.append("userEnteredFormat.textFormat.italic")
+        if underline is not None:
+            text_format["underline"] = underline
+            fields.append("userEnteredFormat.textFormat.underline")
+        if strikethrough is not None:
+            text_format["strikethrough"] = strikethrough
+            fields.append("userEnteredFormat.textFormat.strikethrough")
+        if font_family is not None:
+            text_format["fontFamily"] = font_family
+            fields.append("userEnteredFormat.textFormat.fontFamily")
+        if font_size is not None:
+            text_format["fontSize"] = font_size
+            fields.append("userEnteredFormat.textFormat.fontSize")
+
+        request = {
+            "repeatCell": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": start_row,
+                    "endRowIndex": end_row,
+                    "startColumnIndex": start_col,
+                    "endColumnIndex": end_col
+                },
+                "cell": {
+                    "userEnteredFormat": {
+                        "textFormat": text_format
+                    }
+                },
+                "fields": ",".join(fields)
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        applied = []
+        if bold is not None:
+            applied.append(f"bold={bold}")
+        if italic is not None:
+            applied.append(f"italic={italic}")
+        if underline is not None:
+            applied.append(f"underline={underline}")
+        if strikethrough is not None:
+            applied.append(f"strikethrough={strikethrough}")
+        if font_family is not None:
+            applied.append(f"font={font_family}")
+        if font_size is not None:
+            applied.append(f"size={font_size}")
+
+        return {
+            "success": True,
+            "range": range_notation,
+            "formatting": applied,
+            "message": f"Applied text formatting ({', '.join(applied)}) to {range_notation}"
+        }
+
+    return _run_async(_format())
+
+
+def set_text_color_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    range_notation: str,
+    color: str
+) -> dict:
+    """
+    Set the text (foreground) color for a range of cells.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        range_notation: Range in A1 notation (e.g., "A1:D10")
+        color: Color as hex code (#FF0000) or name (red, blue, etc.)
+    """
+
+    async def _set_color():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        # Get spreadsheet metadata for sheetId
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        sheet_id = metadata["sheets"][0]["sheet_id"]
+
+        # Parse range notation
+        try:
+            if ':' in range_notation:
+                start_cell, end_cell = range_notation.split(':')
+            else:
+                start_cell = end_cell = range_notation
+
+            start_col_str = ''.join(c for c in start_cell if c.isalpha())
+            start_row_str = ''.join(c for c in start_cell if c.isdigit())
+            start_col, _ = parse_column_range(start_col_str)
+            start_row = int(start_row_str) - 1 if start_row_str else 0
+
+            end_col_str = ''.join(c for c in end_cell if c.isalpha())
+            end_row_str = ''.join(c for c in end_cell if c.isdigit())
+            end_col, _ = parse_column_range(end_col_str)
+            end_col += 1
+            end_row = int(end_row_str) if end_row_str else start_row + 1
+
+        except Exception as e:
+            return {"error": f"Invalid range '{range_notation}': {e}"}
+
+        # Parse color
+        color_value = parse_color(color)
+
+        request = {
+            "repeatCell": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": start_row,
+                    "endRowIndex": end_row,
+                    "startColumnIndex": start_col,
+                    "endColumnIndex": end_col
+                },
+                "cell": {
+                    "userEnteredFormat": {
+                        "textFormat": {
+                            "foregroundColor": color_value
+                        }
+                    }
+                },
+                "fields": "userEnteredFormat.textFormat.foregroundColor"
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        return {
+            "success": True,
+            "range": range_notation,
+            "color": color,
+            "message": f"Set text color to {color} on {range_notation}"
+        }
+
+    return _run_async(_set_color())
+
+
+def set_background_color_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    range_notation: str,
+    color: str
+) -> dict:
+    """
+    Set the background (fill) color for a range of cells.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        range_notation: Range in A1 notation (e.g., "A1:D10")
+        color: Color as hex code (#FFFF00) or name (red, blue, etc.)
+    """
+
+    async def _set_bg():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        # Get spreadsheet metadata for sheetId
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        sheet_id = metadata["sheets"][0]["sheet_id"]
+
+        # Parse range notation
+        try:
+            if ':' in range_notation:
+                start_cell, end_cell = range_notation.split(':')
+            else:
+                start_cell = end_cell = range_notation
+
+            start_col_str = ''.join(c for c in start_cell if c.isalpha())
+            start_row_str = ''.join(c for c in start_cell if c.isdigit())
+            start_col, _ = parse_column_range(start_col_str)
+            start_row = int(start_row_str) - 1 if start_row_str else 0
+
+            end_col_str = ''.join(c for c in end_cell if c.isalpha())
+            end_row_str = ''.join(c for c in end_cell if c.isdigit())
+            end_col, _ = parse_column_range(end_col_str)
+            end_col += 1
+            end_row = int(end_row_str) if end_row_str else start_row + 1
+
+        except Exception as e:
+            return {"error": f"Invalid range '{range_notation}': {e}"}
+
+        # Parse color
+        color_value = parse_color(color)
+
+        request = {
+            "repeatCell": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": start_row,
+                    "endRowIndex": end_row,
+                    "startColumnIndex": start_col,
+                    "endColumnIndex": end_col
+                },
+                "cell": {
+                    "userEnteredFormat": {
+                        "backgroundColor": color_value
+                    }
+                },
+                "fields": "userEnteredFormat.backgroundColor"
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        return {
+            "success": True,
+            "range": range_notation,
+            "color": color,
+            "message": f"Set background color to {color} on {range_notation}"
+        }
+
+    return _run_async(_set_bg())
+
+
+def add_hyperlink_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    cell: str,
+    url: str,
+    display_text: str = None
+) -> dict:
+    """
+    Add a clickable hyperlink to a cell.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        cell: Cell in A1 notation (e.g., "A1", "Sheet1!B2")
+        url: The URL to link to
+        display_text: Optional text to display instead of URL
+    """
+
+    async def _add_link():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        # Get spreadsheet metadata for sheetId
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        sheet_id = metadata["sheets"][0]["sheet_id"]
+
+        # Parse cell reference
+        try:
+            # Handle sheet name prefix
+            if '!' in cell:
+                _, cell_ref = cell.split('!')
+            else:
+                cell_ref = cell
+
+            col_str = ''.join(c for c in cell_ref if c.isalpha())
+            row_str = ''.join(c for c in cell_ref if c.isdigit())
+            col, _ = parse_column_range(col_str)
+            row = int(row_str) - 1 if row_str else 0
+
+        except Exception as e:
+            return {"error": f"Invalid cell '{cell}': {e}"}
+
+        # Use HYPERLINK formula if display_text provided, otherwise just the URL
+        if display_text:
+            formula = f'=HYPERLINK("{url}", "{display_text}")'
+        else:
+            formula = f'=HYPERLINK("{url}")'
+
+        request = {
+            "updateCells": {
+                "rows": [{
+                    "values": [{
+                        "userEnteredValue": {
+                            "formulaValue": formula
+                        }
+                    }]
+                }],
+                "start": {
+                    "sheetId": sheet_id,
+                    "rowIndex": row,
+                    "columnIndex": col
+                },
+                "fields": "userEnteredValue"
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        return {
+            "success": True,
+            "cell": cell,
+            "url": url,
+            "display_text": display_text or url,
+            "message": f"Added hyperlink to {cell}: {display_text or url} -> {url}"
+        }
+
+    return _run_async(_add_link())
+
+
+# =============================================================================
+# BATCH 9: Filtering
+# =============================================================================
+
+def set_basic_filter_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    range_notation: str
+) -> dict:
+    """
+    Enable auto-filter dropdown menus on a range of data.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        range_notation: Range in A1 notation (e.g., "A1:E100")
+    """
+
+    async def _set_filter():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        # Get spreadsheet metadata for sheetId
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        sheet_id = metadata["sheets"][0]["sheet_id"]
+
+        # Parse range notation
+        try:
+            if ':' in range_notation:
+                start_cell, end_cell = range_notation.split(':')
+            else:
+                return {"error": "Range must include both start and end (e.g., 'A1:E100')"}
+
+            start_col_str = ''.join(c for c in start_cell if c.isalpha())
+            start_row_str = ''.join(c for c in start_cell if c.isdigit())
+            start_col, _ = parse_column_range(start_col_str)
+            start_row = int(start_row_str) - 1 if start_row_str else 0
+
+            end_col_str = ''.join(c for c in end_cell if c.isalpha())
+            end_row_str = ''.join(c for c in end_cell if c.isdigit())
+            end_col, _ = parse_column_range(end_col_str)
+            end_col += 1
+            end_row = int(end_row_str) if end_row_str else start_row + 1
+
+        except Exception as e:
+            return {"error": f"Invalid range '{range_notation}': {e}"}
+
+        request = {
+            "setBasicFilter": {
+                "filter": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "startRowIndex": start_row,
+                        "endRowIndex": end_row,
+                        "startColumnIndex": start_col,
+                        "endColumnIndex": end_col
+                    }
+                }
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        return {
+            "success": True,
+            "range": range_notation,
+            "message": f"Enabled auto-filter on {range_notation}"
+        }
+
+    return _run_async(_set_filter())
+
+
+def clear_basic_filter_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    sheet_name: str = None
+) -> dict:
+    """
+    Remove the basic filter from a sheet.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        sheet_name: Name of the sheet (defaults to first sheet)
+    """
+
+    async def _clear_filter():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        # Get spreadsheet metadata for sheetId
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        # Find the sheet
+        sheet_id = None
+        target_name = sheet_name
+        for sheet in metadata["sheets"]:
+            if sheet_name:
+                if sheet["title"].lower() == sheet_name.lower():
+                    sheet_id = sheet["sheet_id"]
+                    target_name = sheet["title"]
+                    break
+            else:
+                sheet_id = sheet["sheet_id"]
+                target_name = sheet["title"]
+                break
+
+        if sheet_id is None:
+            return {"error": f"Sheet '{sheet_name}' not found"}
+
+        request = {
+            "clearBasicFilter": {
+                "sheetId": sheet_id
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        return {
+            "success": True,
+            "sheet": target_name,
+            "message": f"Cleared filter from sheet '{target_name}'"
+        }
+
+    return _run_async(_clear_filter())
+
+
+def create_filter_view_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    title: str,
+    range_notation: str
+) -> dict:
+    """
+    Create a named filter view.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        title: Name for the filter view
+        range_notation: Range in A1 notation (e.g., "A1:E100")
+    """
+
+    async def _create_view():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        # Get spreadsheet metadata for sheetId
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        sheet_id = metadata["sheets"][0]["sheet_id"]
+
+        # Parse range notation
+        try:
+            if ':' in range_notation:
+                start_cell, end_cell = range_notation.split(':')
+            else:
+                return {"error": "Range must include both start and end (e.g., 'A1:E100')"}
+
+            start_col_str = ''.join(c for c in start_cell if c.isalpha())
+            start_row_str = ''.join(c for c in start_cell if c.isdigit())
+            start_col, _ = parse_column_range(start_col_str)
+            start_row = int(start_row_str) - 1 if start_row_str else 0
+
+            end_col_str = ''.join(c for c in end_cell if c.isalpha())
+            end_row_str = ''.join(c for c in end_cell if c.isdigit())
+            end_col, _ = parse_column_range(end_col_str)
+            end_col += 1
+            end_row = int(end_row_str) if end_row_str else start_row + 1
+
+        except Exception as e:
+            return {"error": f"Invalid range '{range_notation}': {e}"}
+
+        request = {
+            "addFilterView": {
+                "filter": {
+                    "title": title,
+                    "range": {
+                        "sheetId": sheet_id,
+                        "startRowIndex": start_row,
+                        "endRowIndex": end_row,
+                        "startColumnIndex": start_col,
+                        "endColumnIndex": end_col
+                    }
+                }
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        # Extract filter view ID from response
+        filter_view_id = None
+        if "replies" in result:
+            for reply in result["replies"]:
+                if "addFilterView" in reply:
+                    filter_view_id = reply["addFilterView"]["filter"]["filterViewId"]
+                    break
+
+        return {
+            "success": True,
+            "title": title,
+            "range": range_notation,
+            "filter_view_id": filter_view_id,
+            "message": f"Created filter view '{title}' on {range_notation}"
+        }
+
+    return _run_async(_create_view())
+
+
+def delete_filter_view_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    filter_view_id: int
+) -> dict:
+    """
+    Delete a filter view by its ID.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        filter_view_id: The ID of the filter view to delete
+    """
+
+    async def _delete_view():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        request = {
+            "deleteFilterView": {
+                "filterId": filter_view_id
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        return {
+            "success": True,
+            "filter_view_id": filter_view_id,
+            "message": f"Deleted filter view {filter_view_id}"
+        }
+
+    return _run_async(_delete_view())
+
+
+# =============================================================================
+# BATCH 10: Named & Protected Ranges
+# =============================================================================
+
+def create_named_range_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    name: str,
+    range_notation: str
+) -> dict:
+    """
+    Create a named range that can be referenced in formulas.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        name: Name for the range (letters, numbers, underscores)
+        range_notation: Range in A1 notation (e.g., "A2:A100")
+    """
+
+    async def _create_range():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        # Get spreadsheet metadata for sheetId
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        sheet_id = metadata["sheets"][0]["sheet_id"]
+
+        # Parse range notation
+        try:
+            if ':' in range_notation:
+                start_cell, end_cell = range_notation.split(':')
+            else:
+                start_cell = end_cell = range_notation
+
+            start_col_str = ''.join(c for c in start_cell if c.isalpha())
+            start_row_str = ''.join(c for c in start_cell if c.isdigit())
+            start_col, _ = parse_column_range(start_col_str)
+            start_row = int(start_row_str) - 1 if start_row_str else 0
+
+            end_col_str = ''.join(c for c in end_cell if c.isalpha())
+            end_row_str = ''.join(c for c in end_cell if c.isdigit())
+            end_col, _ = parse_column_range(end_col_str)
+            end_col += 1
+            end_row = int(end_row_str) if end_row_str else start_row + 1
+
+        except Exception as e:
+            return {"error": f"Invalid range '{range_notation}': {e}"}
+
+        request = {
+            "addNamedRange": {
+                "namedRange": {
+                    "name": name,
+                    "range": {
+                        "sheetId": sheet_id,
+                        "startRowIndex": start_row,
+                        "endRowIndex": end_row,
+                        "startColumnIndex": start_col,
+                        "endColumnIndex": end_col
+                    }
+                }
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        # Extract named range ID from response
+        named_range_id = None
+        if "replies" in result:
+            for reply in result["replies"]:
+                if "addNamedRange" in reply:
+                    named_range_id = reply["addNamedRange"]["namedRange"]["namedRangeId"]
+                    break
+
+        return {
+            "success": True,
+            "name": name,
+            "range": range_notation,
+            "named_range_id": named_range_id,
+            "message": f"Created named range '{name}' for {range_notation}"
+        }
+
+    return _run_async(_create_range())
+
+
+def delete_named_range_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    named_range_id: str
+) -> dict:
+    """
+    Delete a named range by its ID.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        named_range_id: The ID of the named range to delete
+    """
+
+    async def _delete_range():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        request = {
+            "deleteNamedRange": {
+                "namedRangeId": named_range_id
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        return {
+            "success": True,
+            "named_range_id": named_range_id,
+            "message": f"Deleted named range {named_range_id}"
+        }
+
+    return _run_async(_delete_range())
+
+
+def list_named_ranges_sync(
+    bot_data: dict,
+    spreadsheet_id: str
+) -> dict:
+    """
+    List all named ranges in a spreadsheet.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+    """
+
+    async def _list_ranges():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        # Get spreadsheet with namedRanges field
+        url = f"{SHEETS_API_BASE}/{spreadsheet_id}?fields=namedRanges,sheets(properties(sheetId,title))"
+        headers = {"Authorization": f"Bearer {access_token}"}
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(url, headers=headers)
+            if response.status_code != 200:
+                return {"error": f"Failed to get named ranges: {response.text}"}
+
+            data = response.json()
+
+        # Build sheet ID to name mapping
+        sheet_map = {}
+        for sheet in data.get("sheets", []):
+            props = sheet.get("properties", {})
+            sheet_map[props.get("sheetId")] = props.get("title", "Sheet")
+
+        # Extract named ranges
+        ranges = []
+        for nr in data.get("namedRanges", []):
+            grid_range = nr.get("range", {})
+            sheet_id = grid_range.get("sheetId", 0)
+            sheet_name = sheet_map.get(sheet_id, "Sheet1")
+
+            # Convert grid range back to A1 notation
+            start_col = grid_range.get("startColumnIndex", 0)
+            end_col = grid_range.get("endColumnIndex", start_col + 1) - 1
+            start_row = grid_range.get("startRowIndex", 0) + 1
+            end_row = grid_range.get("endRowIndex", start_row)
+
+            # Convert column index to letter
+            def col_to_letter(col):
+                result = ""
+                while col >= 0:
+                    result = chr(col % 26 + ord('A')) + result
+                    col = col // 26 - 1
+                return result
+
+            range_str = f"{col_to_letter(start_col)}{start_row}:{col_to_letter(end_col)}{end_row}"
+
+            ranges.append({
+                "name": nr.get("name"),
+                "id": nr.get("namedRangeId"),
+                "range": f"{sheet_name}!{range_str}"
+            })
+
+        return {
+            "success": True,
+            "named_ranges": ranges,
+            "count": len(ranges),
+            "message": f"Found {len(ranges)} named range(s)"
+        }
+
+    return _run_async(_list_ranges())
+
+
+def protect_range_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    range_notation: str,
+    description: str = None,
+    warning_only: bool = False
+) -> dict:
+    """
+    Protect a range of cells from editing.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        range_notation: Range to protect in A1 notation
+        description: Description of why this range is protected
+        warning_only: If True, show warning but allow editing
+    """
+
+    async def _protect():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        # Get spreadsheet metadata for sheetId
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        sheet_id = metadata["sheets"][0]["sheet_id"]
+
+        # Parse range notation
+        try:
+            if ':' in range_notation:
+                start_cell, end_cell = range_notation.split(':')
+            else:
+                start_cell = end_cell = range_notation
+
+            start_col_str = ''.join(c for c in start_cell if c.isalpha())
+            start_row_str = ''.join(c for c in start_cell if c.isdigit())
+            start_col, _ = parse_column_range(start_col_str)
+            start_row = int(start_row_str) - 1 if start_row_str else 0
+
+            end_col_str = ''.join(c for c in end_cell if c.isalpha())
+            end_row_str = ''.join(c for c in end_cell if c.isdigit())
+            end_col, _ = parse_column_range(end_col_str)
+            end_col += 1
+            end_row = int(end_row_str) if end_row_str else start_row + 1
+
+        except Exception as e:
+            return {"error": f"Invalid range '{range_notation}': {e}"}
+
+        protected_range = {
+            "range": {
+                "sheetId": sheet_id,
+                "startRowIndex": start_row,
+                "endRowIndex": end_row,
+                "startColumnIndex": start_col,
+                "endColumnIndex": end_col
+            },
+            "warningOnly": warning_only
+        }
+
+        if description:
+            protected_range["description"] = description
+
+        request = {
+            "addProtectedRange": {
+                "protectedRange": protected_range
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        # Extract protected range ID from response
+        protected_range_id = None
+        if "replies" in result:
+            for reply in result["replies"]:
+                if "addProtectedRange" in reply:
+                    protected_range_id = reply["addProtectedRange"]["protectedRange"]["protectedRangeId"]
+                    break
+
+        mode = "warning" if warning_only else "locked"
+        return {
+            "success": True,
+            "range": range_notation,
+            "protected_range_id": protected_range_id,
+            "mode": mode,
+            "message": f"Protected {range_notation} ({mode} mode)"
+        }
+
+    return _run_async(_protect())
+
+
+# =============================================================================
+# BATCH 11: Find/Replace & Copy/Paste
+# =============================================================================
+
+def find_replace_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    find: str,
+    replacement: str,
+    range_notation: str = None,
+    match_case: bool = False,
+    match_entire_cell: bool = False,
+    search_formulas: bool = False
+) -> dict:
+    """
+    Search and replace text values in a spreadsheet.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        find: The text to search for
+        replacement: The text to replace matches with
+        range_notation: Optional range to limit search
+        match_case: If True, search is case-sensitive
+        match_entire_cell: If True, only replace exact matches
+        search_formulas: If True, search formula text
+    """
+
+    async def _find_replace():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        find_replace_request = {
+            "find": find,
+            "replacement": replacement,
+            "matchCase": match_case,
+            "matchEntireCell": match_entire_cell,
+            "searchByRegex": False,
+            "includeFormulas": search_formulas,
+            "allSheets": range_notation is None
+        }
+
+        # If range specified, parse it
+        if range_notation:
+            # Get spreadsheet metadata for sheetId
+            metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+            if "error" in metadata:
+                return metadata
+
+            sheet_id = metadata["sheets"][0]["sheet_id"]
+
+            try:
+                if ':' in range_notation:
+                    start_cell, end_cell = range_notation.split(':')
+                else:
+                    start_cell = end_cell = range_notation
+
+                start_col_str = ''.join(c for c in start_cell if c.isalpha())
+                start_row_str = ''.join(c for c in start_cell if c.isdigit())
+                start_col, _ = parse_column_range(start_col_str)
+                start_row = int(start_row_str) - 1 if start_row_str else 0
+
+                end_col_str = ''.join(c for c in end_cell if c.isalpha())
+                end_row_str = ''.join(c for c in end_cell if c.isdigit())
+                end_col, _ = parse_column_range(end_col_str)
+                end_col += 1
+                end_row = int(end_row_str) if end_row_str else start_row + 1
+
+                find_replace_request["range"] = {
+                    "sheetId": sheet_id,
+                    "startRowIndex": start_row,
+                    "endRowIndex": end_row,
+                    "startColumnIndex": start_col,
+                    "endColumnIndex": end_col
+                }
+                find_replace_request["allSheets"] = False
+
+            except Exception as e:
+                return {"error": f"Invalid range '{range_notation}': {e}"}
+
+        request = {
+            "findReplace": find_replace_request
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        # Extract replacement count
+        occurrences = 0
+        if "replies" in result:
+            for reply in result["replies"]:
+                if "findReplace" in reply:
+                    occurrences = reply["findReplace"].get("occurrencesChanged", 0)
+                    break
+
+        return {
+            "success": True,
+            "find": find,
+            "replacement": replacement,
+            "occurrences_changed": occurrences,
+            "message": f"Replaced {occurrences} occurrence(s) of '{find}' with '{replacement}'"
+        }
+
+    return _run_async(_find_replace())
+
+
+def copy_paste_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    source_range: str,
+    destination_range: str,
+    paste_type: str = "all"
+) -> dict:
+    """
+    Copy cells from one location to another.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        source_range: Source range in A1 notation
+        destination_range: Destination range in A1 notation
+        paste_type: 'all', 'values', or 'format'
+    """
+
+    async def _copy_paste():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        # Get spreadsheet metadata for sheetId
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        sheet_id = metadata["sheets"][0]["sheet_id"]
+
+        # Parse source range
+        try:
+            if ':' in source_range:
+                start_cell, end_cell = source_range.split(':')
+            else:
+                start_cell = end_cell = source_range
+
+            src_start_col_str = ''.join(c for c in start_cell if c.isalpha())
+            src_start_row_str = ''.join(c for c in start_cell if c.isdigit())
+            src_start_col, _ = parse_column_range(src_start_col_str)
+            src_start_row = int(src_start_row_str) - 1 if src_start_row_str else 0
+
+            src_end_col_str = ''.join(c for c in end_cell if c.isalpha())
+            src_end_row_str = ''.join(c for c in end_cell if c.isdigit())
+            src_end_col, _ = parse_column_range(src_end_col_str)
+            src_end_col += 1
+            src_end_row = int(src_end_row_str) if src_end_row_str else src_start_row + 1
+
+        except Exception as e:
+            return {"error": f"Invalid source_range '{source_range}': {e}"}
+
+        # Parse destination range
+        try:
+            if ':' in destination_range:
+                start_cell, end_cell = destination_range.split(':')
+            else:
+                start_cell = end_cell = destination_range
+
+            dst_start_col_str = ''.join(c for c in start_cell if c.isalpha())
+            dst_start_row_str = ''.join(c for c in start_cell if c.isdigit())
+            dst_start_col, _ = parse_column_range(dst_start_col_str)
+            dst_start_row = int(dst_start_row_str) - 1 if dst_start_row_str else 0
+
+            dst_end_col_str = ''.join(c for c in end_cell if c.isalpha())
+            dst_end_row_str = ''.join(c for c in end_cell if c.isdigit())
+            dst_end_col, _ = parse_column_range(dst_end_col_str)
+            dst_end_col += 1
+            dst_end_row = int(dst_end_row_str) if dst_end_row_str else dst_start_row + 1
+
+        except Exception as e:
+            return {"error": f"Invalid destination_range '{destination_range}': {e}"}
+
+        # Map paste type to API enum
+        paste_types = {
+            "all": "PASTE_NORMAL",
+            "values": "PASTE_VALUES",
+            "format": "PASTE_FORMAT"
+        }
+        api_paste_type = paste_types.get(paste_type.lower(), "PASTE_NORMAL")
+
+        request = {
+            "copyPaste": {
+                "source": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": src_start_row,
+                    "endRowIndex": src_end_row,
+                    "startColumnIndex": src_start_col,
+                    "endColumnIndex": src_end_col
+                },
+                "destination": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": dst_start_row,
+                    "endRowIndex": dst_end_row,
+                    "startColumnIndex": dst_start_col,
+                    "endColumnIndex": dst_end_col
+                },
+                "pasteType": api_paste_type
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        return {
+            "success": True,
+            "source": source_range,
+            "destination": destination_range,
+            "paste_type": paste_type,
+            "message": f"Copied {source_range} to {destination_range} ({paste_type})"
+        }
+
+    return _run_async(_copy_paste())
+
+
+def cut_paste_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    source_range: str,
+    destination: str
+) -> dict:
+    """
+    Move cells from one location to another.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        source_range: Source range in A1 notation
+        destination: Destination cell (top-left corner)
+    """
+
+    async def _cut_paste():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        # Get spreadsheet metadata for sheetId
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        sheet_id = metadata["sheets"][0]["sheet_id"]
+
+        # Parse source range
+        try:
+            if ':' in source_range:
+                start_cell, end_cell = source_range.split(':')
+            else:
+                start_cell = end_cell = source_range
+
+            src_start_col_str = ''.join(c for c in start_cell if c.isalpha())
+            src_start_row_str = ''.join(c for c in start_cell if c.isdigit())
+            src_start_col, _ = parse_column_range(src_start_col_str)
+            src_start_row = int(src_start_row_str) - 1 if src_start_row_str else 0
+
+            src_end_col_str = ''.join(c for c in end_cell if c.isalpha())
+            src_end_row_str = ''.join(c for c in end_cell if c.isdigit())
+            src_end_col, _ = parse_column_range(src_end_col_str)
+            src_end_col += 1
+            src_end_row = int(src_end_row_str) if src_end_row_str else src_start_row + 1
+
+        except Exception as e:
+            return {"error": f"Invalid source_range '{source_range}': {e}"}
+
+        # Parse destination cell
+        try:
+            dst_col_str = ''.join(c for c in destination if c.isalpha())
+            dst_row_str = ''.join(c for c in destination if c.isdigit())
+            dst_col, _ = parse_column_range(dst_col_str)
+            dst_row = int(dst_row_str) - 1 if dst_row_str else 0
+
+        except Exception as e:
+            return {"error": f"Invalid destination '{destination}': {e}"}
+
+        request = {
+            "cutPaste": {
+                "source": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": src_start_row,
+                    "endRowIndex": src_end_row,
+                    "startColumnIndex": src_start_col,
+                    "endColumnIndex": src_end_col
+                },
+                "destination": {
+                    "sheetId": sheet_id,
+                    "rowIndex": dst_row,
+                    "columnIndex": dst_col
+                },
+                "pasteType": "PASTE_NORMAL"
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        return {
+            "success": True,
+            "source": source_range,
+            "destination": destination,
+            "message": f"Moved {source_range} to {destination}"
+        }
+
+    return _run_async(_cut_paste())
+
+
+# ============================================================================
+# Spreadsheet Properties Functions
+# ============================================================================
+
+async def set_spreadsheet_timezone(access_token: str, spreadsheet_id: str, timezone: str) -> dict:
+    """
+    Set the timezone for a spreadsheet.
+
+    Args:
+        access_token: Valid Google OAuth access token
+        spreadsheet_id: Google Sheets ID
+        timezone: IANA timezone name (e.g., 'America/New_York', 'Europe/London')
+
+    Returns:
+        Dict with success status or error
+    """
+    request = {
+        "updateSpreadsheetProperties": {
+            "properties": {"timeZone": timezone},
+            "fields": "timeZone"
+        }
+    }
+
+    result = await batch_update(access_token, spreadsheet_id, [request])
+
+    if "error" in result:
+        return result
+
+    return {
+        "success": True,
+        "timezone": timezone,
+        "message": f"Timezone set to {timezone}"
+    }
+
+
+async def set_spreadsheet_locale(access_token: str, spreadsheet_id: str, locale: str) -> dict:
+    """
+    Set the locale for a spreadsheet.
+
+    Args:
+        access_token: Valid Google OAuth access token
+        spreadsheet_id: Google Sheets ID
+        locale: Locale code (e.g., 'en_US', 'de_DE', 'ja_JP')
+
+    Returns:
+        Dict with success status or error
+    """
+    request = {
+        "updateSpreadsheetProperties": {
+            "properties": {"locale": locale},
+            "fields": "locale"
+        }
+    }
+
+    result = await batch_update(access_token, spreadsheet_id, [request])
+
+    if "error" in result:
+        return result
+
+    return {
+        "success": True,
+        "locale": locale,
+        "message": f"Locale set to {locale}"
+    }
+
+
+async def set_recalculation_interval(access_token: str, spreadsheet_id: str, interval: str) -> dict:
+    """
+    Set recalculation interval for volatile functions.
+
+    Args:
+        access_token: Valid Google OAuth access token
+        spreadsheet_id: Google Sheets ID
+        interval: 'on_change', 'minute', or 'hour'
+
+    Returns:
+        Dict with success status or error
+    """
+    interval_map = {
+        "on_change": "ON_CHANGE",
+        "minute": "MINUTE",
+        "hour": "HOUR"
+    }
+
+    api_interval = interval_map.get(interval.lower(), "ON_CHANGE")
+
+    request = {
+        "updateSpreadsheetProperties": {
+            "properties": {"autoRecalc": api_interval},
+            "fields": "autoRecalc"
+        }
+    }
+
+    result = await batch_update(access_token, spreadsheet_id, [request])
+
+    if "error" in result:
+        return result
+
+    return {
+        "success": True,
+        "interval": interval,
+        "message": f"Recalculation interval set to {interval}"
+    }
+
+
+async def get_spreadsheet_properties(access_token: str, spreadsheet_id: str) -> dict:
+    """
+    Get spreadsheet properties including title, locale, timezone, and theme.
+
+    Args:
+        access_token: Valid Google OAuth access token
+        spreadsheet_id: Google Sheets ID
+
+    Returns:
+        Dict with properties or error
+    """
+    headers = {"Authorization": f"Bearer {access_token}"}
+    url = f"{SHEETS_API_BASE}/{spreadsheet_id}?fields=properties,developerMetadata"
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.get(url, headers=headers)
+
+            if response.status_code == 404:
+                return {"error": "Spreadsheet not found"}
+
+            if response.status_code != 200:
+                error_data = response.json() if response.text else {}
+                error_msg = error_data.get("error", {}).get("message", f"HTTP {response.status_code}")
+                return {"error": error_msg}
+
+            data = response.json()
+            props = data.get("properties", {})
+            theme = props.get("spreadsheetTheme", {})
+
+            return {
+                "spreadsheet_id": spreadsheet_id,
+                "title": props.get("title"),
+                "locale": props.get("locale"),
+                "timeZone": props.get("timeZone"),
+                "autoRecalc": props.get("autoRecalc"),
+                "theme": {
+                    "primaryFontFamily": theme.get("primaryFontFamily"),
+                    "themeColors": theme.get("themeColors", [])
+                },
+                "url": f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}"
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting spreadsheet properties: {e}")
+            return {"error": str(e)}
+
+
+async def set_spreadsheet_theme(
+    access_token: str,
+    spreadsheet_id: str,
+    primary_font: str = None,
+    text_color: str = None,
+    background_color: str = None,
+    accent1: str = None,
+    accent2: str = None,
+    accent3: str = None,
+    accent4: str = None,
+    accent5: str = None,
+    accent6: str = None,
+    link_color: str = None
+) -> dict:
+    """
+    Set spreadsheet theme including primary font and theme colors.
+
+    Args:
+        access_token: Valid Google OAuth access token
+        spreadsheet_id: Google Sheets ID
+        primary_font: Primary font family (e.g., 'Arial', 'Roboto')
+        text_color: Main text color (hex or name)
+        background_color: Main background color
+        accent1-6: Accent colors for charts/highlights
+        link_color: Hyperlink color
+
+    Returns:
+        Dict with success status or error
+    """
+    # Build theme object
+    theme = {}
+    fields = []
+
+    if primary_font:
+        theme["primaryFontFamily"] = primary_font
+        fields.append("spreadsheetTheme.primaryFontFamily")
+
+    # Build theme colors array
+    theme_colors = []
+
+    color_mappings = [
+        ("TEXT", text_color),
+        ("BACKGROUND", background_color),
+        ("ACCENT1", accent1),
+        ("ACCENT2", accent2),
+        ("ACCENT3", accent3),
+        ("ACCENT4", accent4),
+        ("ACCENT5", accent5),
+        ("ACCENT6", accent6),
+        ("LINK", link_color),
+    ]
+
+    for color_type, color_value in color_mappings:
+        if color_value:
+            rgb = parse_color(color_value)
+            theme_colors.append({
+                "colorType": color_type,
+                "color": {"rgbColor": rgb}
+            })
+
+    if theme_colors:
+        theme["themeColors"] = theme_colors
+        fields.append("spreadsheetTheme.themeColors")
+
+    if not fields:
+        return {"error": "No theme properties specified. Provide at least primary_font or a color."}
+
+    request = {
+        "updateSpreadsheetProperties": {
+            "properties": {"spreadsheetTheme": theme},
+            "fields": ",".join(fields)
+        }
+    }
+
+    result = await batch_update(access_token, spreadsheet_id, [request])
+
+    if "error" in result:
+        return result
+
+    return {
+        "success": True,
+        "primary_font": primary_font,
+        "colors_set": len(theme_colors),
+        "message": f"Theme updated" + (f" with font '{primary_font}'" if primary_font else "") + (f" and {len(theme_colors)} colors" if theme_colors else "")
+    }
+
+
+# ============================================================================
+# Developer Metadata Functions
+# ============================================================================
+
+async def set_developer_metadata(
+    access_token: str,
+    spreadsheet_id: str,
+    key: str,
+    value: str,
+    location: str = "spreadsheet",
+    sheet_id: int = None,
+    start_index: int = None,
+    end_index: int = None
+) -> dict:
+    """
+    Set developer metadata on a spreadsheet, sheet, row, or column.
+
+    Args:
+        access_token: Valid Google OAuth access token
+        spreadsheet_id: Google Sheets ID
+        key: Metadata key
+        value: Metadata value
+        location: 'spreadsheet', 'sheet', 'row', or 'column'
+        sheet_id: Sheet ID (required for sheet/row/column)
+        start_index: Start index for row/column (0-based)
+        end_index: End index for row/column (exclusive)
+
+    Returns:
+        Dict with success status or error
+    """
+    # Build location object based on type
+    if location == "spreadsheet":
+        loc = {"spreadsheet": True}
+    elif location == "sheet":
+        if sheet_id is None:
+            return {"error": "sheet_id required for sheet location"}
+        loc = {"sheetId": sheet_id}
+    elif location == "row":
+        if sheet_id is None or start_index is None or end_index is None:
+            return {"error": "sheet_id, start_index, and end_index required for row location"}
+        loc = {
+            "dimensionRange": {
+                "sheetId": sheet_id,
+                "dimension": "ROWS",
+                "startIndex": start_index,
+                "endIndex": end_index
+            }
+        }
+    elif location == "column":
+        if sheet_id is None or start_index is None or end_index is None:
+            return {"error": "sheet_id, start_index, and end_index required for column location"}
+        loc = {
+            "dimensionRange": {
+                "sheetId": sheet_id,
+                "dimension": "COLUMNS",
+                "startIndex": start_index,
+                "endIndex": end_index
+            }
+        }
+    else:
+        return {"error": f"Invalid location type: {location}"}
+
+    request = {
+        "createDeveloperMetadata": {
+            "developerMetadata": {
+                "metadataKey": key,
+                "metadataValue": value,
+                "location": loc,
+                "visibility": "DOCUMENT"  # Visible to anyone with access
+            }
+        }
+    }
+
+    result = await batch_update(access_token, spreadsheet_id, [request])
+
+    if "error" in result:
+        return result
+
+    # Extract the created metadata ID from response
+    replies = result.get("replies", [])
+    metadata_id = None
+    if replies:
+        created = replies[0].get("createDeveloperMetadata", {}).get("developerMetadata", {})
+        metadata_id = created.get("metadataId")
+
+    return {
+        "success": True,
+        "metadata_id": metadata_id,
+        "key": key,
+        "value": value,
+        "location": location,
+        "message": f"Metadata '{key}' set on {location}"
+    }
+
+
+async def get_developer_metadata(access_token: str, spreadsheet_id: str, key: str = None) -> dict:
+    """
+    Get developer metadata from a spreadsheet.
+
+    Args:
+        access_token: Valid Google OAuth access token
+        spreadsheet_id: Google Sheets ID
+        key: Optional key to filter by
+
+    Returns:
+        Dict with metadata list or error
+    """
+    headers = {"Authorization": f"Bearer {access_token}"}
+    url = f"{SHEETS_API_BASE}/{spreadsheet_id}?fields=developerMetadata"
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.get(url, headers=headers)
+
+            if response.status_code == 404:
+                return {"error": "Spreadsheet not found"}
+
+            if response.status_code != 200:
+                error_data = response.json() if response.text else {}
+                error_msg = error_data.get("error", {}).get("message", f"HTTP {response.status_code}")
+                return {"error": error_msg}
+
+            data = response.json()
+            metadata_list = data.get("developerMetadata", [])
+
+            # Format and optionally filter
+            results = []
+            for m in metadata_list:
+                item = {
+                    "metadata_id": m.get("metadataId"),
+                    "key": m.get("metadataKey"),
+                    "value": m.get("metadataValue"),
+                    "visibility": m.get("visibility"),
+                }
+                # Determine location type
+                loc = m.get("location", {})
+                if loc.get("spreadsheet"):
+                    item["location"] = "spreadsheet"
+                elif "sheetId" in loc:
+                    item["location"] = "sheet"
+                    item["sheet_id"] = loc["sheetId"]
+                elif "dimensionRange" in loc:
+                    dim = loc["dimensionRange"]
+                    item["location"] = "row" if dim.get("dimension") == "ROWS" else "column"
+                    item["sheet_id"] = dim.get("sheetId")
+                    item["start_index"] = dim.get("startIndex")
+                    item["end_index"] = dim.get("endIndex")
+
+                # Filter by key if specified
+                if key is None or item["key"] == key:
+                    results.append(item)
+
+            return {
+                "metadata": results,
+                "count": len(results),
+                "message": f"Found {len(results)} metadata entries" + (f" for key '{key}'" if key else "")
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting developer metadata: {e}")
+            return {"error": str(e)}
+
+
+async def delete_developer_metadata(access_token: str, spreadsheet_id: str, metadata_id: int) -> dict:
+    """
+    Delete developer metadata by ID.
+
+    Args:
+        access_token: Valid Google OAuth access token
+        spreadsheet_id: Google Sheets ID
+        metadata_id: The metadata ID to delete
+
+    Returns:
+        Dict with success status or error
+    """
+    request = {
+        "deleteDeveloperMetadata": {
+            "dataFilter": {
+                "developerMetadataLookup": {
+                    "metadataId": metadata_id
+                }
+            }
+        }
+    }
+
+    result = await batch_update(access_token, spreadsheet_id, [request])
+
+    if "error" in result:
+        return result
+
+    return {
+        "success": True,
+        "metadata_id": metadata_id,
+        "message": f"Deleted metadata with ID {metadata_id}"
+    }
+
+
+# ============================================================================
+# Sync Wrappers for Spreadsheet Properties
+# ============================================================================
+
+def set_spreadsheet_timezone_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    timezone: str
+) -> dict:
+    """Sync wrapper for set_spreadsheet_timezone."""
+    async def _set_timezone():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Google Sheets not connected. Please connect via admin UI."}
+
+        return await set_spreadsheet_timezone(access_token, spreadsheet_id, timezone)
+
+    return _run_async(_set_timezone())
+
+
+def set_spreadsheet_locale_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    locale: str
+) -> dict:
+    """Sync wrapper for set_spreadsheet_locale."""
+    async def _set_locale():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Google Sheets not connected. Please connect via admin UI."}
+
+        return await set_spreadsheet_locale(access_token, spreadsheet_id, locale)
+
+    return _run_async(_set_locale())
+
+
+def set_recalculation_interval_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    interval: str
+) -> dict:
+    """Sync wrapper for set_recalculation_interval."""
+    async def _set_interval():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Google Sheets not connected. Please connect via admin UI."}
+
+        return await set_recalculation_interval(access_token, spreadsheet_id, interval)
+
+    return _run_async(_set_interval())
+
+
+def get_spreadsheet_properties_sync(
+    bot_data: dict,
+    spreadsheet_id: str
+) -> dict:
+    """Sync wrapper for get_spreadsheet_properties."""
+    async def _get_properties():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Google Sheets not connected. Please connect via admin UI."}
+
+        return await get_spreadsheet_properties(access_token, spreadsheet_id)
+
+    return _run_async(_get_properties())
+
+
+def set_spreadsheet_theme_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    primary_font: str = None,
+    text_color: str = None,
+    background_color: str = None,
+    accent1: str = None,
+    accent2: str = None,
+    accent3: str = None,
+    accent4: str = None,
+    accent5: str = None,
+    accent6: str = None,
+    link_color: str = None
+) -> dict:
+    """Sync wrapper for set_spreadsheet_theme."""
+    async def _set_theme():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Google Sheets not connected. Please connect via admin UI."}
+
+        return await set_spreadsheet_theme(
+            access_token, spreadsheet_id,
+            primary_font=primary_font,
+            text_color=text_color,
+            background_color=background_color,
+            accent1=accent1,
+            accent2=accent2,
+            accent3=accent3,
+            accent4=accent4,
+            accent5=accent5,
+            accent6=accent6,
+            link_color=link_color
+        )
+
+    return _run_async(_set_theme())
+
+
+# ============================================================================
+# Sync Wrappers for Developer Metadata
+# ============================================================================
+
+def set_developer_metadata_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    key: str,
+    value: str,
+    location: str = "spreadsheet",
+    sheet_name: str = None,
+    start_index: int = None,
+    end_index: int = None
+) -> dict:
+    """Sync wrapper for set_developer_metadata."""
+    async def _set_metadata():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Google Sheets not connected. Please connect via admin UI."}
+
+        # Get sheet_id from sheet_name if needed
+        sheet_id = None
+        if location in ("sheet", "row", "column"):
+            if not sheet_name:
+                return {"error": f"sheet_name required for {location} location"}
+
+            metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+            if "error" in metadata:
+                return metadata
+
+            # Find sheet by name
+            for s in metadata.get("sheets", []):
+                if s["title"].lower() == sheet_name.lower():
+                    sheet_id = s["sheet_id"]
+                    break
+
+            if sheet_id is None:
+                return {"error": f"Sheet '{sheet_name}' not found"}
+
+        return await set_developer_metadata(
+            access_token, spreadsheet_id, key, value,
+            location=location,
+            sheet_id=sheet_id,
+            start_index=start_index,
+            end_index=end_index
+        )
+
+    return _run_async(_set_metadata())
+
+
+def get_developer_metadata_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    key: str = None
+) -> dict:
+    """Sync wrapper for get_developer_metadata."""
+    async def _get_metadata():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Google Sheets not connected. Please connect via admin UI."}
+
+        return await get_developer_metadata(access_token, spreadsheet_id, key)
+
+    return _run_async(_get_metadata())
+
+
+def delete_developer_metadata_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    metadata_id: int
+) -> dict:
+    """Sync wrapper for delete_developer_metadata."""
+    async def _delete_metadata():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Google Sheets not connected. Please connect via admin UI."}
+
+        return await delete_developer_metadata(access_token, spreadsheet_id, metadata_id)
+
+    return _run_async(_delete_metadata())

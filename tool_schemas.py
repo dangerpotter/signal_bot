@@ -1444,6 +1444,657 @@ SHEETS_TOOLS = [
                 "additionalProperties": False
             }
         }
+    },
+    # Batch 1: Text Formatting & Colors
+    {
+        "type": "function",
+        "function": {
+            "name": "set_text_format",
+            "description": "Apply rich text formatting to a range of cells. Set bold, italic, underline, strikethrough, font family, and font size. Only specified options are applied - omit any you don't want to change.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "range": {
+                        "type": "string",
+                        "description": "Range in A1 notation (e.g., 'A1:D10', 'Sheet1!B2:C5')"
+                    },
+                    "bold": {
+                        "type": "boolean",
+                        "description": "Make text bold"
+                    },
+                    "italic": {
+                        "type": "boolean",
+                        "description": "Make text italic"
+                    },
+                    "underline": {
+                        "type": "boolean",
+                        "description": "Underline text"
+                    },
+                    "strikethrough": {
+                        "type": "boolean",
+                        "description": "Strikethrough text"
+                    },
+                    "font_family": {
+                        "type": "string",
+                        "description": "Font name (e.g., 'Arial', 'Times New Roman', 'Courier New')"
+                    },
+                    "font_size": {
+                        "type": "integer",
+                        "description": "Font size in points (e.g., 10, 12, 14)"
+                    }
+                },
+                "required": ["spreadsheet_id", "range"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_text_color",
+            "description": "Set the text (foreground) color for a range of cells. Use hex codes like '#FF0000' or color names like 'red', 'blue', 'green', 'yellow', 'orange', 'purple', 'pink', 'black', 'white', 'gray', 'cyan', 'magenta'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "range": {
+                        "type": "string",
+                        "description": "Range in A1 notation (e.g., 'A1:D10', 'Sheet1!B2:C5')"
+                    },
+                    "color": {
+                        "type": "string",
+                        "description": "Color as hex code (#FF0000) or name (red, blue, green, etc.)"
+                    }
+                },
+                "required": ["spreadsheet_id", "range", "color"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_background_color",
+            "description": "Set the background (fill) color for a range of cells. Use hex codes like '#FFFF00' or color names like 'red', 'blue', 'green', 'yellow', 'orange', 'purple', 'pink', 'black', 'white', 'gray', 'cyan', 'magenta'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "range": {
+                        "type": "string",
+                        "description": "Range in A1 notation (e.g., 'A1:D10', 'Sheet1!B2:C5')"
+                    },
+                    "color": {
+                        "type": "string",
+                        "description": "Color as hex code (#FFFF00) or name (red, blue, yellow, etc.)"
+                    }
+                },
+                "required": ["spreadsheet_id", "range", "color"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_hyperlink",
+            "description": "Add a clickable hyperlink to a cell. The cell will display the URL or custom text and open the link when clicked.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "cell": {
+                        "type": "string",
+                        "description": "Cell in A1 notation (e.g., 'A1', 'Sheet1!B2')"
+                    },
+                    "url": {
+                        "type": "string",
+                        "description": "The URL to link to"
+                    },
+                    "display_text": {
+                        "type": "string",
+                        "description": "Optional text to display instead of the URL"
+                    }
+                },
+                "required": ["spreadsheet_id", "cell", "url"],
+                "additionalProperties": False
+            }
+        }
+    },
+    # Batch 2: Filtering
+    {
+        "type": "function",
+        "function": {
+            "name": "set_basic_filter",
+            "description": "Enable auto-filter dropdown menus on a range of data. Creates filter buttons in the header row that allow filtering and sorting the data below.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "range": {
+                        "type": "string",
+                        "description": "Range in A1 notation covering the data to filter (e.g., 'A1:E100'). Include header row."
+                    }
+                },
+                "required": ["spreadsheet_id", "range"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "clear_basic_filter",
+            "description": "Remove the basic filter from a sheet. This removes the filter dropdown buttons but keeps the data intact.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "sheet_name": {
+                        "type": "string",
+                        "description": "Name of the sheet to clear filter from. Defaults to first sheet if not specified."
+                    }
+                },
+                "required": ["spreadsheet_id"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_filter_view",
+            "description": "Create a named filter view that can be saved and reused. Filter views allow different users to see different filtered views of the same data without affecting others.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Name for the filter view (e.g., 'High Priority Items', 'Q4 Sales')"
+                    },
+                    "range": {
+                        "type": "string",
+                        "description": "Range in A1 notation (e.g., 'A1:E100'). Include header row."
+                    }
+                },
+                "required": ["spreadsheet_id", "title", "range"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_filter_view",
+            "description": "Delete a filter view by its ID. Use list_filter_views to get filter view IDs first.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "filter_view_id": {
+                        "type": "integer",
+                        "description": "The ID of the filter view to delete"
+                    }
+                },
+                "required": ["spreadsheet_id", "filter_view_id"],
+                "additionalProperties": False
+            }
+        }
+    },
+    # Batch 3: Named & Protected Ranges
+    {
+        "type": "function",
+        "function": {
+            "name": "create_named_range",
+            "description": "Create a named range that can be referenced in formulas by name instead of cell addresses. For example, name 'A2:A100' as 'Expenses' to use =SUM(Expenses) in formulas.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Name for the range (letters, numbers, underscores only, e.g., 'TotalExpenses', 'Q4_Sales')"
+                    },
+                    "range": {
+                        "type": "string",
+                        "description": "Range in A1 notation (e.g., 'A2:A100', 'Sheet1!B2:D50')"
+                    }
+                },
+                "required": ["spreadsheet_id", "name", "range"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_named_range",
+            "description": "Delete a named range by its ID. Use list_named_ranges to get the IDs first.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "named_range_id": {
+                        "type": "string",
+                        "description": "The ID of the named range to delete"
+                    }
+                },
+                "required": ["spreadsheet_id", "named_range_id"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_named_ranges",
+            "description": "List all named ranges in a spreadsheet with their IDs and cell ranges.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    }
+                },
+                "required": ["spreadsheet_id"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "protect_range",
+            "description": "Protect a range of cells from editing. Can show a warning when users try to edit, or completely lock the cells. Only the spreadsheet owner can edit protected ranges.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "range": {
+                        "type": "string",
+                        "description": "Range to protect in A1 notation (e.g., 'A1:D10')"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Description of why this range is protected"
+                    },
+                    "warning_only": {
+                        "type": "boolean",
+                        "description": "If true, show a warning but allow editing. If false, completely lock the cells. Default: false"
+                    }
+                },
+                "required": ["spreadsheet_id", "range"],
+                "additionalProperties": False
+            }
+        }
+    },
+    # Batch 4: Find/Replace & Copy/Paste
+    {
+        "type": "function",
+        "function": {
+            "name": "find_replace",
+            "description": "Search and replace text values across a spreadsheet or within a specific range. Returns the number of replacements made.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "find": {
+                        "type": "string",
+                        "description": "The text to search for"
+                    },
+                    "replacement": {
+                        "type": "string",
+                        "description": "The text to replace matches with"
+                    },
+                    "range": {
+                        "type": "string",
+                        "description": "Optional range to limit search (e.g., 'A1:D100'). If omitted, searches entire sheet."
+                    },
+                    "match_case": {
+                        "type": "boolean",
+                        "description": "If true, search is case-sensitive. Default: false"
+                    },
+                    "match_entire_cell": {
+                        "type": "boolean",
+                        "description": "If true, only replace cells that exactly match. Default: false"
+                    },
+                    "search_formulas": {
+                        "type": "boolean",
+                        "description": "If true, search in formula text instead of displayed values. Default: false"
+                    }
+                },
+                "required": ["spreadsheet_id", "find", "replacement"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "copy_paste",
+            "description": "Copy cells from one location to another within the same spreadsheet. Can copy just values, just formatting, or everything.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "source_range": {
+                        "type": "string",
+                        "description": "Source range in A1 notation (e.g., 'A1:D10')"
+                    },
+                    "destination_range": {
+                        "type": "string",
+                        "description": "Destination range in A1 notation (e.g., 'F1:I10')"
+                    },
+                    "paste_type": {
+                        "type": "string",
+                        "enum": ["all", "values", "format"],
+                        "description": "What to paste: 'all' (everything), 'values' (just values), 'format' (just formatting). Default: 'all'"
+                    }
+                },
+                "required": ["spreadsheet_id", "source_range", "destination_range"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "cut_paste",
+            "description": "Move cells from one location to another within the same spreadsheet. The source cells are cleared after pasting.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "source_range": {
+                        "type": "string",
+                        "description": "Source range in A1 notation (e.g., 'A1:D10')"
+                    },
+                    "destination": {
+                        "type": "string",
+                        "description": "Destination cell (top-left corner) in A1 notation (e.g., 'F1')"
+                    }
+                },
+                "required": ["spreadsheet_id", "source_range", "destination"],
+                "additionalProperties": False
+            }
+        }
+    },
+    # Batch 8: Spreadsheet Properties
+    {
+        "type": "function",
+        "function": {
+            "name": "set_spreadsheet_timezone",
+            "description": "Set the timezone for a spreadsheet. Affects date/time functions like NOW(), TODAY(), and how dates are displayed. Use IANA timezone names.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "timezone": {
+                        "type": "string",
+                        "description": "IANA timezone name (e.g., 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'Europe/London', 'Asia/Tokyo', 'UTC')"
+                    }
+                },
+                "required": ["spreadsheet_id", "timezone"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_spreadsheet_locale",
+            "description": "Set the locale for a spreadsheet. Affects number formatting (1,234.56 vs 1.234,56), date formatting, and currency symbols.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "locale": {
+                        "type": "string",
+                        "description": "Locale code: 'en_US' (US English), 'en_GB' (UK), 'de_DE' (German), 'fr_FR' (French), 'es_ES' (Spanish), 'ja_JP' (Japanese), 'zh_CN' (Chinese), etc."
+                    }
+                },
+                "required": ["spreadsheet_id", "locale"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_recalculation_interval",
+            "description": "Control how often volatile functions (NOW, TODAY, RAND, RANDBETWEEN, etc.) recalculate. Use 'hour' for large sheets with many volatile functions to improve performance.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "interval": {
+                        "type": "string",
+                        "enum": ["on_change", "minute", "hour"],
+                        "description": "Recalculation frequency: 'on_change' (every edit), 'minute' (every minute), 'hour' (every hour)"
+                    }
+                },
+                "required": ["spreadsheet_id", "interval"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_spreadsheet_properties",
+            "description": "Get spreadsheet settings including title, locale, timezone, recalculation interval, and theme. Use to check current configuration before making changes.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    }
+                },
+                "required": ["spreadsheet_id"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_spreadsheet_theme",
+            "description": "Set the spreadsheet theme including primary font and theme colors. Theme colors affect charts, conditional formatting, and other UI elements. All color parameters are optional - only specified colors are changed.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "primary_font": {
+                        "type": "string",
+                        "description": "Primary font family (e.g., 'Arial', 'Roboto', 'Times New Roman', 'Courier New', 'Georgia')"
+                    },
+                    "text_color": {
+                        "type": "string",
+                        "description": "Main text color - hex code like '#000000' or name like 'black'"
+                    },
+                    "background_color": {
+                        "type": "string",
+                        "description": "Main background color - hex code like '#FFFFFF' or name like 'white'"
+                    },
+                    "accent1": {
+                        "type": "string",
+                        "description": "Accent color 1 (primary accent for charts/highlights)"
+                    },
+                    "accent2": {
+                        "type": "string",
+                        "description": "Accent color 2"
+                    },
+                    "accent3": {
+                        "type": "string",
+                        "description": "Accent color 3"
+                    },
+                    "accent4": {
+                        "type": "string",
+                        "description": "Accent color 4"
+                    },
+                    "accent5": {
+                        "type": "string",
+                        "description": "Accent color 5"
+                    },
+                    "accent6": {
+                        "type": "string",
+                        "description": "Accent color 6"
+                    },
+                    "link_color": {
+                        "type": "string",
+                        "description": "Hyperlink color"
+                    }
+                },
+                "required": ["spreadsheet_id"],
+                "additionalProperties": False
+            }
+        }
+    },
+    # Batch 9: Developer Metadata
+    {
+        "type": "function",
+        "function": {
+            "name": "set_developer_metadata",
+            "description": "Store custom key-value metadata on a spreadsheet, sheet, row, or column. Metadata is invisible to regular users but can be retrieved programmatically. Useful for bot annotations, tracking, or storing processing state.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "key": {
+                        "type": "string",
+                        "description": "Metadata key (e.g., 'created_by', 'status', 'version', 'processed_at')"
+                    },
+                    "value": {
+                        "type": "string",
+                        "description": "Metadata value to store"
+                    },
+                    "location": {
+                        "type": "string",
+                        "enum": ["spreadsheet", "sheet", "row", "column"],
+                        "description": "Where to attach metadata: 'spreadsheet' (entire file), 'sheet' (specific tab), 'row' (row range), 'column' (column range). Default: spreadsheet"
+                    },
+                    "sheet_name": {
+                        "type": "string",
+                        "description": "Sheet name (required for sheet/row/column locations)"
+                    },
+                    "start_index": {
+                        "type": "integer",
+                        "description": "Start row/column index, 0-based (required for row/column locations). Row 1 = index 0."
+                    },
+                    "end_index": {
+                        "type": "integer",
+                        "description": "End row/column index, exclusive (required for row/column locations). To target row 5, use start_index=4, end_index=5."
+                    }
+                },
+                "required": ["spreadsheet_id", "key", "value"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_developer_metadata",
+            "description": "Retrieve developer metadata from a spreadsheet. Can get a specific key or list all metadata. Returns metadata IDs needed for deletion.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "key": {
+                        "type": "string",
+                        "description": "Optional: specific metadata key to retrieve. Omit to list all metadata."
+                    }
+                },
+                "required": ["spreadsheet_id"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_developer_metadata",
+            "description": "Delete developer metadata from a spreadsheet by its metadata ID. Use get_developer_metadata first to find the ID.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "metadata_id": {
+                        "type": "integer",
+                        "description": "The metadata ID to delete (from get_developer_metadata)"
+                    }
+                },
+                "required": ["spreadsheet_id", "metadata_id"],
+                "additionalProperties": False
+            }
+        }
     }
 ]
 
