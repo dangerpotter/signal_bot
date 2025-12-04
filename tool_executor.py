@@ -192,6 +192,14 @@ class SignalToolExecutor:
         if function_name == "search_sheets":
             return self._execute_search_sheets(arguments)
 
+        # Member memory tools
+        if function_name == "save_member_memory":
+            return self._execute_save_member_memory(arguments)
+        if function_name == "get_member_memories":
+            return self._execute_get_member_memories(arguments)
+        if function_name == "list_group_members":
+            return self._execute_list_group_members(arguments)
+
         if function_name != "generate_image":
             return {"success": False, "message": f"Unsupported function: {function_name}"}
 
@@ -912,6 +920,7 @@ class SignalToolExecutor:
 
         spreadsheet_id = arguments.get("spreadsheet_id", "")
         values = arguments.get("values", [])
+        include_metadata = arguments.get("include_metadata", True)
 
         if not spreadsheet_id:
             return {"success": False, "message": "spreadsheet_id is required"}
@@ -925,7 +934,8 @@ class SignalToolExecutor:
                 bot_data=self.bot_data,
                 spreadsheet_id=spreadsheet_id,
                 values=values,
-                added_by=self.sender_name
+                added_by=self.sender_name,
+                include_metadata=include_metadata
             )
 
             if "error" in result:
@@ -973,6 +983,242 @@ class SignalToolExecutor:
         except Exception as e:
             logger.error(f"Error searching sheets: {e}")
             return {"success": False, "message": f"Error searching sheets: {str(e)}"}
+
+    # Member memory tool execution methods
+
+    def _execute_save_member_memory(self, arguments: dict) -> dict:
+        """Execute the save_member_memory tool call."""
+        if not self.bot_data.get('member_memory_tools_enabled'):
+            return {"success": False, "message": "Member memory tools disabled for this bot"}
+
+        member_name = arguments.get("member_name", "").strip()
+        slot_type = arguments.get("slot_type", "")
+        content = arguments.get("content", "").strip()
+
+        if not member_name:
+            return {"success": False, "message": "member_name is required"}
+        if not slot_type:
+            return {"success": False, "message": "slot_type is required"}
+        if not content:
+            return {"success": False, "message": "content is required"}
+
+        # Validate slot_type
+        valid_slots = ["home_location", "work_info", "interests", "media_prefs", "life_events", "response_prefs", "social_notes"]
+        if slot_type not in valid_slots:
+            return {"success": False, "message": f"Invalid slot_type. Must be one of: {', '.join(valid_slots)}"}
+
+        try:
+            from signal_bot.models import GroupMemberMemory, MessageLog, db
+            from datetime import datetime
+
+            # Try to find member_id from message logs
+            msg = MessageLog.query.filter_by(
+                group_id=self.group_id,
+                sender_name=member_name,
+                is_bot=False
+            ).order_by(MessageLog.timestamp.desc()).first()
+
+            if not msg:
+                # Try case-insensitive search
+                msg = MessageLog.query.filter(
+                    MessageLog.group_id == self.group_id,
+                    MessageLog.sender_name.ilike(member_name),
+                    MessageLog.is_bot == False
+                ).order_by(MessageLog.timestamp.desc()).first()
+
+            if not msg:
+                return {
+                    "success": False,
+                    "message": f"No known member '{member_name}' found in this group's chat history"
+                }
+
+            member_id = msg.sender_id
+            canonical_name = msg.sender_name  # Use the name as it appears in logs
+
+            # Check if memory already exists for this slot
+            existing = GroupMemberMemory.query.filter_by(
+                group_id=self.group_id,
+                member_id=member_id,
+                slot_type=slot_type
+            ).first()
+
+            if existing:
+                # Update existing
+                existing.content = content
+                existing.member_name = canonical_name
+                existing.updated_at = datetime.utcnow()
+                action = "Updated"
+            else:
+                # Create new
+                new_memory = GroupMemberMemory(
+                    group_id=self.group_id,
+                    member_id=member_id,
+                    member_name=canonical_name,
+                    slot_type=slot_type,
+                    content=content
+                )
+                db.session.add(new_memory)
+                action = "Saved"
+
+            db.session.commit()
+
+            logger.info(f"Member memory {action.lower()}: {canonical_name} ({slot_type}): {content[:50]}...")
+
+            return {
+                "success": True,
+                "data": {
+                    "member_name": canonical_name,
+                    "slot_type": slot_type,
+                    "content": content,
+                    "action": action.lower()
+                },
+                "message": f"{action} memory for {canonical_name}: {slot_type} = {content[:100]}"
+            }
+
+        except Exception as e:
+            logger.error(f"Error saving member memory: {e}")
+            return {"success": False, "message": f"Error saving memory: {str(e)}"}
+
+    def _execute_get_member_memories(self, arguments: dict) -> dict:
+        """Execute the get_member_memories tool call."""
+        if not self.bot_data.get('member_memory_tools_enabled'):
+            return {"success": False, "message": "Member memory tools disabled for this bot"}
+
+        member_name = arguments.get("member_name", "").strip()
+
+        if not member_name:
+            return {"success": False, "message": "member_name is required"}
+
+        try:
+            from signal_bot.models import GroupMemberMemory, MessageLog
+
+            # Try to find member_id from message logs
+            msg = MessageLog.query.filter_by(
+                group_id=self.group_id,
+                sender_name=member_name,
+                is_bot=False
+            ).order_by(MessageLog.timestamp.desc()).first()
+
+            if not msg:
+                # Try case-insensitive search
+                msg = MessageLog.query.filter(
+                    MessageLog.group_id == self.group_id,
+                    MessageLog.sender_name.ilike(member_name),
+                    MessageLog.is_bot == False
+                ).order_by(MessageLog.timestamp.desc()).first()
+
+            if not msg:
+                return {
+                    "success": False,
+                    "message": f"No known member '{member_name}' found in this group's chat history"
+                }
+
+            member_id = msg.sender_id
+            canonical_name = msg.sender_name
+
+            # Get all memories for this member
+            memories = GroupMemberMemory.query.filter_by(
+                group_id=self.group_id,
+                member_id=member_id
+            ).all()
+
+            if not memories:
+                return {
+                    "success": True,
+                    "data": {
+                        "member_name": canonical_name,
+                        "memories": {},
+                        "count": 0
+                    },
+                    "message": f"No saved memories for {canonical_name}"
+                }
+
+            memory_dict = {}
+            for mem in memories:
+                memory_dict[mem.slot_type] = {
+                    "content": mem.content,
+                    "updated_at": mem.updated_at.isoformat() if mem.updated_at else None
+                }
+
+            return {
+                "success": True,
+                "data": {
+                    "member_name": canonical_name,
+                    "memories": memory_dict,
+                    "count": len(memories)
+                },
+                "message": f"Found {len(memories)} memories for {canonical_name}"
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting member memories: {e}")
+            return {"success": False, "message": f"Error getting memories: {str(e)}"}
+
+    def _execute_list_group_members(self, arguments: dict) -> dict:
+        """Execute the list_group_members tool call."""
+        if not self.bot_data.get('member_memory_tools_enabled'):
+            return {"success": False, "message": "Member memory tools disabled for this bot"}
+
+        try:
+            from signal_bot.models import GroupMemberMemory, MessageLog
+            from sqlalchemy import func
+
+            # Get distinct non-bot members from message logs
+            members = MessageLog.query.filter_by(
+                group_id=self.group_id,
+                is_bot=False
+            ).with_entities(
+                MessageLog.sender_id,
+                MessageLog.sender_name
+            ).distinct().all()
+
+            if not members:
+                return {
+                    "success": True,
+                    "data": {"members": [], "count": 0},
+                    "message": "No members found in chat history"
+                }
+
+            # Build member list with memory counts
+            member_list = []
+            for member_id, member_name in members:
+                if not member_id:
+                    continue
+
+                # Count memories for this member
+                memory_count = GroupMemberMemory.query.filter_by(
+                    group_id=self.group_id,
+                    member_id=member_id
+                ).count()
+
+                # Get memory types stored
+                memory_types = GroupMemberMemory.query.filter_by(
+                    group_id=self.group_id,
+                    member_id=member_id
+                ).with_entities(GroupMemberMemory.slot_type).all()
+                memory_types = [m[0] for m in memory_types]
+
+                member_list.append({
+                    "name": member_name,
+                    "memory_count": memory_count,
+                    "memory_types": memory_types
+                })
+
+            # Sort by memory count (most known members first)
+            member_list.sort(key=lambda x: x["memory_count"], reverse=True)
+
+            return {
+                "success": True,
+                "data": {
+                    "members": member_list,
+                    "count": len(member_list)
+                },
+                "message": f"Found {len(member_list)} group members"
+            }
+
+        except Exception as e:
+            logger.error(f"Error listing group members: {e}")
+            return {"success": False, "message": f"Error listing members: {str(e)}"}
 
 
 def create_tool_executor_callback(executor: ToolExecutor) -> Callable[[str, dict], dict]:

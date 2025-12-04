@@ -631,7 +631,7 @@ SHEETS_TOOLS = [
         "type": "function",
         "function": {
             "name": "add_row_to_sheet",
-            "description": "Add a new row of data to a spreadsheet. Automatically appends to the end of existing data and adds a timestamp and the name of who added it. Use when someone wants to log an expense, add an item to a list, or record any new entry.",
+            "description": "Add a new row of data to a spreadsheet. Appends to the end of existing data. By default adds timestamp and attribution columns (for expense tracking, logging). Set include_metadata to false for simple data entry where you want values placed directly in columns (like adding a member name to column A).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -641,8 +641,12 @@ SHEETS_TOOLS = [
                     },
                     "values": {
                         "type": "array",
-                        "description": "Array of values for the new row. A timestamp and the person's name will be automatically added as the first two columns. Example: [\"Groceries\", 45.50, \"Beer and snacks\"]",
+                        "description": "Array of values for the new row. With include_metadata=true (default), timestamp and attribution are prepended. With include_metadata=false, values go directly into columns starting at A. Example: [\"Jeff\"] with include_metadata=false adds Jeff to column A.",
                         "items": {}
+                    },
+                    "include_metadata": {
+                        "type": "boolean",
+                        "description": "If true (default), prepends timestamp and who-added-it columns. Set to false for simple data entry where you want values in columns as-is (e.g., adding a name to a member list)."
                     }
                 },
                 "required": ["spreadsheet_id", "values"],
@@ -670,6 +674,68 @@ SHEETS_TOOLS = [
     }
 ]
 
+# Member memory tools for Signal bots - save/recall info about group members
+MEMBER_MEMORY_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "save_member_memory",
+            "description": "Save information about a group member for future reference. Use when someone shares personal details worth remembering: where they live, their job, hobbies, preferences, life events, or other facts. Be selective - only save genuinely useful info, not trivial conversation details.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "member_name": {
+                        "type": "string",
+                        "description": "Name of the group member (as they appear in chat)"
+                    },
+                    "slot_type": {
+                        "type": "string",
+                        "enum": ["home_location", "work_info", "interests", "media_prefs", "life_events", "response_prefs", "social_notes"],
+                        "description": "Category: home_location (where they live), work_info (job/career), interests (hobbies/activities), media_prefs (movies/music/games), life_events (milestones/plans), response_prefs (communication style), social_notes (relationships/group dynamics)"
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Concise factual information to remember (e.g., 'Lives in Denver, CO', 'Works as a software engineer at Google', 'Big fan of hiking and skiing')"
+                    }
+                },
+                "required": ["member_name", "slot_type", "content"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_member_memories",
+            "description": "ALWAYS call this tool when someone asks 'what do you know about me/them' or asks about stored information. This retrieves ACTUAL saved facts from your persistent memory database. Do NOT guess or make up information - call this tool first to get the real stored data, then respond based on what it returns.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "member_name": {
+                        "type": "string",
+                        "description": "Name of the group member to recall information about"
+                    }
+                },
+                "required": ["member_name"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_group_members",
+            "description": "List all known group members and what information is stored about each. ALWAYS call this when asked 'what do you know about everyone' or 'who's in the group'. Returns actual stored data, not guesses.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False
+            }
+        }
+    }
+]
+
 def get_tools_for_context(
     context: str = "gui",
     image_enabled: bool = False,
@@ -678,7 +744,8 @@ def get_tools_for_context(
     time_enabled: bool = False,
     wikipedia_enabled: bool = False,
     reaction_enabled: bool = False,
-    sheets_enabled: bool = False
+    sheets_enabled: bool = False,
+    member_memory_enabled: bool = False
 ) -> list:
     """
     Return appropriate tools based on context and enabled features.
@@ -692,6 +759,7 @@ def get_tools_for_context(
         wikipedia_enabled: Include Wikipedia tools (Signal bot only)
         reaction_enabled: Include emoji reaction tool (Signal bot only)
         sheets_enabled: Include Google Sheets tools (Signal bot only)
+        member_memory_enabled: Include member memory tools (Signal bot only)
 
     Returns:
         List of tool definitions appropriate for the context
@@ -712,6 +780,8 @@ def get_tools_for_context(
             tools.append(REACTION_TOOL)
         if sheets_enabled:
             tools.extend(SHEETS_TOOLS)
+        if member_memory_enabled:
+            tools.extend(MEMBER_MEMORY_TOOLS)
         return tools
     return AGENT_TOOLS
 

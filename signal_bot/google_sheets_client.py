@@ -11,8 +11,18 @@ from datetime import datetime, timedelta
 from typing import Optional
 from urllib.parse import urlencode
 import httpx
+from flask import Flask
 
 logger = logging.getLogger(__name__)
+
+# Flask app reference for database context
+_flask_app: Optional[Flask] = None
+
+
+def set_flask_app(app: Flask):
+    """Set the Flask app for database context."""
+    global _flask_app
+    _flask_app = app
 
 # Google OAuth endpoints
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -209,12 +219,19 @@ async def get_valid_access_token(bot_data: dict) -> Optional[str]:
 
     # Need to refresh - get client_secret from database (not in bot_data for security)
     try:
-        bot = Bot.query.get(bot_id)
-        if not bot or not bot.google_client_secret:
+        # Get client_secret from database (requires Flask app context)
+        client_secret = None
+        if _flask_app:
+            with _flask_app.app_context():
+                bot = Bot.query.get(bot_id)
+                if bot and bot.google_client_secret:
+                    client_secret = bot.google_client_secret
+
+        if not client_secret:
             logger.warning(f"Bot {bot_id}: No client secret found")
             return None
 
-        result = await refresh_access_token(client_id, bot.google_client_secret, refresh_token)
+        result = await refresh_access_token(client_id, client_secret, refresh_token)
 
         if "error" in result:
             logger.error(f"Bot {bot_id}: Token refresh failed - {result['error']}")
@@ -230,9 +247,13 @@ async def get_valid_access_token(bot_data: dict) -> Optional[str]:
             "expiry": expiry,
         }
 
-        # Update database with new expiry
-        bot.google_token_expiry = expiry
-        db.session.commit()
+        # Update database with new expiry (requires Flask app context)
+        if _flask_app:
+            with _flask_app.app_context():
+                bot = Bot.query.get(bot_id)
+                if bot:
+                    bot.google_token_expiry = expiry
+                    db.session.commit()
 
         return access_token
 
@@ -295,11 +316,13 @@ async def create_spreadsheet(
 
             data = response.json()
             spreadsheet_id = data.get("spreadsheetId")
+            # Escape underscores in spreadsheet_id to prevent markdown URL mangling
+            escaped_id = spreadsheet_id.replace('_', '\\_') if spreadsheet_id else spreadsheet_id
 
             return {
                 "spreadsheet_id": spreadsheet_id,
                 "title": title,
-                "url": f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}",
+                "url": f"https://docs.google.com/spreadsheets/d/{escaped_id}",
                 "sheets": [s["properties"]["title"] for s in data.get("sheets", [])],
             }
 
@@ -646,16 +669,18 @@ def create_spreadsheet_sync(
         from signal_bot.models import SheetsRegistry, db
 
         try:
-            registry = SheetsRegistry(
-                bot_id=bot_data["id"],
-                group_id=group_id,
-                spreadsheet_id=result["spreadsheet_id"],
-                title=title,
-                description=description,
-                created_by=created_by,
-            )
-            db.session.add(registry)
-            db.session.commit()
+            if _flask_app:
+                with _flask_app.app_context():
+                    registry = SheetsRegistry(
+                        bot_id=bot_data["id"],
+                        group_id=group_id,
+                        spreadsheet_id=result["spreadsheet_id"],
+                        title=title,
+                        description=description,
+                        created_by=created_by,
+                    )
+                    db.session.add(registry)
+                    db.session.commit()
 
             result["description"] = description
             result["created_by"] = created_by
@@ -686,11 +711,14 @@ def list_spreadsheets_sync(bot_data: dict, group_id: str) -> dict:
     from signal_bot.models import SheetsRegistry
 
     try:
-        sheets = SheetsRegistry.get_sheets_for_group(bot_data["id"], group_id)
-        return {
-            "spreadsheets": [s.to_dict() for s in sheets],
-            "count": len(sheets),
-        }
+        if _flask_app:
+            with _flask_app.app_context():
+                sheets = SheetsRegistry.get_sheets_for_group(bot_data["id"], group_id)
+                return {
+                    "spreadsheets": [s.to_dict() for s in sheets],
+                    "count": len(sheets),
+                }
+        return {"spreadsheets": [], "count": 0}
     except Exception as e:
         logger.error(f"Error listing spreadsheets: {e}")
         return {"error": str(e)}
@@ -723,10 +751,12 @@ def read_sheet_sync(
         if "error" not in result:
             from signal_bot.models import SheetsRegistry, db
             try:
-                sheet = SheetsRegistry.query.filter_by(spreadsheet_id=spreadsheet_id).first()
-                if sheet:
-                    sheet.last_accessed = datetime.utcnow()
-                    db.session.commit()
+                if _flask_app:
+                    with _flask_app.app_context():
+                        sheet = SheetsRegistry.query.filter_by(spreadsheet_id=spreadsheet_id).first()
+                        if sheet:
+                            sheet.last_accessed = datetime.utcnow()
+                            db.session.commit()
             except Exception as e:
                 logger.warning(f"Could not update last_accessed: {e}")
 
@@ -764,10 +794,12 @@ def write_sheet_sync(
         if "error" not in result:
             from signal_bot.models import SheetsRegistry, db
             try:
-                sheet = SheetsRegistry.query.filter_by(spreadsheet_id=spreadsheet_id).first()
-                if sheet:
-                    sheet.last_accessed = datetime.utcnow()
-                    db.session.commit()
+                if _flask_app:
+                    with _flask_app.app_context():
+                        sheet = SheetsRegistry.query.filter_by(spreadsheet_id=spreadsheet_id).first()
+                        if sheet:
+                            sheet.last_accessed = datetime.utcnow()
+                            db.session.commit()
             except Exception as e:
                 logger.warning(f"Could not update last_accessed: {e}")
 
@@ -780,16 +812,19 @@ def append_to_sheet_sync(
     bot_data: dict,
     spreadsheet_id: str,
     values: list,
-    added_by: str = None
+    added_by: str = None,
+    include_metadata: bool = True
 ) -> dict:
     """
-    Append a row to a spreadsheet with automatic timestamp and attribution.
+    Append a row to a spreadsheet.
 
     Args:
         bot_data: Bot configuration dict
         spreadsheet_id: Google Sheets ID
         values: 1D array of values for the row
         added_by: Name of person who added this data
+        include_metadata: If True (default), prepends timestamp and attribution columns.
+                         If False, appends values directly without metadata.
 
     Returns:
         Dict with update info or error
@@ -799,25 +834,30 @@ def append_to_sheet_sync(
         if not access_token:
             return {"error": "Not connected to Google. Please connect via admin panel."}
 
-        # Add timestamp and attribution to the row
-        timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-        row_with_meta = [timestamp, added_by or "Unknown"] + list(values)
+        # Conditionally add timestamp and attribution to the row
+        if include_metadata:
+            timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+            row_data = [timestamp, added_by or "Unknown"] + list(values)
+        else:
+            row_data = list(values)
 
         # Append to Sheet1 by default (covers full range to find last row)
-        result = await append_rows(access_token, spreadsheet_id, "Sheet1!A:Z", [row_with_meta])
+        result = await append_rows(access_token, spreadsheet_id, "Sheet1!A:Z", [row_data])
 
         # Update last_accessed if successful
         if "error" not in result:
             from signal_bot.models import SheetsRegistry, db
             try:
-                sheet = SheetsRegistry.query.filter_by(spreadsheet_id=spreadsheet_id).first()
-                if sheet:
-                    sheet.last_accessed = datetime.utcnow()
-                    db.session.commit()
+                if _flask_app:
+                    with _flask_app.app_context():
+                        sheet = SheetsRegistry.query.filter_by(spreadsheet_id=spreadsheet_id).first()
+                        if sheet:
+                            sheet.last_accessed = datetime.utcnow()
+                            db.session.commit()
             except Exception as e:
                 logger.warning(f"Could not update last_accessed: {e}")
 
-            result["row_added"] = row_with_meta
+            result["row_added"] = row_data
 
         return result
 
@@ -839,12 +879,15 @@ def search_sheets_sync(bot_data: dict, group_id: str, query: str) -> dict:
     from signal_bot.models import SheetsRegistry
 
     try:
-        sheets = SheetsRegistry.search_sheets(bot_data["id"], group_id, query)
-        return {
-            "spreadsheets": [s.to_dict() for s in sheets],
-            "count": len(sheets),
-            "query": query,
-        }
+        if _flask_app:
+            with _flask_app.app_context():
+                sheets = SheetsRegistry.search_sheets(bot_data["id"], group_id, query)
+                return {
+                    "spreadsheets": [s.to_dict() for s in sheets],
+                    "count": len(sheets),
+                    "query": query,
+                }
+        return {"spreadsheets": [], "count": 0, "query": query}
     except Exception as e:
         logger.error(f"Error searching spreadsheets: {e}")
         return {"error": str(e)}
