@@ -1548,7 +1548,7 @@ SHEETS_TOOLS = [
         "type": "function",
         "function": {
             "name": "create_pivot_table",
-            "description": "Create a pivot table to summarize data. Groups rows by one column and aggregates values from another. Example: group expenses by Category (column 0) and SUM amounts (column 2). Column indexes are 0-based (A=0, B=1, C=2, etc.).",
+            "description": "Create a pivot table with multi-dimensional grouping, date/histogram rules, and multiple aggregations. Column indexes are 0-based (A=0, B=1, C=2). Supports date grouping (YEAR_MONTH, QUARTER, etc.) and histogram buckets for numeric data.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1560,29 +1560,92 @@ SHEETS_TOOLS = [
                         "type": "string",
                         "description": "Source data range in A1 notation (e.g., 'A1:D100'). Should include headers."
                     },
-                    "row_group_column": {
-                        "type": "integer",
-                        "description": "Column index (0-based) to group rows by. E.g., 0 for column A, 1 for B."
+                    "row_groups": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "column": {"type": "integer", "description": "Column index (0-based) to group by"},
+                                "date_group_rule": {"type": "string", "enum": ["SECOND", "MINUTE", "HOUR", "HOUR_MINUTE", "HOUR_MINUTE_AMPM", "DAY_OF_WEEK", "DAY_OF_YEAR", "DAY_OF_MONTH", "DAY_MONTH", "MONTH", "QUARTER", "YEAR", "YEAR_MONTH", "YEAR_QUARTER", "YEAR_MONTH_DAY"], "description": "Group dates by this time unit"},
+                                "histogram_rule": {"type": "object", "properties": {"interval": {"type": "number"}, "start": {"type": "number"}, "end": {"type": "number"}}, "description": "Group numbers into buckets. interval required, start/end optional."},
+                                "manual_group_rule": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "items": {"type": "array", "items": {"type": "string"}}}, "required": ["name", "items"]}, "description": "Custom grouping of values. E.g., [{\"name\": \"East\", \"items\": [\"NY\", \"MA\"]}, {\"name\": \"West\", \"items\": [\"CA\", \"OR\"]}]"},
+                                "label": {"type": "string", "description": "Custom label for this group"},
+                                "show_totals": {"type": "boolean", "description": "Show totals for this group (overrides global)"},
+                                "sort_order": {"type": "string", "enum": ["ASCENDING", "DESCENDING"], "description": "Sort order (overrides global)"},
+                                "repeat_headings": {"type": "boolean", "description": "Repeat headings for hierarchical groups"},
+                                "group_limit": {"type": "integer", "description": "Maximum number of items to show in this group (top N)"}
+                            },
+                            "required": ["column"]
+                        },
+                        "description": "Row groupings. Simple: [{\"column\": 0}]. With date rule: [{\"column\": 0, \"date_group_rule\": \"YEAR_MONTH\"}]. With limit: [{\"column\": 0, \"group_limit\": 10}]"
                     },
-                    "value_column": {
-                        "type": "integer",
-                        "description": "Column index (0-based) containing values to aggregate. E.g., 2 for column C."
-                    },
-                    "summarize_function": {
-                        "type": "string",
-                        "enum": ["SUM", "COUNT", "AVERAGE", "MIN", "MAX", "COUNTA", "COUNTUNIQUE", "MEDIAN"],
-                        "description": "How to aggregate values. Default: SUM"
+                    "values": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "column": {"type": "integer", "description": "Column index (0-based) to aggregate"},
+                                "function": {"type": "string", "enum": ["SUM", "COUNT", "AVERAGE", "MIN", "MAX", "COUNTA", "COUNTUNIQUE", "MEDIAN", "PRODUCT", "STDEV", "STDEVP", "VAR", "VARP"], "description": "Aggregation function. Default: SUM"},
+                                "name": {"type": "string", "description": "Custom display name (e.g., 'Total Sales')"},
+                                "calculated_display_type": {"type": "string", "enum": ["PERCENT_OF_ROW_TOTAL", "PERCENT_OF_COLUMN_TOTAL", "PERCENT_OF_GRAND_TOTAL"], "description": "Show as percentage"}
+                            },
+                            "required": ["column"]
+                        },
+                        "description": "Value columns to aggregate. E.g., [{\"column\": 2, \"function\": \"SUM\", \"name\": \"Total\"}, {\"column\": 2, \"function\": \"COUNT\"}]"
                     },
                     "anchor_cell": {
                         "type": "string",
                         "description": "Cell where pivot table is placed (e.g., 'F1'). Default: F1"
                     },
-                    "column_group_column": {
-                        "type": "integer",
-                        "description": "Optional: column index to create column groups (for cross-tabulation)"
+                    "column_groups": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "column": {"type": "integer", "description": "Column index (0-based)"},
+                                "date_group_rule": {"type": "string", "enum": ["SECOND", "MINUTE", "HOUR", "HOUR_MINUTE", "HOUR_MINUTE_AMPM", "DAY_OF_WEEK", "DAY_OF_YEAR", "DAY_OF_MONTH", "DAY_MONTH", "MONTH", "QUARTER", "YEAR", "YEAR_MONTH", "YEAR_QUARTER", "YEAR_MONTH_DAY"], "description": "Group dates by this time unit"},
+                                "histogram_rule": {"type": "object", "properties": {"interval": {"type": "number"}, "start": {"type": "number"}, "end": {"type": "number"}}, "description": "Group numbers into buckets"},
+                                "manual_group_rule": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "items": {"type": "array", "items": {"type": "string"}}}, "required": ["name", "items"]}, "description": "Custom grouping of values"},
+                                "label": {"type": "string", "description": "Custom label for this group"},
+                                "show_totals": {"type": "boolean", "description": "Show totals for this group"},
+                                "sort_order": {"type": "string", "enum": ["ASCENDING", "DESCENDING"], "description": "Sort order"},
+                                "group_limit": {"type": "integer", "description": "Maximum number of items to show"}
+                            },
+                            "required": ["column"]
+                        },
+                        "description": "Column groupings (cross-tabulation). E.g., [{\"column\": 3, \"date_group_rule\": \"QUARTER\"}]"
+                    },
+                    "show_totals": {
+                        "type": "boolean",
+                        "description": "Show row and column totals. Default: true"
+                    },
+                    "sort_order": {
+                        "type": "string",
+                        "enum": ["ASCENDING", "DESCENDING"],
+                        "description": "Default sort order for groups. Default: ASCENDING"
+                    },
+                    "value_layout": {
+                        "type": "string",
+                        "enum": ["HORIZONTAL", "VERTICAL"],
+                        "description": "Layout for multiple values - HORIZONTAL (as columns) or VERTICAL (as rows). Default: HORIZONTAL"
+                    },
+                    "filter_specs": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "column": {"type": "integer", "description": "Column index (0-based) to filter"},
+                                "visible_values": {"type": "array", "items": {"type": "string"}, "description": "Only include rows with these values"},
+                                "condition_type": {"type": "string", "enum": ["NUMBER_GREATER", "NUMBER_GREATER_THAN_EQ", "NUMBER_LESS", "NUMBER_LESS_THAN_EQ", "NUMBER_EQ", "NUMBER_NOT_EQ", "NUMBER_BETWEEN", "NUMBER_NOT_BETWEEN", "TEXT_CONTAINS", "TEXT_NOT_CONTAINS", "TEXT_STARTS_WITH", "TEXT_ENDS_WITH", "TEXT_EQ", "TEXT_IS_EMAIL", "TEXT_IS_URL", "DATE_EQ", "DATE_BEFORE", "DATE_AFTER", "DATE_ON_OR_BEFORE", "DATE_ON_OR_AFTER", "DATE_BETWEEN", "DATE_NOT_BETWEEN", "DATE_IS_VALID", "BLANK", "NOT_BLANK"], "description": "Condition type for filtering"},
+                                "condition_values": {"type": "array", "items": {"type": "string"}, "description": "Values for the condition (1 for most, 2 for BETWEEN)"},
+                                "visible_by_default": {"type": "boolean", "description": "If true, show all except visible_values. Default: true"}
+                            },
+                            "required": ["column"]
+                        },
+                        "description": "Filters to apply to source data before aggregation. E.g., [{\"column\": 0, \"visible_values\": [\"Active\", \"Pending\"]}] or [{\"column\": 2, \"condition_type\": \"NUMBER_GREATER\", \"condition_values\": [\"100\"]}]"
                     }
                 },
-                "required": ["spreadsheet_id", "source_range", "row_group_column", "value_column"],
+                "required": ["spreadsheet_id", "source_range", "row_groups", "values"],
                 "additionalProperties": False
             }
         }
@@ -1592,6 +1655,46 @@ SHEETS_TOOLS = [
         "function": {
             "name": "delete_pivot_table",
             "description": "Delete a pivot table from a spreadsheet. Specify the anchor cell where the pivot table starts.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "anchor_cell": {
+                        "type": "string",
+                        "description": "Cell where pivot table is anchored (e.g., 'F1')"
+                    }
+                },
+                "required": ["spreadsheet_id", "anchor_cell"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_pivot_tables",
+            "description": "List all pivot tables in a spreadsheet. Returns anchor cell, source range, and summary of row/column groups for each.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    }
+                },
+                "required": ["spreadsheet_id"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_pivot_table",
+            "description": "Get detailed configuration of a specific pivot table. Returns row groups, column groups, values, filters, and all settings.",
             "parameters": {
                 "type": "object",
                 "properties": {

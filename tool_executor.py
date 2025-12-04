@@ -2310,20 +2310,23 @@ class SignalToolExecutor:
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
         source_range = arguments.get("source_range", "").strip()
-        row_group_column = arguments.get("row_group_column")
-        value_column = arguments.get("value_column")
-        summarize_function = arguments.get("summarize_function", "SUM")
+        row_groups = arguments.get("row_groups")
+        values = arguments.get("values")
         anchor_cell = arguments.get("anchor_cell", "F1")
-        column_group_column = arguments.get("column_group_column")
+        column_groups = arguments.get("column_groups")
+        show_totals = arguments.get("show_totals", True)
+        sort_order = arguments.get("sort_order", "ASCENDING")
+        value_layout = arguments.get("value_layout", "HORIZONTAL")
+        filter_specs = arguments.get("filter_specs")
 
         if not spreadsheet_id:
             return {"success": False, "message": "spreadsheet_id is required"}
         if not source_range:
             return {"success": False, "message": "source_range is required (e.g., 'A1:D100')"}
-        if row_group_column is None:
-            return {"success": False, "message": "row_group_column is required (0-based column index to group by)"}
-        if value_column is None:
-            return {"success": False, "message": "value_column is required (0-based column index to aggregate)"}
+        if not row_groups or not isinstance(row_groups, list):
+            return {"success": False, "message": "row_groups is required (array of group definitions with 'column' and optional 'date_group_rule', 'histogram_rule')"}
+        if not values or not isinstance(values, list):
+            return {"success": False, "message": "values is required (array of value definitions with 'column' and optional 'function', 'name')"}
 
         try:
             from signal_bot.google_sheets_client import create_pivot_table_sync
@@ -2332,11 +2335,14 @@ class SignalToolExecutor:
                 bot_data=self.bot_data,
                 spreadsheet_id=spreadsheet_id,
                 source_range=source_range,
-                row_group_column=int(row_group_column),
-                value_column=int(value_column),
-                summarize_function=summarize_function,
+                row_groups=row_groups,
+                values=values,
                 anchor_cell=anchor_cell,
-                column_group_column=int(column_group_column) if column_group_column is not None else None
+                column_groups=column_groups,
+                show_totals=show_totals,
+                sort_order=sort_order,
+                value_layout=value_layout,
+                filter_specs=filter_specs
             )
 
             if "error" in result:
@@ -2386,6 +2392,72 @@ class SignalToolExecutor:
         except Exception as e:
             logger.error(f"Error deleting pivot table: {e}")
             return {"success": False, "message": f"Error deleting pivot table: {str(e)}"}
+
+    def _execute_list_pivot_tables(self, arguments: dict) -> dict:
+        """Execute the list_pivot_tables tool call."""
+        if not self.bot_data.get('sheets_enabled'):
+            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+
+        try:
+            from signal_bot.google_sheets_client import list_pivot_tables_sync
+
+            result = list_pivot_tables_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", "Listed pivot tables")
+            }
+
+        except Exception as e:
+            logger.error(f"Error listing pivot tables: {e}")
+            return {"success": False, "message": f"Error listing pivot tables: {str(e)}"}
+
+    def _execute_get_pivot_table(self, arguments: dict) -> dict:
+        """Execute the get_pivot_table tool call."""
+        if not self.bot_data.get('sheets_enabled'):
+            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        anchor_cell = arguments.get("anchor_cell", "").strip()
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not anchor_cell:
+            return {"success": False, "message": "anchor_cell is required (e.g., 'F1')"}
+
+        try:
+            from signal_bot.google_sheets_client import get_pivot_table_sync
+
+            result = get_pivot_table_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                anchor_cell=anchor_cell
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Got pivot table at {anchor_cell}")
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting pivot table: {e}")
+            return {"success": False, "message": f"Error getting pivot table: {str(e)}"}
 
     # Text formatting & color tool execution methods (Batch 1)
 

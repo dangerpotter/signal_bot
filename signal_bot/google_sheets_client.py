@@ -3658,24 +3658,30 @@ def create_pivot_table_sync(
     bot_data: dict,
     spreadsheet_id: str,
     source_range: str,
-    row_group_column: int,
-    value_column: int,
-    summarize_function: str = "SUM",
+    row_groups: list,
+    values: list,
     anchor_cell: str = "F1",
-    column_group_column: int = None
+    column_groups: list = None,
+    show_totals: bool = True,
+    sort_order: str = "ASCENDING",
+    value_layout: str = "HORIZONTAL",
+    filter_specs: list = None
 ) -> dict:
     """
-    Create a pivot table from spreadsheet data.
+    Create a pivot table from spreadsheet data with multi-dimensional support.
 
     Args:
         bot_data: Bot configuration with Google credentials
         spreadsheet_id: The spreadsheet ID
         source_range: Source data range in A1 notation (e.g., "A1:D100")
-        row_group_column: Column index (0-based) to group rows by (e.g., 0 for column A)
-        value_column: Column index (0-based) containing values to aggregate
-        summarize_function: How to aggregate - "SUM", "COUNT", "AVERAGE", "MIN", "MAX", "COUNTA"
+        row_groups: List of row group definitions, each with: column (required), date_group_rule, histogram_rule, label, show_totals, sort_order, repeat_headings
+        values: List of value definitions, each with: column (required), function, name, calculated_display_type
         anchor_cell: Cell where pivot table top-left corner is placed (e.g., "F1")
-        column_group_column: Optional column index (0-based) to group columns by
+        column_groups: Optional list of column group definitions (same structure as row_groups)
+        show_totals: Default whether to show row/column totals (default: True)
+        sort_order: Default sort order for grouped values - "ASCENDING" or "DESCENDING"
+        value_layout: Layout for values - "HORIZONTAL" (columns) or "VERTICAL" (rows)
+        filter_specs: List of filters, each with: column (required), visible_values, condition_type, condition_values, visible_by_default
     """
 
     # Summarize function mapping
@@ -3690,8 +3696,28 @@ def create_pivot_table_sync(
         "MEDIAN": "MEDIAN",
         "PRODUCT": "PRODUCT",
         "STDEV": "STDEV",
-        "VAR": "VAR"
+        "STDEVP": "STDEVP",
+        "VAR": "VAR",
+        "VARP": "VARP"
     }
+
+    VALID_DISPLAY_TYPES = ["PERCENT_OF_ROW_TOTAL", "PERCENT_OF_COLUMN_TOTAL", "PERCENT_OF_GRAND_TOTAL"]
+
+    VALID_DATE_GROUP_RULES = [
+        "SECOND", "MINUTE", "HOUR", "HOUR_MINUTE", "HOUR_MINUTE_AMPM",
+        "DAY_OF_WEEK", "DAY_OF_YEAR", "DAY_OF_MONTH", "DAY_MONTH",
+        "MONTH", "QUARTER", "YEAR", "YEAR_MONTH", "YEAR_QUARTER", "YEAR_MONTH_DAY"
+    ]
+
+    VALID_CONDITION_TYPES = [
+        "NUMBER_GREATER", "NUMBER_GREATER_THAN_EQ", "NUMBER_LESS", "NUMBER_LESS_THAN_EQ",
+        "NUMBER_EQ", "NUMBER_NOT_EQ", "NUMBER_BETWEEN", "NUMBER_NOT_BETWEEN",
+        "TEXT_CONTAINS", "TEXT_NOT_CONTAINS", "TEXT_STARTS_WITH", "TEXT_ENDS_WITH",
+        "TEXT_EQ", "TEXT_IS_EMAIL", "TEXT_IS_URL",
+        "DATE_EQ", "DATE_BEFORE", "DATE_AFTER", "DATE_ON_OR_BEFORE", "DATE_ON_OR_AFTER",
+        "DATE_BETWEEN", "DATE_NOT_BETWEEN", "DATE_IS_VALID",
+        "BLANK", "NOT_BLANK"
+    ]
 
     async def _create_pivot():
         access_token = await get_valid_access_token(bot_data)
@@ -3735,10 +3761,136 @@ def create_pivot_table_sync(
         except Exception as e:
             return {"error": f"Invalid anchor_cell '{anchor_cell}': {e}"}
 
-        # Validate summarize function
-        func = SUMMARIZE_FUNCTIONS.get(summarize_function.upper())
-        if not func:
-            return {"error": f"Invalid summarize_function '{summarize_function}'. Use: SUM, COUNT, AVERAGE, MIN, MAX, COUNTA, COUNTUNIQUE, MEDIAN"}
+        # Validate sort order
+        sort_order_upper = sort_order.upper() if sort_order else "ASCENDING"
+        if sort_order_upper not in ["ASCENDING", "DESCENDING"]:
+            return {"error": f"Invalid sort_order '{sort_order}'. Use: ASCENDING or DESCENDING"}
+
+        # Validate value layout
+        value_layout_upper = value_layout.upper() if value_layout else "HORIZONTAL"
+        if value_layout_upper not in ["HORIZONTAL", "VERTICAL"]:
+            return {"error": f"Invalid value_layout '{value_layout}'. Use: HORIZONTAL or VERTICAL"}
+
+        # Validate row_groups
+        if not row_groups or not isinstance(row_groups, list):
+            return {"error": "row_groups must be a non-empty array of group definitions"}
+
+        # Validate values
+        if not values or not isinstance(values, list):
+            return {"error": "values must be a non-empty array of value definitions"}
+
+        # Helper function to build a pivot group
+        def build_pivot_group(group_def, index, group_type="row"):
+            if not isinstance(group_def, dict) or "column" not in group_def:
+                return None, f"{group_type.title()} group at index {index} must have a 'column' property"
+
+            pivot_group = {
+                "sourceColumnOffset": int(group_def["column"]),
+                "showTotals": group_def.get("show_totals", show_totals),
+                "sortOrder": group_def.get("sort_order", sort_order_upper).upper()
+            }
+
+            # Add label if specified
+            if group_def.get("label"):
+                pivot_group["label"] = group_def["label"]
+
+            # Add repeat headings for row groups
+            if group_type == "row" and group_def.get("repeat_headings"):
+                pivot_group["repeatHeadings"] = True
+
+            # Add date group rule if specified
+            if group_def.get("date_group_rule"):
+                date_rule = group_def["date_group_rule"].upper()
+                if date_rule not in VALID_DATE_GROUP_RULES:
+                    return None, f"Invalid date_group_rule '{date_rule}' in {group_type} group {index}. Use: {', '.join(VALID_DATE_GROUP_RULES)}"
+                pivot_group["groupRule"] = {
+                    "dateTimeRule": {
+                        "type": date_rule
+                    }
+                }
+
+            # Add manual group rule if specified
+            elif group_def.get("manual_group_rule"):
+                manual_groups = group_def["manual_group_rule"]
+                if not isinstance(manual_groups, list):
+                    return None, f"manual_group_rule in {group_type} group {index} must be an array of groups"
+
+                group_defs = []
+                for mg in manual_groups:
+                    if not isinstance(mg, dict) or "name" not in mg or "items" not in mg:
+                        return None, f"Each manual group must have 'name' and 'items' properties"
+                    group_defs.append({
+                        "groupName": {"stringValue": str(mg["name"])},
+                        "items": [{"stringValue": str(item)} for item in mg["items"]]
+                    })
+
+                pivot_group["groupRule"] = {
+                    "manualRule": {
+                        "groups": group_defs
+                    }
+                }
+
+            # Add histogram rule if specified
+            elif group_def.get("histogram_rule"):
+                hist_rule = group_def["histogram_rule"]
+                if not isinstance(hist_rule, dict) or "interval" not in hist_rule:
+                    return None, f"histogram_rule in {group_type} group {index} must have 'interval' property"
+
+                histogram_def = {
+                    "interval": float(hist_rule["interval"])
+                }
+                if "start" in hist_rule:
+                    histogram_def["start"] = float(hist_rule["start"])
+                if "end" in hist_rule:
+                    histogram_def["end"] = float(hist_rule["end"])
+
+                pivot_group["groupRule"] = {
+                    "histogramRule": histogram_def
+                }
+
+            # Add group limit if specified
+            if group_def.get("group_limit"):
+                pivot_group["groupLimit"] = {
+                    "countLimit": int(group_def["group_limit"]),
+                    "applyOrder": index  # Apply in order they appear
+                }
+
+            return pivot_group, None
+
+        # Build pivot values
+        pivot_values = []
+        for i, val_def in enumerate(values):
+            if not isinstance(val_def, dict) or "column" not in val_def:
+                return {"error": f"Value at index {i} must have a 'column' property"}
+
+            func_name = val_def.get("function", "SUM").upper()
+            func = SUMMARIZE_FUNCTIONS.get(func_name)
+            if not func:
+                return {"error": f"Invalid function '{func_name}' in value {i}. Use: SUM, COUNT, AVERAGE, MIN, MAX, COUNTA, COUNTUNIQUE, MEDIAN, PRODUCT, STDEV, STDEVP, VAR, VARP"}
+
+            pivot_value = {
+                "sourceColumnOffset": int(val_def["column"]),
+                "summarizeFunction": func
+            }
+
+            if val_def.get("name"):
+                pivot_value["name"] = val_def["name"]
+
+            if val_def.get("calculated_display_type"):
+                display_type = val_def["calculated_display_type"].upper()
+                if display_type not in VALID_DISPLAY_TYPES:
+                    return {"error": f"Invalid calculated_display_type '{display_type}' in value {i}. Use: {', '.join(VALID_DISPLAY_TYPES)}"}
+                pivot_value["calculatedDisplayType"] = display_type
+
+            pivot_values.append(pivot_value)
+
+        # Build row groups
+        pivot_rows = []
+        for i, group_def in enumerate(row_groups):
+            pivot_group, error = build_pivot_group(group_def, i, "row")
+            if error:
+                return {"error": error}
+            pivot_rows.append(pivot_group)
 
         # Build pivot table definition
         pivot_table = {
@@ -3749,25 +3901,60 @@ def create_pivot_table_sync(
                 "startColumnIndex": start_col,
                 "endColumnIndex": end_col
             },
-            "rows": [{
-                "sourceColumnOffset": row_group_column,
-                "showTotals": True,
-                "sortOrder": "ASCENDING"
-            }],
-            "values": [{
-                "sourceColumnOffset": value_column,
-                "summarizeFunction": func
-            }],
-            "valueLayout": "HORIZONTAL"
+            "rows": pivot_rows,
+            "values": pivot_values,
+            "valueLayout": value_layout_upper
         }
 
         # Add column grouping if specified
-        if column_group_column is not None:
-            pivot_table["columns"] = [{
-                "sourceColumnOffset": column_group_column,
-                "showTotals": True,
-                "sortOrder": "ASCENDING"
-            }]
+        if column_groups:
+            pivot_cols = []
+            for i, group_def in enumerate(column_groups):
+                pivot_group, error = build_pivot_group(group_def, i, "column")
+                if error:
+                    return {"error": error}
+                pivot_cols.append(pivot_group)
+            pivot_table["columns"] = pivot_cols
+
+        # Add filter specs if specified
+        if filter_specs:
+            pivot_filters = []
+            for i, filter_def in enumerate(filter_specs):
+                if not isinstance(filter_def, dict) or "column" not in filter_def:
+                    return {"error": f"Filter at index {i} must have a 'column' property"}
+
+                filter_criteria = {}
+
+                # Add visible values if specified
+                if filter_def.get("visible_values"):
+                    filter_criteria["visibleValues"] = filter_def["visible_values"]
+
+                # Add visible by default
+                if "visible_by_default" in filter_def:
+                    filter_criteria["visibleByDefault"] = filter_def["visible_by_default"]
+
+                # Add condition if specified
+                if filter_def.get("condition_type"):
+                    cond_type = filter_def["condition_type"].upper()
+                    if cond_type not in VALID_CONDITION_TYPES:
+                        return {"error": f"Invalid condition_type '{cond_type}' in filter {i}. Use: {', '.join(VALID_CONDITION_TYPES[:10])}..."}
+
+                    condition = {"type": cond_type}
+
+                    # Add condition values if present
+                    if filter_def.get("condition_values"):
+                        condition["values"] = [
+                            {"userEnteredValue": str(v)} for v in filter_def["condition_values"]
+                        ]
+
+                    filter_criteria["condition"] = condition
+
+                pivot_filters.append({
+                    "columnOffsetIndex": int(filter_def["column"]),
+                    "filterCriteria": filter_criteria
+                })
+
+            pivot_table["filterSpecs"] = pivot_filters
 
         request = {
             "updateCells": {
@@ -3790,14 +3977,29 @@ def create_pivot_table_sync(
         if "error" in result:
             return result
 
+        # Build descriptive message
+        def describe_group(g):
+            desc = f"col {g['column']}"
+            if g.get('date_group_rule'):
+                desc += f" ({g['date_group_rule']})"
+            elif g.get('histogram_rule'):
+                desc += f" (histogram: {g['histogram_rule'].get('interval')})"
+            return desc
+
+        row_groups_str = ", ".join(describe_group(g) for g in row_groups)
+        values_str = ", ".join(f"{v.get('function', 'SUM')}(col {v['column']})" for v in values)
+        col_groups_str = ""
+        if column_groups:
+            col_groups_str = f", column groups: {', '.join(describe_group(g) for g in column_groups)}"
+
         return {
             "success": True,
             "source_range": source_range,
             "anchor_cell": anchor_cell,
-            "row_group_column": row_group_column,
-            "value_column": value_column,
-            "summarize_function": summarize_function,
-            "message": f"Created pivot table at {anchor_cell} from {source_range} (grouping by column {row_group_column}, {summarize_function} of column {value_column})"
+            "row_groups": row_groups,
+            "column_groups": column_groups,
+            "values": values,
+            "message": f"Created pivot table at {anchor_cell} from {source_range} (row groups: {row_groups_str}, values: {values_str}{col_groups_str})"
         }
 
     return _run_async(_create_pivot())
@@ -3901,6 +4103,210 @@ def refresh_pivot_table_sync(
         }
 
     return _run_async(_refresh())
+
+
+def list_pivot_tables_sync(
+    bot_data: dict,
+    spreadsheet_id: str
+) -> dict:
+    """
+    List all pivot tables in a spreadsheet.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+    """
+
+    async def _list_pivots():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        # Get full spreadsheet data including pivot tables
+        url = f"{SHEETS_API_BASE}/{spreadsheet_id}?fields=sheets(properties,data(rowData(values(pivotTable))))"
+        headers = {"Authorization": f"Bearer {access_token}"}
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(url, headers=headers)
+            if response.status_code != 200:
+                return {"error": f"Failed to get spreadsheet: {response.text}"}
+
+            data = response.json()
+
+        pivot_tables = []
+        for sheet in data.get("sheets", []):
+            sheet_name = sheet.get("properties", {}).get("title", "Sheet1")
+            sheet_data = sheet.get("data", [])
+
+            for grid_data in sheet_data:
+                row_data = grid_data.get("rowData", [])
+                for row_idx, row in enumerate(row_data):
+                    for col_idx, cell in enumerate(row.get("values", [])):
+                        pivot = cell.get("pivotTable")
+                        if pivot:
+                            # Convert col_idx to letter
+                            col_letter = ""
+                            temp_col = col_idx
+                            while temp_col >= 0:
+                                col_letter = chr(65 + (temp_col % 26)) + col_letter
+                                temp_col = temp_col // 26 - 1
+                            anchor = f"{col_letter}{row_idx + 1}"
+
+                            # Extract source range
+                            source = pivot.get("source", {})
+                            source_desc = f"rows {source.get('startRowIndex', 0)+1}-{source.get('endRowIndex', 0)}, cols {source.get('startColumnIndex', 0)}-{source.get('endColumnIndex', 0)-1}"
+
+                            # Extract row groups
+                            row_groups = []
+                            for rg in pivot.get("rows", []):
+                                row_groups.append(f"col {rg.get('sourceColumnOffset', 0)}")
+
+                            # Extract column groups
+                            col_groups = []
+                            for cg in pivot.get("columns", []):
+                                col_groups.append(f"col {cg.get('sourceColumnOffset', 0)}")
+
+                            # Extract values
+                            value_summaries = []
+                            for val in pivot.get("values", []):
+                                func = val.get("summarizeFunction", "SUM")
+                                col = val.get("sourceColumnOffset", 0)
+                                value_summaries.append(f"{func}(col {col})")
+
+                            pivot_tables.append({
+                                "sheet_name": sheet_name,
+                                "anchor_cell": anchor,
+                                "source": source_desc,
+                                "row_groups": row_groups,
+                                "column_groups": col_groups,
+                                "values": value_summaries
+                            })
+
+        return {
+            "success": True,
+            "pivot_tables": pivot_tables,
+            "count": len(pivot_tables),
+            "message": f"Found {len(pivot_tables)} pivot table(s)"
+        }
+
+    return _run_async(_list_pivots())
+
+
+def get_pivot_table_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    anchor_cell: str
+) -> dict:
+    """
+    Get detailed configuration of a specific pivot table.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        anchor_cell: Cell where pivot table is anchored (e.g., "F1")
+    """
+
+    async def _get_pivot():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        # Parse anchor cell
+        try:
+            anchor_col_str = ''.join(c for c in anchor_cell if c.isalpha())
+            anchor_row_str = ''.join(c for c in anchor_cell if c.isdigit())
+            anchor_col, _ = parse_column_range(anchor_col_str)
+            anchor_row = int(anchor_row_str) - 1 if anchor_row_str else 0
+        except Exception as e:
+            return {"error": f"Invalid anchor_cell '{anchor_cell}': {e}"}
+
+        # Get spreadsheet data
+        url = f"{SHEETS_API_BASE}/{spreadsheet_id}?fields=sheets(properties,data(rowData(values(pivotTable))))"
+        headers = {"Authorization": f"Bearer {access_token}"}
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(url, headers=headers)
+            if response.status_code != 200:
+                return {"error": f"Failed to get spreadsheet: {response.text}"}
+
+            data = response.json()
+
+        # Find the pivot table at the specified cell
+        for sheet in data.get("sheets", []):
+            sheet_data = sheet.get("data", [])
+            for grid_data in sheet_data:
+                row_data = grid_data.get("rowData", [])
+                if anchor_row < len(row_data):
+                    row = row_data[anchor_row]
+                    values = row.get("values", [])
+                    if anchor_col < len(values):
+                        pivot = values[anchor_col].get("pivotTable")
+                        if pivot:
+                            # Extract detailed configuration
+                            config = {
+                                "anchor_cell": anchor_cell,
+                                "source": pivot.get("source", {}),
+                                "value_layout": pivot.get("valueLayout", "HORIZONTAL"),
+                                "row_groups": [],
+                                "column_groups": [],
+                                "values": [],
+                                "filter_specs": []
+                            }
+
+                            # Parse row groups
+                            for rg in pivot.get("rows", []):
+                                group_info = {
+                                    "column": rg.get("sourceColumnOffset", 0),
+                                    "show_totals": rg.get("showTotals", True),
+                                    "sort_order": rg.get("sortOrder", "ASCENDING"),
+                                    "label": rg.get("label"),
+                                    "repeat_headings": rg.get("repeatHeadings", False)
+                                }
+                                if rg.get("groupRule"):
+                                    group_info["group_rule"] = rg["groupRule"]
+                                if rg.get("groupLimit"):
+                                    group_info["group_limit"] = rg["groupLimit"].get("countLimit")
+                                config["row_groups"].append(group_info)
+
+                            # Parse column groups
+                            for cg in pivot.get("columns", []):
+                                group_info = {
+                                    "column": cg.get("sourceColumnOffset", 0),
+                                    "show_totals": cg.get("showTotals", True),
+                                    "sort_order": cg.get("sortOrder", "ASCENDING")
+                                }
+                                if cg.get("groupRule"):
+                                    group_info["group_rule"] = cg["groupRule"]
+                                config["column_groups"].append(group_info)
+
+                            # Parse values
+                            for val in pivot.get("values", []):
+                                val_info = {
+                                    "column": val.get("sourceColumnOffset", 0),
+                                    "function": val.get("summarizeFunction", "SUM"),
+                                    "name": val.get("name")
+                                }
+                                if val.get("calculatedDisplayType"):
+                                    val_info["calculated_display_type"] = val["calculatedDisplayType"]
+                                config["values"].append(val_info)
+
+                            # Parse filter specs
+                            for fs in pivot.get("filterSpecs", []):
+                                filter_info = {
+                                    "column": fs.get("columnOffsetIndex", 0),
+                                    "criteria": fs.get("filterCriteria", {})
+                                }
+                                config["filter_specs"].append(filter_info)
+
+                            return {
+                                "success": True,
+                                "pivot_table": config,
+                                "message": f"Retrieved pivot table configuration at {anchor_cell}"
+                            }
+
+        return {"error": f"No pivot table found at {anchor_cell}"}
+
+    return _run_async(_get_pivot())
 
 
 # =============================================================================
