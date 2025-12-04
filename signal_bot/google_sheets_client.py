@@ -2458,3 +2458,964 @@ def alternating_colors_sync(
         }
 
     return _run_async(_band())
+
+
+# =============================================================================
+# BATCH 5: Cell Enhancements
+# =============================================================================
+
+def add_note_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    cell: str,
+    note: str
+) -> dict:
+    """
+    Add a note/comment to a specific cell.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        cell: Cell in A1 notation (e.g., "B2")
+        note: The note text to add (empty string to clear)
+    """
+
+    async def _add_note():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        # Get spreadsheet metadata for sheetId
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        sheet_id = metadata["sheets"][0]["sheet_id"]
+
+        # Parse cell notation (e.g., "B2" -> column 1, row 1)
+        try:
+            col_str = ''.join(c for c in cell if c.isalpha())
+            row_str = ''.join(c for c in cell if c.isdigit())
+            col_idx, _ = parse_column_range(col_str)
+            row_idx = int(row_str) - 1 if row_str else 0
+        except Exception as e:
+            return {"error": f"Invalid cell '{cell}': {e}"}
+
+        request = {
+            "updateCells": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": row_idx,
+                    "endRowIndex": row_idx + 1,
+                    "startColumnIndex": col_idx,
+                    "endColumnIndex": col_idx + 1
+                },
+                "rows": [{
+                    "values": [{
+                        "note": note
+                    }]
+                }],
+                "fields": "note"
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        action = "Added note to" if note else "Cleared note from"
+        return {
+            "success": True,
+            "cell": cell,
+            "note": note,
+            "message": f"{action} cell {cell}"
+        }
+
+    return _run_async(_add_note())
+
+
+def set_borders_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    range_notation: str,
+    border_style: str = "solid",
+    color: str = "black",
+    sides: str = "all"
+) -> dict:
+    """
+    Add borders around a range of cells.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        range_notation: Range in A1 notation (e.g., "A1:D10")
+        border_style: Style - "solid", "dashed", "dotted", "double", "thick", "none"
+        color: Color - "black", "gray", "red", "blue", "green"
+        sides: Which sides - "all", "outer", "inner", "top", "bottom", "left", "right"
+    """
+
+    # Border style mapping
+    STYLES = {
+        "solid": "SOLID",
+        "dashed": "DASHED",
+        "dotted": "DOTTED",
+        "double": "DOUBLE",
+        "thick": "SOLID_THICK",
+        "medium": "SOLID_MEDIUM",
+        "none": "NONE"
+    }
+
+    # Color mapping
+    COLORS = {
+        "black": {"red": 0, "green": 0, "blue": 0},
+        "gray": {"red": 0.5, "green": 0.5, "blue": 0.5},
+        "lightgray": {"red": 0.8, "green": 0.8, "blue": 0.8},
+        "red": {"red": 0.8, "green": 0.2, "blue": 0.2},
+        "blue": {"red": 0.2, "green": 0.4, "blue": 0.8},
+        "green": {"red": 0.2, "green": 0.6, "blue": 0.2}
+    }
+
+    async def _set_borders():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        # Get spreadsheet metadata for sheetId
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        sheet_id = metadata["sheets"][0]["sheet_id"]
+
+        # Parse range notation
+        try:
+            if ':' in range_notation:
+                start_cell, end_cell = range_notation.split(':')
+            else:
+                start_cell = end_cell = range_notation
+
+            start_col_str = ''.join(c for c in start_cell if c.isalpha())
+            start_row_str = ''.join(c for c in start_cell if c.isdigit())
+            start_col, _ = parse_column_range(start_col_str)
+            start_row = int(start_row_str) - 1 if start_row_str else 0
+
+            end_col_str = ''.join(c for c in end_cell if c.isalpha())
+            end_row_str = ''.join(c for c in end_cell if c.isdigit())
+            end_col, _ = parse_column_range(end_col_str)
+            end_col += 1
+            end_row = int(end_row_str) if end_row_str else start_row + 1
+
+        except Exception as e:
+            return {"error": f"Invalid range '{range_notation}': {e}"}
+
+        style = STYLES.get(border_style.lower(), "SOLID")
+        color_rgb = COLORS.get(color.lower(), COLORS["black"])
+
+        border_def = {
+            "style": style,
+            "colorStyle": {"rgbColor": color_rgb}
+        }
+
+        # Build border configuration based on sides
+        borders = {}
+        sides_lower = sides.lower()
+
+        if sides_lower in ["all", "outer", "top"]:
+            borders["top"] = border_def
+        if sides_lower in ["all", "outer", "bottom"]:
+            borders["bottom"] = border_def
+        if sides_lower in ["all", "outer", "left"]:
+            borders["left"] = border_def
+        if sides_lower in ["all", "outer", "right"]:
+            borders["right"] = border_def
+        if sides_lower in ["all", "inner"]:
+            borders["innerHorizontal"] = border_def
+            borders["innerVertical"] = border_def
+
+        request = {
+            "updateBorders": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": start_row,
+                    "endRowIndex": end_row,
+                    "startColumnIndex": start_col,
+                    "endColumnIndex": end_col
+                },
+                **borders
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        return {
+            "success": True,
+            "range": range_notation,
+            "border_style": border_style,
+            "color": color,
+            "sides": sides,
+            "message": f"Added {border_style} {color} borders to {range_notation}"
+        }
+
+    return _run_async(_set_borders())
+
+
+def set_alignment_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    range_notation: str,
+    horizontal: str = None,
+    vertical: str = None,
+    wrap: str = None
+) -> dict:
+    """
+    Set text alignment and wrapping for a range of cells.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        range_notation: Range in A1 notation (e.g., "A1:D10")
+        horizontal: Horizontal alignment - "left", "center", "right"
+        vertical: Vertical alignment - "top", "middle", "bottom"
+        wrap: Text wrap strategy - "overflow", "clip", "wrap"
+    """
+
+    # Alignment mappings
+    HORIZONTAL = {
+        "left": "LEFT",
+        "center": "CENTER",
+        "right": "RIGHT"
+    }
+
+    VERTICAL = {
+        "top": "TOP",
+        "middle": "MIDDLE",
+        "bottom": "BOTTOM"
+    }
+
+    WRAP = {
+        "overflow": "OVERFLOW_CELL",
+        "clip": "CLIP",
+        "wrap": "WRAP"
+    }
+
+    async def _set_alignment():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        if not horizontal and not vertical and not wrap:
+            return {"error": "At least one of horizontal, vertical, or wrap must be specified"}
+
+        # Get spreadsheet metadata for sheetId
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        sheet_id = metadata["sheets"][0]["sheet_id"]
+
+        # Parse range notation
+        try:
+            if ':' in range_notation:
+                start_cell, end_cell = range_notation.split(':')
+            else:
+                start_cell = end_cell = range_notation
+
+            start_col_str = ''.join(c for c in start_cell if c.isalpha())
+            start_row_str = ''.join(c for c in start_cell if c.isdigit())
+            start_col, _ = parse_column_range(start_col_str)
+            start_row = int(start_row_str) - 1 if start_row_str else 0
+
+            end_col_str = ''.join(c for c in end_cell if c.isalpha())
+            end_row_str = ''.join(c for c in end_cell if c.isdigit())
+            end_col, _ = parse_column_range(end_col_str)
+            end_col += 1
+            end_row = int(end_row_str) if end_row_str else start_row + 1
+
+        except Exception as e:
+            return {"error": f"Invalid range '{range_notation}': {e}"}
+
+        # Build cell format
+        cell_format = {}
+        fields = []
+
+        if horizontal:
+            h_align = HORIZONTAL.get(horizontal.lower())
+            if not h_align:
+                return {"error": f"Invalid horizontal alignment '{horizontal}'. Use: left, center, right"}
+            cell_format["horizontalAlignment"] = h_align
+            fields.append("userEnteredFormat.horizontalAlignment")
+
+        if vertical:
+            v_align = VERTICAL.get(vertical.lower())
+            if not v_align:
+                return {"error": f"Invalid vertical alignment '{vertical}'. Use: top, middle, bottom"}
+            cell_format["verticalAlignment"] = v_align
+            fields.append("userEnteredFormat.verticalAlignment")
+
+        if wrap:
+            wrap_strategy = WRAP.get(wrap.lower())
+            if not wrap_strategy:
+                return {"error": f"Invalid wrap strategy '{wrap}'. Use: overflow, clip, wrap"}
+            cell_format["wrapStrategy"] = wrap_strategy
+            fields.append("userEnteredFormat.wrapStrategy")
+
+        request = {
+            "repeatCell": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": start_row,
+                    "endRowIndex": end_row,
+                    "startColumnIndex": start_col,
+                    "endColumnIndex": end_col
+                },
+                "cell": {
+                    "userEnteredFormat": cell_format
+                },
+                "fields": ",".join(fields)
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        settings = []
+        if horizontal:
+            settings.append(f"horizontal={horizontal}")
+        if vertical:
+            settings.append(f"vertical={vertical}")
+        if wrap:
+            settings.append(f"wrap={wrap}")
+
+        return {
+            "success": True,
+            "range": range_notation,
+            "horizontal": horizontal,
+            "vertical": vertical,
+            "wrap": wrap,
+            "message": f"Set alignment ({', '.join(settings)}) on {range_notation}"
+        }
+
+    return _run_async(_set_alignment())
+
+
+# =============================================================================
+# BATCH 6: Charts
+# =============================================================================
+
+def create_chart_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    data_range: str,
+    chart_type: str = "column",
+    title: str = "",
+    anchor_cell: str = "F1",
+    legend_position: str = "bottom"
+) -> dict:
+    """
+    Create an embedded chart from spreadsheet data.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        data_range: Data range in A1 notation (e.g., "A1:B10")
+        chart_type: Type of chart - "bar", "line", "column", "pie", "area"
+        title: Chart title (optional)
+        anchor_cell: Cell where chart top-left corner is placed (e.g., "F1")
+        legend_position: Legend position - "bottom", "top", "left", "right", "none"
+    """
+
+    # Chart type mapping
+    CHART_TYPES = {
+        "bar": "BAR",
+        "line": "LINE",
+        "column": "COLUMN",
+        "pie": "PIE",
+        "area": "AREA",
+        "scatter": "SCATTER"
+    }
+
+    # Legend position mapping
+    LEGEND_POSITIONS = {
+        "bottom": "BOTTOM_LEGEND",
+        "top": "TOP_LEGEND",
+        "left": "LEFT_LEGEND",
+        "right": "RIGHT_LEGEND",
+        "none": "NO_LEGEND"
+    }
+
+    async def _create_chart():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        # Get spreadsheet metadata for sheetId
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        sheet_id = metadata["sheets"][0]["sheet_id"]
+
+        # Parse data range
+        try:
+            if ':' in data_range:
+                start_cell, end_cell = data_range.split(':')
+            else:
+                return {"error": "Data range must include both start and end (e.g., 'A1:B10')"}
+
+            start_col_str = ''.join(c for c in start_cell if c.isalpha())
+            start_row_str = ''.join(c for c in start_cell if c.isdigit())
+            start_col, _ = parse_column_range(start_col_str)
+            start_row = int(start_row_str) - 1 if start_row_str else 0
+
+            end_col_str = ''.join(c for c in end_cell if c.isalpha())
+            end_row_str = ''.join(c for c in end_cell if c.isdigit())
+            end_col, _ = parse_column_range(end_col_str)
+            end_col += 1
+            end_row = int(end_row_str) if end_row_str else start_row + 1
+
+        except Exception as e:
+            return {"error": f"Invalid data_range '{data_range}': {e}"}
+
+        # Parse anchor cell for chart position
+        try:
+            anchor_col_str = ''.join(c for c in anchor_cell if c.isalpha())
+            anchor_row_str = ''.join(c for c in anchor_cell if c.isdigit())
+            anchor_col, _ = parse_column_range(anchor_col_str)
+            anchor_row = int(anchor_row_str) - 1 if anchor_row_str else 0
+        except Exception as e:
+            return {"error": f"Invalid anchor_cell '{anchor_cell}': {e}"}
+
+        chart_type_api = CHART_TYPES.get(chart_type.lower(), "COLUMN")
+        legend_api = LEGEND_POSITIONS.get(legend_position.lower(), "BOTTOM_LEGEND")
+
+        # Build chart spec based on chart type
+        if chart_type.lower() == "pie":
+            # Pie charts have different structure
+            chart_spec = {
+                "title": title,
+                "pieChart": {
+                    "legendPosition": legend_api.replace("_LEGEND", "") if legend_api != "NO_LEGEND" else "NO_LEGEND",
+                    "domain": {
+                        "sourceRange": {
+                            "sources": [{
+                                "sheetId": sheet_id,
+                                "startRowIndex": start_row,
+                                "endRowIndex": end_row,
+                                "startColumnIndex": start_col,
+                                "endColumnIndex": start_col + 1
+                            }]
+                        }
+                    },
+                    "series": {
+                        "sourceRange": {
+                            "sources": [{
+                                "sheetId": sheet_id,
+                                "startRowIndex": start_row,
+                                "endRowIndex": end_row,
+                                "startColumnIndex": start_col + 1,
+                                "endColumnIndex": end_col
+                            }]
+                        }
+                    }
+                }
+            }
+        else:
+            # Basic charts (bar, line, column, area, scatter)
+            chart_spec = {
+                "title": title,
+                "basicChart": {
+                    "chartType": chart_type_api,
+                    "legendPosition": legend_api,
+                    "domains": [{
+                        "domain": {
+                            "sourceRange": {
+                                "sources": [{
+                                    "sheetId": sheet_id,
+                                    "startRowIndex": start_row,
+                                    "endRowIndex": end_row,
+                                    "startColumnIndex": start_col,
+                                    "endColumnIndex": start_col + 1
+                                }]
+                            }
+                        }
+                    }],
+                    "series": [{
+                        "series": {
+                            "sourceRange": {
+                                "sources": [{
+                                    "sheetId": sheet_id,
+                                    "startRowIndex": start_row,
+                                    "endRowIndex": end_row,
+                                    "startColumnIndex": col_idx,
+                                    "endColumnIndex": col_idx + 1
+                                }]
+                            }
+                        },
+                        "targetAxis": "LEFT_AXIS"
+                    } for col_idx in range(start_col + 1, end_col)],
+                    "headerCount": 1
+                }
+            }
+
+        request = {
+            "addChart": {
+                "chart": {
+                    "spec": chart_spec,
+                    "position": {
+                        "overlayPosition": {
+                            "anchorCell": {
+                                "sheetId": sheet_id,
+                                "rowIndex": anchor_row,
+                                "columnIndex": anchor_col
+                            },
+                            "widthPixels": 600,
+                            "heightPixels": 400
+                        }
+                    }
+                }
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        # Extract chart ID from response
+        chart_id = None
+        if "replies" in result and result["replies"]:
+            add_chart_reply = result["replies"][0].get("addChart", {})
+            chart_id = add_chart_reply.get("chart", {}).get("chartId")
+
+        return {
+            "success": True,
+            "chart_id": chart_id,
+            "chart_type": chart_type,
+            "data_range": data_range,
+            "title": title,
+            "message": f"Created {chart_type} chart{' titled ' + repr(title) if title else ''} at {anchor_cell}"
+        }
+
+    return _run_async(_create_chart())
+
+
+def delete_chart_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    chart_id: int
+) -> dict:
+    """
+    Delete an embedded chart from a spreadsheet.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        chart_id: The ID of the chart to delete
+    """
+
+    async def _delete_chart():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        request = {
+            "deleteEmbeddedObject": {
+                "objectId": chart_id
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        return {
+            "success": True,
+            "chart_id": chart_id,
+            "message": f"Deleted chart {chart_id}"
+        }
+
+    return _run_async(_delete_chart())
+
+
+def list_charts_sync(
+    bot_data: dict,
+    spreadsheet_id: str
+) -> dict:
+    """
+    List all charts in a spreadsheet.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+    """
+
+    async def _list_charts():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        # Get full spreadsheet metadata including charts
+        url = f"{SHEETS_API_BASE}/{spreadsheet_id}?fields=sheets(charts(chartId,spec(title),position))"
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+        }
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(url, headers=headers)
+            if response.status_code != 200:
+                return {"error": f"Failed to list charts: {response.text}"}
+            data = response.json()
+
+        charts = []
+        for sheet in data.get("sheets", []):
+            for chart in sheet.get("charts", []):
+                chart_info = {
+                    "chart_id": chart.get("chartId"),
+                    "title": chart.get("spec", {}).get("title", "(untitled)")
+                }
+                charts.append(chart_info)
+
+        return {
+            "success": True,
+            "charts": charts,
+            "count": len(charts),
+            "message": f"Found {len(charts)} chart(s)" if charts else "No charts found"
+        }
+
+    return _run_async(_list_charts())
+
+
+def update_chart_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    chart_id: int,
+    title: str = None,
+    chart_type: str = None
+) -> dict:
+    """
+    Update an existing chart's properties.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        chart_id: The ID of the chart to update
+        title: New title for the chart (optional)
+        chart_type: New chart type (optional) - "bar", "line", "column", "area"
+    """
+
+    CHART_TYPES = {
+        "bar": "BAR",
+        "line": "LINE",
+        "column": "COLUMN",
+        "area": "AREA",
+        "scatter": "SCATTER"
+    }
+
+    async def _update_chart():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        if not title and not chart_type:
+            return {"error": "At least one of title or chart_type must be specified"}
+
+        # Build the update spec
+        spec_updates = {}
+        fields = []
+
+        if title is not None:
+            spec_updates["title"] = title
+            fields.append("title")
+
+        if chart_type:
+            chart_type_api = CHART_TYPES.get(chart_type.lower())
+            if not chart_type_api:
+                return {"error": f"Invalid chart_type '{chart_type}'. Use: bar, line, column, area, scatter"}
+            spec_updates["basicChart"] = {"chartType": chart_type_api}
+            fields.append("basicChart.chartType")
+
+        request = {
+            "updateChartSpec": {
+                "chartId": chart_id,
+                "spec": spec_updates
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        updates = []
+        if title is not None:
+            updates.append(f"title='{title}'")
+        if chart_type:
+            updates.append(f"type={chart_type}")
+
+        return {
+            "success": True,
+            "chart_id": chart_id,
+            "message": f"Updated chart {chart_id}: {', '.join(updates)}"
+        }
+
+    return _run_async(_update_chart())
+
+
+# =============================================================================
+# BATCH 7: Pivot Tables
+# =============================================================================
+
+def create_pivot_table_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    source_range: str,
+    row_group_column: int,
+    value_column: int,
+    summarize_function: str = "SUM",
+    anchor_cell: str = "F1",
+    column_group_column: int = None
+) -> dict:
+    """
+    Create a pivot table from spreadsheet data.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        source_range: Source data range in A1 notation (e.g., "A1:D100")
+        row_group_column: Column index (0-based) to group rows by (e.g., 0 for column A)
+        value_column: Column index (0-based) containing values to aggregate
+        summarize_function: How to aggregate - "SUM", "COUNT", "AVERAGE", "MIN", "MAX", "COUNTA"
+        anchor_cell: Cell where pivot table top-left corner is placed (e.g., "F1")
+        column_group_column: Optional column index (0-based) to group columns by
+    """
+
+    # Summarize function mapping
+    SUMMARIZE_FUNCTIONS = {
+        "SUM": "SUM",
+        "COUNT": "COUNT",
+        "COUNTA": "COUNTA",
+        "COUNTUNIQUE": "COUNTUNIQUE",
+        "AVERAGE": "AVERAGE",
+        "MAX": "MAX",
+        "MIN": "MIN",
+        "MEDIAN": "MEDIAN",
+        "PRODUCT": "PRODUCT",
+        "STDEV": "STDEV",
+        "VAR": "VAR"
+    }
+
+    async def _create_pivot():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        # Get spreadsheet metadata for sheetId
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        sheet_id = metadata["sheets"][0]["sheet_id"]
+
+        # Parse source range
+        try:
+            if ':' not in source_range:
+                return {"error": "Source range must include both start and end (e.g., 'A1:D100')"}
+
+            start_cell, end_cell = source_range.split(':')
+
+            start_col_str = ''.join(c for c in start_cell if c.isalpha())
+            start_row_str = ''.join(c for c in start_cell if c.isdigit())
+            start_col, _ = parse_column_range(start_col_str)
+            start_row = int(start_row_str) - 1 if start_row_str else 0
+
+            end_col_str = ''.join(c for c in end_cell if c.isalpha())
+            end_row_str = ''.join(c for c in end_cell if c.isdigit())
+            end_col, _ = parse_column_range(end_col_str)
+            end_col += 1
+            end_row = int(end_row_str) if end_row_str else start_row + 1
+
+        except Exception as e:
+            return {"error": f"Invalid source_range '{source_range}': {e}"}
+
+        # Parse anchor cell
+        try:
+            anchor_col_str = ''.join(c for c in anchor_cell if c.isalpha())
+            anchor_row_str = ''.join(c for c in anchor_cell if c.isdigit())
+            anchor_col, _ = parse_column_range(anchor_col_str)
+            anchor_row = int(anchor_row_str) - 1 if anchor_row_str else 0
+        except Exception as e:
+            return {"error": f"Invalid anchor_cell '{anchor_cell}': {e}"}
+
+        # Validate summarize function
+        func = SUMMARIZE_FUNCTIONS.get(summarize_function.upper())
+        if not func:
+            return {"error": f"Invalid summarize_function '{summarize_function}'. Use: SUM, COUNT, AVERAGE, MIN, MAX, COUNTA, COUNTUNIQUE, MEDIAN"}
+
+        # Build pivot table definition
+        pivot_table = {
+            "source": {
+                "sheetId": sheet_id,
+                "startRowIndex": start_row,
+                "endRowIndex": end_row,
+                "startColumnIndex": start_col,
+                "endColumnIndex": end_col
+            },
+            "rows": [{
+                "sourceColumnOffset": row_group_column,
+                "showTotals": True,
+                "sortOrder": "ASCENDING"
+            }],
+            "values": [{
+                "sourceColumnOffset": value_column,
+                "summarizeFunction": func
+            }],
+            "valueLayout": "HORIZONTAL"
+        }
+
+        # Add column grouping if specified
+        if column_group_column is not None:
+            pivot_table["columns"] = [{
+                "sourceColumnOffset": column_group_column,
+                "showTotals": True,
+                "sortOrder": "ASCENDING"
+            }]
+
+        request = {
+            "updateCells": {
+                "rows": [{
+                    "values": [{
+                        "pivotTable": pivot_table
+                    }]
+                }],
+                "start": {
+                    "sheetId": sheet_id,
+                    "rowIndex": anchor_row,
+                    "columnIndex": anchor_col
+                },
+                "fields": "pivotTable"
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        return {
+            "success": True,
+            "source_range": source_range,
+            "anchor_cell": anchor_cell,
+            "row_group_column": row_group_column,
+            "value_column": value_column,
+            "summarize_function": summarize_function,
+            "message": f"Created pivot table at {anchor_cell} from {source_range} (grouping by column {row_group_column}, {summarize_function} of column {value_column})"
+        }
+
+    return _run_async(_create_pivot())
+
+
+def delete_pivot_table_sync(
+    bot_data: dict,
+    spreadsheet_id: str,
+    anchor_cell: str
+) -> dict:
+    """
+    Delete a pivot table by clearing the cell that contains it.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+        anchor_cell: Cell where pivot table is anchored (e.g., "F1")
+    """
+
+    async def _delete_pivot():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        # Get spreadsheet metadata for sheetId
+        metadata = await get_spreadsheet_metadata(access_token, spreadsheet_id)
+        if "error" in metadata:
+            return metadata
+
+        sheet_id = metadata["sheets"][0]["sheet_id"]
+
+        # Parse anchor cell
+        try:
+            anchor_col_str = ''.join(c for c in anchor_cell if c.isalpha())
+            anchor_row_str = ''.join(c for c in anchor_cell if c.isdigit())
+            anchor_col, _ = parse_column_range(anchor_col_str)
+            anchor_row = int(anchor_row_str) - 1 if anchor_row_str else 0
+        except Exception as e:
+            return {"error": f"Invalid anchor_cell '{anchor_cell}': {e}"}
+
+        # Clear the pivot table by updating the cell with empty content
+        request = {
+            "updateCells": {
+                "rows": [{
+                    "values": [{}]
+                }],
+                "start": {
+                    "sheetId": sheet_id,
+                    "rowIndex": anchor_row,
+                    "columnIndex": anchor_col
+                },
+                "fields": "pivotTable"
+            }
+        }
+
+        result = await batch_update(access_token, spreadsheet_id, [request])
+
+        if "error" in result:
+            return result
+
+        return {
+            "success": True,
+            "anchor_cell": anchor_cell,
+            "message": f"Deleted pivot table at {anchor_cell}"
+        }
+
+    return _run_async(_delete_pivot())
+
+
+def refresh_pivot_table_sync(
+    bot_data: dict,
+    spreadsheet_id: str
+) -> dict:
+    """
+    Refresh all pivot tables in a spreadsheet to reflect source data changes.
+    Note: In Google Sheets, pivot tables auto-refresh when source data changes,
+    but this can be used to force a refresh via re-reading the spreadsheet.
+
+    Args:
+        bot_data: Bot configuration with Google credentials
+        spreadsheet_id: The spreadsheet ID
+    """
+
+    async def _refresh():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin UI."}
+
+        # Simply fetching the spreadsheet forces recalculation
+        url = f"{SHEETS_API_BASE}/{spreadsheet_id}?fields=spreadsheetId"
+        headers = {"Authorization": f"Bearer {access_token}"}
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(url, headers=headers)
+            if response.status_code != 200:
+                return {"error": f"Failed to refresh: {response.text}"}
+
+        return {
+            "success": True,
+            "message": "Pivot tables refreshed (Google Sheets auto-refreshes when source data changes)"
+        }
+
+    return _run_async(_refresh())

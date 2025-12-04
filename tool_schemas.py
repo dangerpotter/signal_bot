@@ -1165,6 +1165,285 @@ SHEETS_TOOLS = [
                 "additionalProperties": False
             }
         }
+    },
+    # Batch 5: Cell Enhancements
+    {
+        "type": "function",
+        "function": {
+            "name": "add_note",
+            "description": "Add a note (comment) to a specific cell. Notes appear as small triangles in the corner and show on hover. Use for adding context, explanations, or reminders to data.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "cell": {
+                        "type": "string",
+                        "description": "Cell in A1 notation (e.g., 'B2', 'D5')"
+                    },
+                    "note": {
+                        "type": "string",
+                        "description": "The note text to add. Use empty string to clear an existing note."
+                    }
+                },
+                "required": ["spreadsheet_id", "cell", "note"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_borders",
+            "description": "Add borders around cells to create visual structure. Use for tables, separating sections, or highlighting important data.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "range": {
+                        "type": "string",
+                        "description": "Range in A1 notation (e.g., 'A1:D10')"
+                    },
+                    "border_style": {
+                        "type": "string",
+                        "enum": ["solid", "dashed", "dotted", "double", "thick", "medium", "none"],
+                        "description": "Style of the border line. Default: solid"
+                    },
+                    "color": {
+                        "type": "string",
+                        "enum": ["black", "gray", "lightgray", "red", "blue", "green"],
+                        "description": "Border color. Default: black"
+                    },
+                    "sides": {
+                        "type": "string",
+                        "enum": ["all", "outer", "inner", "top", "bottom", "left", "right"],
+                        "description": "Which sides to add borders: 'all' (every cell edge), 'outer' (just the perimeter), 'inner' (grid lines only), or specific sides. Default: all"
+                    }
+                },
+                "required": ["spreadsheet_id", "range"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_alignment",
+            "description": "Set text alignment and wrapping for cells. Use for centering headers, right-aligning numbers, or wrapping long text.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "range": {
+                        "type": "string",
+                        "description": "Range in A1 notation (e.g., 'A1:D10')"
+                    },
+                    "horizontal": {
+                        "type": "string",
+                        "enum": ["left", "center", "right"],
+                        "description": "Horizontal text alignment"
+                    },
+                    "vertical": {
+                        "type": "string",
+                        "enum": ["top", "middle", "bottom"],
+                        "description": "Vertical text alignment"
+                    },
+                    "wrap": {
+                        "type": "string",
+                        "enum": ["overflow", "clip", "wrap"],
+                        "description": "Text wrapping: 'overflow' (spill into next cell), 'clip' (cut off), 'wrap' (wrap to multiple lines)"
+                    }
+                },
+                "required": ["spreadsheet_id", "range"],
+                "additionalProperties": False
+            }
+        }
+    },
+    # Batch 6: Charts
+    {
+        "type": "function",
+        "function": {
+            "name": "create_chart",
+            "description": "Create an embedded chart from spreadsheet data. Use to visualize data as bar charts, line graphs, pie charts, etc. The first column becomes labels (X-axis), other columns become data series.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "data_range": {
+                        "type": "string",
+                        "description": "Data range in A1 notation (e.g., 'A1:C10'). First column = labels, other columns = values."
+                    },
+                    "chart_type": {
+                        "type": "string",
+                        "enum": ["bar", "line", "column", "pie", "area", "scatter"],
+                        "description": "Type of chart. Default: column"
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Chart title (optional)"
+                    },
+                    "anchor_cell": {
+                        "type": "string",
+                        "description": "Cell where chart top-left corner is placed (e.g., 'F1'). Default: F1"
+                    },
+                    "legend_position": {
+                        "type": "string",
+                        "enum": ["bottom", "top", "left", "right", "none"],
+                        "description": "Where to show the legend. Default: bottom"
+                    }
+                },
+                "required": ["spreadsheet_id", "data_range"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_charts",
+            "description": "List all charts in a spreadsheet. Returns chart IDs and titles, useful before updating or deleting charts.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    }
+                },
+                "required": ["spreadsheet_id"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_chart",
+            "description": "Update an existing chart's properties like title or chart type. Use list_charts first to get the chart_id.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "chart_id": {
+                        "type": "integer",
+                        "description": "The chart ID (get from list_charts)"
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "New title for the chart"
+                    },
+                    "chart_type": {
+                        "type": "string",
+                        "enum": ["bar", "line", "column", "area", "scatter"],
+                        "description": "New chart type (cannot change to/from pie)"
+                    }
+                },
+                "required": ["spreadsheet_id", "chart_id"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_chart",
+            "description": "Delete an embedded chart from a spreadsheet. Use list_charts first to get the chart_id.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "chart_id": {
+                        "type": "integer",
+                        "description": "The chart ID to delete (get from list_charts)"
+                    }
+                },
+                "required": ["spreadsheet_id", "chart_id"],
+                "additionalProperties": False
+            }
+        }
+    },
+    # Batch 7: Pivot Tables
+    {
+        "type": "function",
+        "function": {
+            "name": "create_pivot_table",
+            "description": "Create a pivot table to summarize data. Groups rows by one column and aggregates values from another. Example: group expenses by Category (column 0) and SUM amounts (column 2). Column indexes are 0-based (A=0, B=1, C=2, etc.).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "source_range": {
+                        "type": "string",
+                        "description": "Source data range in A1 notation (e.g., 'A1:D100'). Should include headers."
+                    },
+                    "row_group_column": {
+                        "type": "integer",
+                        "description": "Column index (0-based) to group rows by. E.g., 0 for column A, 1 for B."
+                    },
+                    "value_column": {
+                        "type": "integer",
+                        "description": "Column index (0-based) containing values to aggregate. E.g., 2 for column C."
+                    },
+                    "summarize_function": {
+                        "type": "string",
+                        "enum": ["SUM", "COUNT", "AVERAGE", "MIN", "MAX", "COUNTA", "COUNTUNIQUE", "MEDIAN"],
+                        "description": "How to aggregate values. Default: SUM"
+                    },
+                    "anchor_cell": {
+                        "type": "string",
+                        "description": "Cell where pivot table is placed (e.g., 'F1'). Default: F1"
+                    },
+                    "column_group_column": {
+                        "type": "integer",
+                        "description": "Optional: column index to create column groups (for cross-tabulation)"
+                    }
+                },
+                "required": ["spreadsheet_id", "source_range", "row_group_column", "value_column"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_pivot_table",
+            "description": "Delete a pivot table from a spreadsheet. Specify the anchor cell where the pivot table starts.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "anchor_cell": {
+                        "type": "string",
+                        "description": "Cell where pivot table is anchored (e.g., 'F1')"
+                    }
+                },
+                "required": ["spreadsheet_id", "anchor_cell"],
+                "additionalProperties": False
+            }
+        }
     }
 ]
 

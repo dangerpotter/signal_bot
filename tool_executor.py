@@ -227,6 +227,24 @@ class SignalToolExecutor:
             return self._execute_data_validation(arguments)
         if function_name == "alternating_colors":
             return self._execute_alternating_colors(arguments)
+        if function_name == "add_note":
+            return self._execute_add_note(arguments)
+        if function_name == "set_borders":
+            return self._execute_set_borders(arguments)
+        if function_name == "set_alignment":
+            return self._execute_set_alignment(arguments)
+        if function_name == "create_chart":
+            return self._execute_create_chart(arguments)
+        if function_name == "list_charts":
+            return self._execute_list_charts(arguments)
+        if function_name == "update_chart":
+            return self._execute_update_chart(arguments)
+        if function_name == "delete_chart":
+            return self._execute_delete_chart(arguments)
+        if function_name == "create_pivot_table":
+            return self._execute_create_pivot_table(arguments)
+        if function_name == "delete_pivot_table":
+            return self._execute_delete_pivot_table(arguments)
 
         # Member memory tools
         if function_name == "save_member_memory":
@@ -1710,6 +1728,365 @@ class SignalToolExecutor:
         except Exception as e:
             logger.error(f"Error adding alternating colors: {e}")
             return {"success": False, "message": f"Error adding alternating colors: {str(e)}"}
+
+    # Batch 5: Cell Enhancements tool execution methods
+
+    def _execute_add_note(self, arguments: dict) -> dict:
+        """Execute the add_note tool call."""
+        if not self.bot_data.get('sheets_enabled'):
+            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        cell = arguments.get("cell", "").strip()
+        note = arguments.get("note", "")
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not cell:
+            return {"success": False, "message": "cell is required (e.g., 'B2')"}
+
+        try:
+            from signal_bot.google_sheets_client import add_note_sync
+
+            result = add_note_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                cell=cell,
+                note=note
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Added note to cell {cell}")
+            }
+
+        except Exception as e:
+            logger.error(f"Error adding note: {e}")
+            return {"success": False, "message": f"Error adding note: {str(e)}"}
+
+    def _execute_set_borders(self, arguments: dict) -> dict:
+        """Execute the set_borders tool call."""
+        if not self.bot_data.get('sheets_enabled'):
+            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        range_notation = arguments.get("range", "").strip()
+        border_style = arguments.get("border_style", "solid")
+        color = arguments.get("color", "black")
+        sides = arguments.get("sides", "all")
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not range_notation:
+            return {"success": False, "message": "range is required (e.g., 'A1:D10')"}
+
+        try:
+            from signal_bot.google_sheets_client import set_borders_sync
+
+            result = set_borders_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                range_notation=range_notation,
+                border_style=border_style,
+                color=color,
+                sides=sides
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Added borders to {range_notation}")
+            }
+
+        except Exception as e:
+            logger.error(f"Error setting borders: {e}")
+            return {"success": False, "message": f"Error setting borders: {str(e)}"}
+
+    def _execute_set_alignment(self, arguments: dict) -> dict:
+        """Execute the set_alignment tool call."""
+        if not self.bot_data.get('sheets_enabled'):
+            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        range_notation = arguments.get("range", "").strip()
+        horizontal = arguments.get("horizontal")
+        vertical = arguments.get("vertical")
+        wrap = arguments.get("wrap")
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not range_notation:
+            return {"success": False, "message": "range is required (e.g., 'A1:D10')"}
+        if not horizontal and not vertical and not wrap:
+            return {"success": False, "message": "At least one of horizontal, vertical, or wrap must be specified"}
+
+        try:
+            from signal_bot.google_sheets_client import set_alignment_sync
+
+            result = set_alignment_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                range_notation=range_notation,
+                horizontal=horizontal,
+                vertical=vertical,
+                wrap=wrap
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Set alignment on {range_notation}")
+            }
+
+        except Exception as e:
+            logger.error(f"Error setting alignment: {e}")
+            return {"success": False, "message": f"Error setting alignment: {str(e)}"}
+
+    # Batch 6: Charts tool execution methods
+
+    def _execute_create_chart(self, arguments: dict) -> dict:
+        """Execute the create_chart tool call."""
+        if not self.bot_data.get('sheets_enabled'):
+            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        data_range = arguments.get("data_range", "").strip()
+        chart_type = arguments.get("chart_type", "column")
+        title = arguments.get("title", "")
+        anchor_cell = arguments.get("anchor_cell", "F1")
+        legend_position = arguments.get("legend_position", "bottom")
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not data_range:
+            return {"success": False, "message": "data_range is required (e.g., 'A1:C10')"}
+
+        try:
+            from signal_bot.google_sheets_client import create_chart_sync
+
+            result = create_chart_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                data_range=data_range,
+                chart_type=chart_type,
+                title=title,
+                anchor_cell=anchor_cell,
+                legend_position=legend_position
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Created {chart_type} chart")
+            }
+
+        except Exception as e:
+            logger.error(f"Error creating chart: {e}")
+            return {"success": False, "message": f"Error creating chart: {str(e)}"}
+
+    def _execute_list_charts(self, arguments: dict) -> dict:
+        """Execute the list_charts tool call."""
+        if not self.bot_data.get('sheets_enabled'):
+            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+
+        try:
+            from signal_bot.google_sheets_client import list_charts_sync
+
+            result = list_charts_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", "Listed charts")
+            }
+
+        except Exception as e:
+            logger.error(f"Error listing charts: {e}")
+            return {"success": False, "message": f"Error listing charts: {str(e)}"}
+
+    def _execute_update_chart(self, arguments: dict) -> dict:
+        """Execute the update_chart tool call."""
+        if not self.bot_data.get('sheets_enabled'):
+            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        chart_id = arguments.get("chart_id")
+        title = arguments.get("title")
+        chart_type = arguments.get("chart_type")
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if chart_id is None:
+            return {"success": False, "message": "chart_id is required (use list_charts to get IDs)"}
+
+        try:
+            from signal_bot.google_sheets_client import update_chart_sync
+
+            result = update_chart_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                chart_id=int(chart_id),
+                title=title,
+                chart_type=chart_type
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Updated chart {chart_id}")
+            }
+
+        except Exception as e:
+            logger.error(f"Error updating chart: {e}")
+            return {"success": False, "message": f"Error updating chart: {str(e)}"}
+
+    def _execute_delete_chart(self, arguments: dict) -> dict:
+        """Execute the delete_chart tool call."""
+        if not self.bot_data.get('sheets_enabled'):
+            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        chart_id = arguments.get("chart_id")
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if chart_id is None:
+            return {"success": False, "message": "chart_id is required (use list_charts to get IDs)"}
+
+        try:
+            from signal_bot.google_sheets_client import delete_chart_sync
+
+            result = delete_chart_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                chart_id=int(chart_id)
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Deleted chart {chart_id}")
+            }
+
+        except Exception as e:
+            logger.error(f"Error deleting chart: {e}")
+            return {"success": False, "message": f"Error deleting chart: {str(e)}"}
+
+    # Batch 7: Pivot Tables tool execution methods
+
+    def _execute_create_pivot_table(self, arguments: dict) -> dict:
+        """Execute the create_pivot_table tool call."""
+        if not self.bot_data.get('sheets_enabled'):
+            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        source_range = arguments.get("source_range", "").strip()
+        row_group_column = arguments.get("row_group_column")
+        value_column = arguments.get("value_column")
+        summarize_function = arguments.get("summarize_function", "SUM")
+        anchor_cell = arguments.get("anchor_cell", "F1")
+        column_group_column = arguments.get("column_group_column")
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not source_range:
+            return {"success": False, "message": "source_range is required (e.g., 'A1:D100')"}
+        if row_group_column is None:
+            return {"success": False, "message": "row_group_column is required (0-based column index to group by)"}
+        if value_column is None:
+            return {"success": False, "message": "value_column is required (0-based column index to aggregate)"}
+
+        try:
+            from signal_bot.google_sheets_client import create_pivot_table_sync
+
+            result = create_pivot_table_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                source_range=source_range,
+                row_group_column=int(row_group_column),
+                value_column=int(value_column),
+                summarize_function=summarize_function,
+                anchor_cell=anchor_cell,
+                column_group_column=int(column_group_column) if column_group_column is not None else None
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", "Created pivot table")
+            }
+
+        except Exception as e:
+            logger.error(f"Error creating pivot table: {e}")
+            return {"success": False, "message": f"Error creating pivot table: {str(e)}"}
+
+    def _execute_delete_pivot_table(self, arguments: dict) -> dict:
+        """Execute the delete_pivot_table tool call."""
+        if not self.bot_data.get('sheets_enabled'):
+            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
+        anchor_cell = arguments.get("anchor_cell", "").strip()
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not anchor_cell:
+            return {"success": False, "message": "anchor_cell is required (e.g., 'F1')"}
+
+        try:
+            from signal_bot.google_sheets_client import delete_pivot_table_sync
+
+            result = delete_pivot_table_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                anchor_cell=anchor_cell
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": result.get("message", f"Deleted pivot table at {anchor_cell}")
+            }
+
+        except Exception as e:
+            logger.error(f"Error deleting pivot table: {e}")
+            return {"success": False, "message": f"Error deleting pivot table: {str(e)}"}
 
     # Member memory tool execution methods
 
