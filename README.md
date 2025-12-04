@@ -158,7 +158,7 @@ Connect each bot to Google via OAuth for full spreadsheet management. Setup:
 |----------|-------|
 | **Core Operations** | `create_spreadsheet`, `list_spreadsheets`, `read_sheet`, `write_to_sheet`, `add_row_to_sheet`, `search_sheets`, `clear_range`, `delete_rows`, `delete_columns`, `insert_rows`, `insert_columns` |
 | **Sheet Management** | `add_sheet`, `delete_sheet`, `rename_sheet`, `freeze_rows`, `freeze_columns`, `hide_sheet`, `show_sheet`, `set_tab_color`, `get_sheet_properties` |
-| **Formatting** | `format_columns`, `conditional_format`, `data_validation`, `alternating_colors`, `set_borders`, `set_alignment`, `add_note`, `merge_cells`, `unmerge_cells` |
+| **Formatting** | `format_columns`, `conditional_format`, `data_validation`, `alternating_colors`, `set_borders`, `set_alignment`, `add_note`, `merge_cells`, `unmerge_cells`, `set_text_direction`, `set_text_rotation`, `set_cell_padding`, `set_rich_text` |
 | **Charts** | `create_chart` (bar, line, pie, area, scatter), `list_charts`, `update_chart`, `delete_chart` |
 | **Pivot Tables** | `create_pivot_table`, `delete_pivot_table` |
 | **Filters & Slicers** | `set_basic_filter`, `clear_basic_filter`, `create_filter_view`, `delete_filter_view`, `list_filter_views`, `create_slicer`, `update_slicer`, `delete_slicer`, `list_slicers` |
