@@ -14,7 +14,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from signal_bot.models import db, Bot, MessageLog, ActivityLog
 from signal_bot.memory_manager import MemoryManager, get_memory_manager
 from signal_bot.trigger_logic import should_bot_respond, get_response_delay
-from signal_bot.member_memory_scanner import format_member_memories_for_context
+from signal_bot.member_memory_scanner import (
+    format_member_memories_for_context,
+    set_flask_app as set_scanner_flask_app
+)
 from signal_bot.realtime_memory import (
     check_and_save_realtime_memory,
     format_memory_confirmation_instruction,
@@ -33,6 +36,8 @@ def set_flask_app(app: Flask):
     _flask_app = app
     # Also set for realtime memory module
     set_realtime_flask_app(app)
+    # Also set for member memory scanner module
+    set_scanner_flask_app(app)
 
 
 class MessageHandler:
@@ -283,7 +288,8 @@ class MessageHandler:
             group_id=group_id,
             current_speaker_name=sender_name,
             current_speaker_id=sender_id,
-            message_content=trigger_message
+            message_content=trigger_message,
+            member_memory_model=bot_data.get('member_memory_model')
         )
         if member_memories:
             logger.info(f"Injecting member memories for {sender_name}:\n{member_memories[:500]}...")
@@ -347,8 +353,10 @@ class MessageHandler:
             wikipedia_enabled = bot_data.get('wikipedia_enabled', False)
             # Sheets requires both enabled AND connected to Google
             sheets_enabled = bot_data.get('google_sheets_enabled', False) and bot_data.get('google_connected', False)
+            # Member memory tools
+            member_memory_tools_enabled = bot_data.get('member_memory_tools_enabled', False)
             # reaction_enabled already set above for context formatting
-            any_tools_enabled = image_enabled or weather_enabled or finance_enabled or time_enabled or wikipedia_enabled or reaction_enabled or sheets_enabled
+            any_tools_enabled = image_enabled or weather_enabled or finance_enabled or time_enabled or wikipedia_enabled or reaction_enabled or sheets_enabled or member_memory_tools_enabled
 
             if (OPENROUTER_TOOL_CALLING_ENABLED and
                 any_tools_enabled and
@@ -362,7 +370,8 @@ class MessageHandler:
                     time_enabled=time_enabled,
                     wikipedia_enabled=wikipedia_enabled,
                     reaction_enabled=reaction_enabled,
-                    sheets_enabled=sheets_enabled
+                    sheets_enabled=sheets_enabled,
+                    member_memory_enabled=member_memory_tools_enabled
                 )
                 signal_executor = SignalToolExecutor(
                     bot_data=bot_data,

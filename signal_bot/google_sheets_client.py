@@ -376,13 +376,26 @@ async def create_spreadsheet(
 
             data = response.json()
             spreadsheet_id = data.get("spreadsheetId")
-            # Escape underscores in spreadsheet_id to prevent markdown URL mangling
-            escaped_id = spreadsheet_id.replace('_', '\\_') if spreadsheet_id else spreadsheet_id
+
+            # Share the spreadsheet with "anyone with link" for easy access
+            try:
+                share_response = await client.post(
+                    f"https://www.googleapis.com/drive/v3/files/{spreadsheet_id}/permissions",
+                    headers=headers,
+                    json={
+                        "role": "writer",
+                        "type": "anyone"
+                    }
+                )
+                if share_response.status_code != 200:
+                    logger.warning(f"Failed to share spreadsheet: {share_response.text}")
+            except Exception as share_error:
+                logger.warning(f"Error sharing spreadsheet: {share_error}")
 
             return {
                 "spreadsheet_id": spreadsheet_id,
                 "title": title,
-                "url": f"https://docs.google.com/spreadsheets/d/{escaped_id}",
+                "url": f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}",
                 "sheets": [s["properties"]["title"] for s in data.get("sheets", [])],
             }
 

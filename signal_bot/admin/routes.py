@@ -114,6 +114,7 @@ def register_routes(app):
             bot.finance_enabled = request.form.get("finance_enabled") == "on"
             bot.time_enabled = request.form.get("time_enabled") == "on"
             bot.wikipedia_enabled = request.form.get("wikipedia_enabled") == "on"
+            bot.member_memory_tools_enabled = request.form.get("member_memory_tools_enabled") == "on"
 
             # Google Sheets settings
             bot.google_sheets_enabled = request.form.get("google_sheets_enabled") == "on"
@@ -133,6 +134,9 @@ def register_routes(app):
             bot.max_reactions_per_response = int(request.form.get("max_reactions_per_response", 3))
             bot.typing_enabled = request.form.get("typing_enabled") == "on"
             bot.read_receipts_enabled = request.form.get("read_receipts_enabled") == "on"
+
+            # Member memory settings
+            bot.member_memory_model = request.form.get("member_memory_model", "").strip() or None
 
             db.session.commit()
             _log_activity("bot_updated", bot_id, None, f"Bot '{bot.name}' settings updated")

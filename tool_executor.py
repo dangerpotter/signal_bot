@@ -1726,8 +1726,8 @@ class SignalToolExecutor:
 
     def _execute_conditional_format(self, arguments: dict) -> dict:
         """Execute the conditional_format tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
         range_notation = arguments.get("range", "").strip()
@@ -1771,8 +1771,8 @@ class SignalToolExecutor:
 
     def _execute_data_validation(self, arguments: dict) -> dict:
         """Execute the data_validation tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
         range_notation = arguments.get("range", "").strip()
@@ -1818,8 +1818,8 @@ class SignalToolExecutor:
 
     def _execute_alternating_colors(self, arguments: dict) -> dict:
         """Execute the alternating_colors tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
         range_notation = arguments.get("range", "").strip()
@@ -1861,8 +1861,8 @@ class SignalToolExecutor:
 
     def _execute_add_note(self, arguments: dict) -> dict:
         """Execute the add_note tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
         cell = arguments.get("cell", "").strip()
@@ -1898,8 +1898,8 @@ class SignalToolExecutor:
 
     def _execute_set_borders(self, arguments: dict) -> dict:
         """Execute the set_borders tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
         range_notation = arguments.get("range", "").strip()
@@ -1939,8 +1939,8 @@ class SignalToolExecutor:
 
     def _execute_set_alignment(self, arguments: dict) -> dict:
         """Execute the set_alignment tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
         range_notation = arguments.get("range", "").strip()
@@ -1984,8 +1984,8 @@ class SignalToolExecutor:
 
     def _execute_set_text_direction(self, arguments: dict) -> dict:
         """Execute the set_text_direction tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
         range_notation = arguments.get("range", "").strip()
@@ -2023,8 +2023,8 @@ class SignalToolExecutor:
 
     def _execute_set_text_rotation(self, arguments: dict) -> dict:
         """Execute the set_text_rotation tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
         range_notation = arguments.get("range", "").strip()
@@ -2065,8 +2065,8 @@ class SignalToolExecutor:
 
     def _execute_set_cell_padding(self, arguments: dict) -> dict:
         """Execute the set_cell_padding tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
         range_notation = arguments.get("range", "").strip()
@@ -2110,8 +2110,8 @@ class SignalToolExecutor:
 
     def _execute_set_rich_text(self, arguments: dict) -> dict:
         """Execute the set_rich_text tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
         cell = arguments.get("cell", "").strip()
@@ -2155,8 +2155,8 @@ class SignalToolExecutor:
 
     def _execute_create_chart(self, arguments: dict) -> dict:
         """Execute the create_chart tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
         data_range = arguments.get("data_range", "").strip()
@@ -2198,8 +2198,8 @@ class SignalToolExecutor:
 
     def _execute_list_charts(self, arguments: dict) -> dict:
         """Execute the list_charts tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
 
@@ -2229,8 +2229,8 @@ class SignalToolExecutor:
 
     def _execute_update_chart(self, arguments: dict) -> dict:
         """Execute the update_chart tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
         chart_id = arguments.get("chart_id")
@@ -2268,8 +2268,8 @@ class SignalToolExecutor:
 
     def _execute_delete_chart(self, arguments: dict) -> dict:
         """Execute the delete_chart tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
         chart_id = arguments.get("chart_id")
@@ -2305,8 +2305,8 @@ class SignalToolExecutor:
 
     def _execute_create_pivot_table(self, arguments: dict) -> dict:
         """Execute the create_pivot_table tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
         source_range = arguments.get("source_range", "").strip()
@@ -2360,8 +2360,8 @@ class SignalToolExecutor:
 
     def _execute_delete_pivot_table(self, arguments: dict) -> dict:
         """Execute the delete_pivot_table tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
         anchor_cell = arguments.get("anchor_cell", "").strip()
@@ -2395,8 +2395,8 @@ class SignalToolExecutor:
 
     def _execute_list_pivot_tables(self, arguments: dict) -> dict:
         """Execute the list_pivot_tables tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
 
@@ -2426,8 +2426,8 @@ class SignalToolExecutor:
 
     def _execute_get_pivot_table(self, arguments: dict) -> dict:
         """Execute the get_pivot_table tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
         anchor_cell = arguments.get("anchor_cell", "").strip()
@@ -2463,8 +2463,8 @@ class SignalToolExecutor:
 
     def _execute_set_text_format(self, arguments: dict) -> dict:
         """Execute the set_text_format tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
         range_notation = arguments.get("range", "").strip()
@@ -2504,8 +2504,8 @@ class SignalToolExecutor:
 
     def _execute_set_text_color(self, arguments: dict) -> dict:
         """Execute the set_text_color tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
         range_notation = arguments.get("range", "").strip()
@@ -2543,8 +2543,8 @@ class SignalToolExecutor:
 
     def _execute_set_background_color(self, arguments: dict) -> dict:
         """Execute the set_background_color tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
         range_notation = arguments.get("range", "").strip()
@@ -2582,8 +2582,8 @@ class SignalToolExecutor:
 
     def _execute_add_hyperlink(self, arguments: dict) -> dict:
         """Execute the add_hyperlink tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
         cell = arguments.get("cell", "").strip()
@@ -2625,8 +2625,8 @@ class SignalToolExecutor:
 
     def _execute_set_basic_filter(self, arguments: dict) -> dict:
         """Execute the set_basic_filter tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
         range_notation = arguments.get("range", "").strip()
@@ -2660,8 +2660,8 @@ class SignalToolExecutor:
 
     def _execute_clear_basic_filter(self, arguments: dict) -> dict:
         """Execute the clear_basic_filter tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
         sheet_name = arguments.get("sheet_name", "").strip() if arguments.get("sheet_name") else None
@@ -2693,8 +2693,8 @@ class SignalToolExecutor:
 
     def _execute_create_filter_view(self, arguments: dict) -> dict:
         """Execute the create_filter_view tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
         title = arguments.get("title", "").strip()
@@ -2732,8 +2732,8 @@ class SignalToolExecutor:
 
     def _execute_delete_filter_view(self, arguments: dict) -> dict:
         """Execute the delete_filter_view tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
         filter_view_id = arguments.get("filter_view_id")
@@ -2769,8 +2769,8 @@ class SignalToolExecutor:
 
     def _execute_create_named_range(self, arguments: dict) -> dict:
         """Execute the create_named_range tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
         name = arguments.get("name", "").strip()
@@ -2808,8 +2808,8 @@ class SignalToolExecutor:
 
     def _execute_delete_named_range(self, arguments: dict) -> dict:
         """Execute the delete_named_range tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
         named_range_id = arguments.get("named_range_id", "").strip()
@@ -2843,8 +2843,8 @@ class SignalToolExecutor:
 
     def _execute_list_named_ranges(self, arguments: dict) -> dict:
         """Execute the list_named_ranges tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
 
@@ -2874,8 +2874,8 @@ class SignalToolExecutor:
 
     def _execute_protect_range(self, arguments: dict) -> dict:
         """Execute the protect_range tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
         range_notation = arguments.get("range", "").strip()
@@ -2915,8 +2915,8 @@ class SignalToolExecutor:
 
     def _execute_find_replace(self, arguments: dict) -> dict:
         """Execute the find_replace tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
         find = arguments.get("find", "")
@@ -2960,8 +2960,8 @@ class SignalToolExecutor:
 
     def _execute_copy_paste(self, arguments: dict) -> dict:
         """Execute the copy_paste tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
         source_range = arguments.get("source_range", "").strip()
@@ -3001,8 +3001,8 @@ class SignalToolExecutor:
 
     def _execute_cut_paste(self, arguments: dict) -> dict:
         """Execute the cut_paste tool call."""
-        if not self.bot_data.get('sheets_enabled'):
-            return {"success": False, "message": "Google Sheets not enabled for this bot"}
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "").strip()
         source_range = arguments.get("source_range", "").strip()

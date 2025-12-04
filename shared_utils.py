@@ -466,8 +466,9 @@ def call_openrouter_responses_api(
         # Add system prompt as first message if provided
         if system_prompt:
             input_messages.append({
+                "type": "message",
                 "role": "system",
-                "content": system_prompt
+                "content": [{"type": "input_text", "text": system_prompt}]
             })
 
         # Add conversation history
@@ -479,8 +480,9 @@ def call_openrouter_responses_api(
                     text_parts = [p.get('text', '') for p in content if p.get('type') == 'text']
                     content = ' '.join(text_parts)
                 input_messages.append({
+                    "type": "message",
                     "role": msg.get("role", "user"),
-                    "content": content
+                    "content": [{"type": "input_text", "text": content}]
                 })
 
         # Add current prompt
@@ -490,8 +492,9 @@ def call_openrouter_responses_api(
         else:
             prompt_text = prompt
         input_messages.append({
+            "type": "message",
             "role": "user",
-            "content": prompt_text
+            "content": [{"type": "input_text", "text": prompt_text}]
         })
 
         # Build tools array - always include web_search, add function tools if provided
@@ -623,7 +626,7 @@ def call_openrouter_responses_api(
                         }
                     })
 
-            # Build follow-up request with tool results
+            # Build follow-up request with tool results - support chained tool calls
             if tool_results:
                 follow_up_input = list(input_messages)  # Copy original messages
 
@@ -632,29 +635,89 @@ def call_openrouter_responses_api(
                     follow_up_input.append(tr["function_call"])
                     follow_up_input.append(tr["output"])
 
-                follow_up_payload = {
-                    "model": openrouter_model,
-                    "input": follow_up_input,
-                    "tools": api_tools,
-                    "tool_choice": "auto",
-                    "max_output_tokens": 4000,
-                    "temperature": 1,
-                    "stream": stream_callback is not None
-                }
-                _add_openrouter_transforms(follow_up_payload)
+                max_tool_iterations = 10  # Prevent infinite loops
+                for iteration in range(max_tool_iterations):
+                    follow_up_payload = {
+                        "model": openrouter_model,
+                        "input": follow_up_input,
+                        "tools": api_tools,
+                        "tool_choice": "auto",
+                        "max_output_tokens": 4000,
+                        "temperature": 1,
+                        "stream": stream_callback is not None
+                    }
+                    _add_openrouter_transforms(follow_up_payload)
 
-                print(f"[OpenRouter Responses API] Making follow-up request with {len(tool_results)} tool result(s)")
-                follow_up_response = make_request(follow_up_payload, stream=stream_callback is not None)
+                    print(f"[OpenRouter Responses API] Making follow-up request (iteration {iteration + 1}) with tool result(s)")
+                    follow_up_response = make_request(follow_up_payload, stream=stream_callback is not None)
 
-                if follow_up_response:
-                    # Extract text from follow-up response
-                    follow_up_output = follow_up_response.get("output", [])
-                    for item in follow_up_output:
-                        if item.get("type") == "message":
-                            for content in item.get("content", []):
-                                if content.get("type") == "output_text":
-                                    text = content.get("text", "")
-                                    annotations = content.get("annotations", [])
+                    if follow_up_response:
+                        # Extract text and function calls from follow-up response
+                        follow_up_output = follow_up_response.get("output", [])
+                        follow_up_function_calls = []
+
+                        for item in follow_up_output:
+                            if item.get("type") == "message":
+                                for content in item.get("content", []):
+                                    if content.get("type") == "output_text":
+                                        text = content.get("text", "")
+                                        annotations = content.get("annotations", [])
+                            elif item.get("type") == "function_call":
+                                follow_up_function_calls.append(item)
+
+                        # If more function calls requested, execute them
+                        if follow_up_function_calls and tool_executor:
+                            print(f"[OpenRouter Responses API] Follow-up has {len(follow_up_function_calls)} more function call(s)")
+
+                            for fc in follow_up_function_calls:
+                                func_name = fc.get("name")
+                                func_args = fc.get("arguments", "{}")
+                                call_id = fc.get("call_id", fc.get("id", ""))
+                                fc_id = fc.get("id", f"fc_{uuid_module.uuid4().hex[:8]}")
+
+                                print(f"[OpenRouter Responses API] Executing chained tool: {func_name}")
+                                try:
+                                    args_dict = json.loads(func_args) if isinstance(func_args, str) else func_args
+                                    tool_result = tool_executor(func_name, args_dict)
+                                    print(f"[OpenRouter Responses API] Chained tool result: {str(tool_result)[:200]}")
+
+                                    follow_up_input.append({
+                                        "type": "function_call",
+                                        "id": fc_id,
+                                        "call_id": call_id,
+                                        "name": func_name,
+                                        "arguments": func_args if isinstance(func_args, str) else json.dumps(func_args)
+                                    })
+                                    follow_up_input.append({
+                                        "type": "function_call_output",
+                                        "id": f"fco_{uuid_module.uuid4().hex[:8]}",
+                                        "call_id": call_id,
+                                        "output": json.dumps(tool_result) if isinstance(tool_result, dict) else str(tool_result)
+                                    })
+                                except Exception as e:
+                                    print(f"[OpenRouter Responses API] Chained tool error: {e}")
+                                    follow_up_input.append({
+                                        "type": "function_call",
+                                        "id": fc_id,
+                                        "call_id": call_id,
+                                        "name": func_name,
+                                        "arguments": func_args if isinstance(func_args, str) else json.dumps(func_args)
+                                    })
+                                    follow_up_input.append({
+                                        "type": "function_call_output",
+                                        "id": f"fco_{uuid_module.uuid4().hex[:8]}",
+                                        "call_id": call_id,
+                                        "output": json.dumps({"error": str(e)})
+                                    })
+                            # Continue loop for next iteration
+                            continue
+
+                        # No more function calls - we have our answer
+                        if text:
+                            break
+                    else:
+                        print(f"[OpenRouter Responses API] Follow-up request failed")
+                        break
 
                 # If image was generated and we have text, return it
                 # If image was generated but no text, return empty (image sent separately)
@@ -840,8 +903,17 @@ def call_openrouter_api(
         tools: Optional list of tool schemas for function calling
         tool_executor: Optional callback function(name, args) -> dict to execute tool calls
     """
+    # Check if prompt contains images (structured content with image parts)
+    has_images = False
+    if isinstance(prompt, list):
+        for part in prompt:
+            if part.get('type') == 'image':
+                has_images = True
+                break
+
     # Route web search requests to Responses API for citation support
-    if web_search:
+    # BUT: Responses API doesn't support images, so skip it when images are present
+    if web_search and not has_images:
         print(f"[OpenRouter] Web search enabled, using Responses API for citations")
         result = call_openrouter_responses_api(
             prompt, conversation_history, model, system_prompt,
@@ -853,6 +925,8 @@ def call_openrouter_api(
         # Check if we got a tool call that was handled (returns None but tool ran)
         # Fall back to Chat Completions API if Responses API fails
         print(f"[OpenRouter] Responses API returned None, falling back to Chat Completions with :online suffix")
+    elif web_search and has_images:
+        print(f"[OpenRouter] Images detected - skipping Responses API (doesn't support vision), using Chat Completions")
 
     try:
         headers = {
@@ -1099,31 +1173,88 @@ def call_openrouter_api(
                                         "content": json.dumps({"success": False, "message": str(e)})
                                     })
 
-                            # Make follow-up API call without tools to get final response
-                            follow_up_payload = {
-                                "model": model_to_use,
-                                "messages": msgs,
-                                "temperature": 1,
-                                "max_tokens": 4000,
-                                "stream": False
-                            }
-                            _add_openrouter_transforms(follow_up_payload)
+                            # Make follow-up API call WITH tools to allow chained tool calls
+                            max_tool_iterations = 10  # Prevent infinite loops
+                            for iteration in range(max_tool_iterations):
+                                follow_up_payload = {
+                                    "model": model_to_use,
+                                    "messages": msgs,
+                                    "temperature": 1,
+                                    "max_tokens": 4000,
+                                    "stream": False
+                                }
+                                # Include tools for chained tool calls
+                                if tools:
+                                    follow_up_payload["tools"] = tools
+                                _add_openrouter_transforms(follow_up_payload)
 
-                            print(f"[OpenRouter] Making follow-up call for final response...")
-                            follow_up_response = requests.post(
-                                "https://openrouter.ai/api/v1/chat/completions",
-                                headers=headers,
-                                json=follow_up_payload,
-                                timeout=60
-                            )
+                                print(f"[OpenRouter] Making follow-up call (iteration {iteration + 1})...")
+                                follow_up_response = requests.post(
+                                    "https://openrouter.ai/api/v1/chat/completions",
+                                    headers=headers,
+                                    json=follow_up_payload,
+                                    timeout=60
+                                )
 
-                            if follow_up_response.status_code == 200:
-                                follow_up_data = follow_up_response.json()
-                                if 'choices' in follow_up_data and len(follow_up_data['choices']) > 0:
-                                    final_content = follow_up_data['choices'][0].get('message', {}).get('content', '')
-                                    if final_content:
-                                        return True, final_content
-                            print(f"[OpenRouter] Follow-up call failed, using initial content if any")
+                                if follow_up_response.status_code == 200:
+                                    follow_up_data = follow_up_response.json()
+                                    if 'choices' in follow_up_data and len(follow_up_data['choices']) > 0:
+                                        follow_up_choice = follow_up_data['choices'][0]
+                                        follow_up_message = follow_up_choice.get('message', {})
+                                        follow_up_content = follow_up_message.get('content', '')
+                                        follow_up_tool_calls = follow_up_message.get('tool_calls', [])
+
+                                        # If model wants more tool calls, execute them
+                                        if follow_up_tool_calls and tool_executor:
+                                            print(f"[OpenRouter] Follow-up requested {len(follow_up_tool_calls)} more tool call(s)")
+
+                                            # Add assistant message with tool calls
+                                            msgs.append({
+                                                "role": "assistant",
+                                                "content": follow_up_content,
+                                                "tool_calls": follow_up_tool_calls
+                                            })
+
+                                            # Execute each tool
+                                            for tc in follow_up_tool_calls:
+                                                try:
+                                                    fn_name = tc.get('function', {}).get('name', '')
+                                                    fn_args_str = tc.get('function', {}).get('arguments', '{}')
+                                                    tc_id = tc.get('id', '')
+
+                                                    try:
+                                                        fn_args = json.loads(fn_args_str) if isinstance(fn_args_str, str) else fn_args_str
+                                                    except json.JSONDecodeError:
+                                                        fn_args = {}
+
+                                                    print(f"[OpenRouter] Executing chained tool: {fn_name}({fn_args})")
+                                                    tool_result = tool_executor(fn_name, fn_args)
+
+                                                    msgs.append({
+                                                        "role": "tool",
+                                                        "tool_call_id": tc_id,
+                                                        "content": json.dumps(tool_result) if isinstance(tool_result, dict) else str(tool_result)
+                                                    })
+                                                    print(f"[OpenRouter] Chained tool result: {tool_result}")
+                                                except Exception as e:
+                                                    print(f"[OpenRouter] Chained tool error: {e}")
+                                                    msgs.append({
+                                                        "role": "tool",
+                                                        "tool_call_id": tc.get('id', ''),
+                                                        "content": json.dumps({"success": False, "message": str(e)})
+                                                    })
+                                            # Continue loop for next iteration
+                                            continue
+
+                                        # No more tool calls - return content
+                                        if follow_up_content:
+                                            return True, follow_up_content
+                                        break  # Exit loop if no content and no tool calls
+                                else:
+                                    print(f"[OpenRouter] Follow-up call failed with status {follow_up_response.status_code}")
+                                    break
+
+                            print(f"[OpenRouter] Follow-up loop ended, using initial content if any")
 
                         if content and content.strip():
                             return True, content

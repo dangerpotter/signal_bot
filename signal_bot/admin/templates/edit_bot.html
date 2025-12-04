@@ -159,6 +159,37 @@
 
             <div class="card mb-4">
                 <div class="card-header">
+                    <i class="bi bi-person-badge"></i> Member Memory Settings
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input type="checkbox" name="member_memory_tools_enabled" class="form-check-input" id="memberMemoryToolsEnabled" {% if bot.member_memory_tools_enabled %}checked{% endif %}>
+                            <label class="form-check-label" for="memberMemoryToolsEnabled">Enable member memory tools</label>
+                        </div>
+                        <small class="text-muted">Bot can save and recall information about group members (save_member_memory, get_member_memories, list_group_members). When the bot learns personal details about someone, it can explicitly save them for future reference. (requires tool-capable model)</small>
+                    </div>
+                    <hr>
+                    <div class="mb-3">
+                        <label class="form-label">Relevance Detection Model (for auto-scan)</label>
+                        <select name="member_memory_model" class="form-select">
+                            <option value="">-- None (use keywords only) --</option>
+                            {% for display_name, model_id in all_models.items() %}
+                            <option value="{{ model_id }}" {% if model_id == bot.member_memory_model %}selected{% endif %}>{{ display_name }}</option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted">Small/fast model for background scanning when location info is relevant. Use Haiku for speed, Sonnet for accuracy. Leave empty to use keyword matching only.</small>
+                    </div>
+                    <p class="text-muted small mb-0">
+                        <i class="bi bi-info-circle"></i>
+                        Member memories (home location, interests, etc.) are managed in <a href="{{ url_for('member_memories_list') }}">Member Memories</a>.
+                        The tools above let the bot save explicitly, while auto-scan runs in background.
+                    </p>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
                     <i class="bi bi-newspaper"></i> Idle News Settings
                 </div>
                 <div class="card-body">

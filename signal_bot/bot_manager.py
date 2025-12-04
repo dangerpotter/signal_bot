@@ -158,7 +158,14 @@ class SignalBotManager:
                 'reaction_tool_enabled': getattr(bot, 'reaction_tool_enabled', False),
                 'max_reactions_per_response': getattr(bot, 'max_reactions_per_response', 3),
                 'typing_enabled': getattr(bot, 'typing_enabled', True),
-                'read_receipts_enabled': getattr(bot, 'read_receipts_enabled', False)
+                'read_receipts_enabled': getattr(bot, 'read_receipts_enabled', False),
+                # Google Sheets integration
+                'google_sheets_enabled': getattr(bot, 'google_sheets_enabled', False),
+                'google_client_id': getattr(bot, 'google_client_id', None),
+                'google_client_secret': getattr(bot, 'google_client_secret', None),
+                'google_refresh_token': getattr(bot, 'google_refresh_token', None),
+                'google_token_expiry': getattr(bot, 'google_token_expiry', None),
+                'google_connected': getattr(bot, 'google_connected', False),
             }
 
         # Create task to listen for messages
@@ -377,10 +384,14 @@ class SignalBotManager:
     ) -> Optional[str]:
         """Fetch attachment data from Signal API as base64 string.
 
-        Uses the JSON-RPC endpoint to call getAttachment command.
+        Tries JSON-RPC first (for json-rpc mode), falls back to REST (for normal mode).
         Returns base64-encoded attachment data.
         """
-        url = f"http://localhost:{port}/api/v1/rpc"
+        import base64 as b64
+        client = await self._get_http_client(port)
+
+        # Try JSON-RPC first (works in json-rpc mode)
+        rpc_url = f"http://localhost:{port}/api/v1/rpc"
         payload = {
             "jsonrpc": "2.0",
             "method": "getAttachment",
@@ -391,19 +402,36 @@ class SignalBotManager:
             },
             "id": 1
         }
+        logger.info(f"[DEBUG] Trying JSON-RPC getAttachment: id={attachment_id}, group={group_id[:20]}...")
         try:
-            client = await self._get_http_client(port)
-            response = await client.post(url, json=payload, timeout=30.0)
+            response = await client.post(rpc_url, json=payload, timeout=30.0)
             if response.status_code == 200:
                 result = response.json()
                 if "result" in result:
+                    logger.info(f"Successfully fetched attachment via JSON-RPC: {len(result['result'])} chars")
                     return result["result"]  # Base64 string
                 elif "error" in result:
-                    logger.error(f"JSON-RPC error fetching attachment: {result['error']}")
+                    logger.warning(f"JSON-RPC error: {result['error']}")
             else:
-                logger.error(f"Failed to fetch attachment: HTTP {response.status_code}")
+                logger.info(f"[DEBUG] JSON-RPC returned {response.status_code}, trying REST fallback...")
         except Exception as e:
-            logger.error(f"Error fetching attachment: {e}")
+            logger.info(f"[DEBUG] JSON-RPC failed ({e}), trying REST fallback...")
+
+        # Fallback: Try REST endpoint with attachment_id as filename (for normal mode)
+        rest_url = f"http://localhost:{port}/v1/attachments/{attachment_id}"
+        logger.info(f"[DEBUG] Trying REST: {rest_url}")
+        try:
+            response = await client.get(rest_url, timeout=30.0)
+            logger.info(f"[DEBUG] REST response: {response.status_code}, content-type: {response.headers.get('content-type')}, size: {len(response.content)}")
+            if response.status_code == 200:
+                encoded = b64.b64encode(response.content).decode('utf-8')
+                logger.info(f"Successfully fetched attachment via REST: {len(encoded)} chars")
+                return encoded
+            else:
+                logger.error(f"REST fallback failed: HTTP {response.status_code}")
+        except Exception as e:
+            logger.error(f"REST fallback error: {e}")
+
         return None
 
     async def send_reaction(
@@ -736,6 +764,9 @@ class SignalBotManager:
             attachments = data_message.get("attachments", [])
             image_attachments = []
             for att in attachments:
+                # Debug: log full attachment structure
+                logger.info(f"[DEBUG] Attachment object keys: {list(att.keys())}")
+                logger.info(f"[DEBUG] Attachment object: {att}")
                 content_type = att.get("contentType", "")
                 if content_type.startswith("image/"):
                     attachment_id = att.get("id")

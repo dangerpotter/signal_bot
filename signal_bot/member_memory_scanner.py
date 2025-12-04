@@ -36,7 +36,9 @@ LOCATION_KEYWORDS = [
     "time", "timezone", "what time",
     "local", "nearby", "around here", "in your area",
     "visit", "travel", "trip", "vacation", "flying",
-    "where are you", "where do you live", "where is",
+    "where are you", "where do you live", "where does", "where is",
+    "where i live", "where they live", "live in", "lives in",
+    "location", "home", "hometown", "from",
     "distance", "how far", "drive", "flight",
     "restaurant", "food", "eat", "coffee", "bar",
     "event", "concert", "game", "show",
@@ -555,6 +557,89 @@ def is_location_relevant(message_content: str, member_memories: list) -> tuple[b
     return False, False
 
 
+# JSON schema for location relevance detection
+LOCATION_RELEVANCE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "is_relevant": {
+            "type": "boolean",
+            "description": "Whether location information would be helpful for responding to this message"
+        },
+        "is_explicit": {
+            "type": "boolean",
+            "description": "Whether the user explicitly asked about location, weather, time, or local things"
+        },
+        "reason": {
+            "type": "string",
+            "description": "Brief explanation of why location is or isn't relevant"
+        }
+    },
+    "required": ["is_relevant", "is_explicit", "reason"],
+    "additionalProperties": False
+}
+
+
+def is_location_relevant_llm(message_content: str, model_id: str) -> tuple[bool, bool]:
+    """
+    Use LLM to determine if location info is relevant to include.
+
+    Args:
+        message_content: The message text
+        model_id: The model to use for relevance detection
+
+    Returns:
+        Tuple of (should_include_location, is_explicitly_asked)
+    """
+    try:
+        from shared_utils import call_openrouter_api_structured
+    except ImportError as e:
+        logger.error(f"Failed to import for location relevance check: {e}")
+        return False, False
+
+    system_prompt = """You determine if a user's message would benefit from knowing their location.
+
+Location is relevant if the message:
+- Asks about weather, temperature, or forecast
+- Asks about time or timezone
+- Asks about local recommendations (restaurants, events, places)
+- Mentions travel plans or where someone lives
+- Would need location context to answer properly
+
+Location is NOT relevant if:
+- It's a general question or casual chat
+- It's about abstract topics (philosophy, opinions)
+- It's about online/digital topics (coding, websites)
+- There's no geographic component to the question"""
+
+    user_prompt = f"""User message: "{message_content}"
+
+Is location information relevant for responding to this message?"""
+
+    try:
+        result = call_openrouter_api_structured(
+            prompt=user_prompt,
+            model=model_id,
+            system_prompt=system_prompt,
+            json_schema=LOCATION_RELEVANCE_SCHEMA,
+            schema_name="location_relevance"
+        )
+
+        if not result:
+            logger.warning("No result from location relevance LLM")
+            return False, False
+
+        is_relevant = result.get("is_relevant", False)
+        is_explicit = result.get("is_explicit", False)
+
+        logger.debug(f"Location relevance LLM: relevant={is_relevant}, explicit={is_explicit}, reason={result.get('reason', 'N/A')}")
+
+        return is_relevant, is_explicit
+
+    except Exception as e:
+        logger.error(f"Error in location relevance LLM: {e}")
+        return False, False
+
+
 def is_collective_location_request(message_content: str) -> bool:
     """Check if message asks about location info for all members (e.g., 'weather for everyone')."""
     message_lower = message_content.lower()
@@ -598,7 +683,8 @@ def format_member_memories_for_context(
     group_id: str,
     current_speaker_name: str = "",
     current_speaker_id: str = "",
-    message_content: str = ""
+    message_content: str = "",
+    member_memory_model: str = None
 ) -> str:
     """
     Format member memories prioritized for the current conversation context.
@@ -608,12 +694,14 @@ def format_member_memories_for_context(
         current_speaker_name: Name of person who sent the message
         current_speaker_id: Signal UUID of speaker (optional)
         message_content: The message text (for mentioned member detection)
+        member_memory_model: Model ID for LLM-based relevance detection (optional)
 
     Returns:
         Formatted string with tiered memory inclusion:
-        - Current speaker: Full context (response_prefs always, location when relevant)
+        - Current speaker: Full context (response_prefs always, home_location always, other location when relevant)
         - Mentioned members: Full context
         - Others: Omitted
+        - Meta-awareness: What categories exist for speaker
     """
     from signal_bot.models import GroupMemberMemory
 
@@ -644,11 +732,21 @@ def format_member_memories_for_context(
             # Detect mentioned members
             mentioned_members = detect_mentioned_members(message_content, group_id) if message_content else []
 
-            # Check location relevance based on current speaker's memories
+            # Check location relevance (for travel_location, not home_location)
+            # Use LLM if model provided, otherwise fall back to keywords
             speaker_memories = by_member.get(current_speaker_name, [])
-            include_location, location_explicit = is_location_relevant(message_content, speaker_memories)
+            if member_memory_model:
+                include_extra_location, location_explicit = is_location_relevant_llm(message_content, member_memory_model)
+                # Also check keywords as fallback if LLM says no
+                if not include_extra_location:
+                    kw_include, kw_explicit = is_location_relevant(message_content, speaker_memories)
+                    if kw_include:
+                        include_extra_location, location_explicit = kw_include, kw_explicit
+            else:
+                include_extra_location, location_explicit = is_location_relevant(message_content, speaker_memories)
 
             output_lines = []
+            included_categories = []  # Track what we include for meta-awareness
 
             # === CURRENT SPEAKER SECTION ===
             if current_speaker_name and current_speaker_name in by_member:
@@ -658,15 +756,23 @@ def format_member_memories_for_context(
                     # Tier 1: Always include response_prefs
                     if mem.slot_type in TIER_ALWAYS:
                         output_lines.append(format_single_memory(mem))
+                        included_categories.append(mem.slot_type)
 
                     # Tier 2: Contextual - always include for speaker
                     elif mem.slot_type in TIER_CONTEXTUAL:
                         output_lines.append(format_single_memory(mem))
+                        included_categories.append(mem.slot_type)
 
-                    # Tier 3: Situational - location only when relevant
-                    elif mem.slot_type in TIER_SITUATIONAL:
-                        if include_location:
+                    # Always include home_location for current speaker (Option B)
+                    elif mem.slot_type == "home_location":
+                        output_lines.append(format_single_memory(mem))
+                        included_categories.append(mem.slot_type)
+
+                    # Include travel_location only when relevant
+                    elif mem.slot_type == "travel_location":
+                        if include_extra_location:
                             output_lines.append(format_single_memory(mem))
+                            included_categories.append(mem.slot_type)
 
             # === MENTIONED MEMBERS SECTION ===
             for mentioned_name in mentioned_members:
@@ -700,9 +806,21 @@ def format_member_memories_for_context(
                     output_lines.append(f"\n=== OTHER GROUP MEMBERS' LOCATIONS ===")
                     output_lines.extend(all_locations)
 
-            # Add location instruction if location was included but not explicitly asked
-            if include_location and not location_explicit:
+            # Add location instruction if travel location was included but not explicitly asked
+            # (home_location is always included, so instruction only for extra location info)
+            if include_extra_location and not location_explicit:
                 output_lines.append(f"\n{LOCATION_INSTRUCTION}")
+
+            # === META-AWARENESS SECTION (Option C) ===
+            # Tell the bot what categories exist for the speaker, even if not all were included
+            if current_speaker_name and current_speaker_name in by_member:
+                all_speaker_categories = list(set(mem.slot_type for mem in by_member[current_speaker_name]))
+                unique_included = list(set(included_categories))
+
+                # Only add meta-awareness if there's something useful to say
+                if all_speaker_categories:
+                    output_lines.append(f"\n[Available memory categories for {current_speaker_name}: {', '.join(sorted(all_speaker_categories))}]")
+                    output_lines.append(f"[Currently included: {', '.join(sorted(unique_included)) if unique_included else 'none'}]")
 
             # Note about omitted members (if any) - skip if we included all locations
             if not include_all_locations:

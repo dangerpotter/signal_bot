@@ -180,3 +180,4 @@ nul
 
 # Claude Code instructions (project-specific, not for repo)
 CLAUDE.md
+.claude/settings.local.json

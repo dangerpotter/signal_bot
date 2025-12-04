@@ -27,6 +27,7 @@ class Bot(db.Model):
     finance_enabled = db.Column(db.Boolean, default=False)  # Enable finance tools (Yahoo Finance)
     time_enabled = db.Column(db.Boolean, default=False)  # Enable time/date tool (timezone-aware)
     wikipedia_enabled = db.Column(db.Boolean, default=False)  # Enable Wikipedia tool
+    member_memory_tools_enabled = db.Column(db.Boolean, default=False)  # Enable member memory tools (save/recall)
 
     # Google Sheets integration
     google_sheets_enabled = db.Column(db.Boolean, default=False)  # Enable Google Sheets tools
@@ -58,6 +59,9 @@ class Bot(db.Model):
     # Context settings
     context_window = db.Column(db.Integer, default=25)  # Number of messages to include in context (5-100)
 
+    # Member memory settings
+    member_memory_model = db.Column(db.String(100), nullable=True)  # Small/fast model for relevance detection
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -81,6 +85,7 @@ class Bot(db.Model):
             "finance_enabled": self.finance_enabled,
             "time_enabled": self.time_enabled,
             "wikipedia_enabled": self.wikipedia_enabled,
+            "member_memory_tools_enabled": self.member_memory_tools_enabled,
             "google_sheets_enabled": self.google_sheets_enabled,
             "google_connected": self.google_connected,
             "google_client_id": self.google_client_id,
@@ -95,6 +100,7 @@ class Bot(db.Model):
             "typing_enabled": self.typing_enabled,
             "read_receipts_enabled": self.read_receipts_enabled,
             "context_window": self.context_window or 25,
+            "member_memory_model": self.member_memory_model,
         }
 
 
@@ -379,6 +385,8 @@ class SheetsRegistry(db.Model):
     )
 
     def to_dict(self):
+        # Escape underscores in spreadsheet_id to prevent markdown URL mangling
+        escaped_id = self.spreadsheet_id.replace('_', '\\_') if self.spreadsheet_id else self.spreadsheet_id
         return {
             "id": self.id,
             "bot_id": self.bot_id,
@@ -389,7 +397,7 @@ class SheetsRegistry(db.Model):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "last_accessed": self.last_accessed.isoformat() if self.last_accessed else None,
             "created_by": self.created_by,
-            "url": f"https://docs.google.com/spreadsheets/d/{self.spreadsheet_id}",
+            "url": f"https://docs.google.com/spreadsheets/d/{escaped_id}",
         }
 
     @staticmethod
