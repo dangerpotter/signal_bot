@@ -671,6 +671,500 @@ SHEETS_TOOLS = [
                 "additionalProperties": False
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "format_columns",
+            "description": "Format columns in a spreadsheet (e.g., as currency, percentage, date). Use when someone asks to format columns to display values a certain way, like '$' for money or '%' for percentages.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "columns": {
+                        "type": "string",
+                        "description": "Column range in A1 notation (e.g., 'B' for single column, 'B:E' for columns B through E)"
+                    },
+                    "format_type": {
+                        "type": "string",
+                        "enum": ["CURRENCY", "PERCENT", "NUMBER", "DATE", "TEXT"],
+                        "description": "Type of format: CURRENCY ($), PERCENT (%), NUMBER (decimal), DATE, or TEXT (plain)"
+                    },
+                    "pattern": {
+                        "type": "string",
+                        "description": "Optional custom pattern (e.g., '$#,##0.00' for currency). Uses sensible defaults if not provided."
+                    }
+                },
+                "required": ["spreadsheet_id", "columns", "format_type"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "clear_range",
+            "description": "Clear values from a range in a spreadsheet. Use when someone asks to clear, empty, or erase data from cells. Does not delete rows/columns, just clears the contents.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "range": {
+                        "type": "string",
+                        "description": "Range to clear in A1 notation (e.g., 'A1:C10', 'B:B' for entire column B, 'Sheet1!A1:D5' for specific sheet)"
+                    }
+                },
+                "required": ["spreadsheet_id", "range"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_rows",
+            "description": "Delete rows from a spreadsheet. Use when someone asks to remove or delete entire rows. This shifts other rows up.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "start_row": {
+                        "type": "integer",
+                        "description": "First row to delete (1-indexed, so row 1 is the first row)"
+                    },
+                    "end_row": {
+                        "type": "integer",
+                        "description": "Last row to delete (1-indexed, inclusive). Omit to delete just the start_row."
+                    }
+                },
+                "required": ["spreadsheet_id", "start_row"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_columns",
+            "description": "Delete columns from a spreadsheet. Use when someone asks to remove or delete entire columns. This shifts other columns left.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "columns": {
+                        "type": "string",
+                        "description": "Column(s) to delete in letter notation (e.g., 'C' for single column, 'C:E' for columns C through E)"
+                    }
+                },
+                "required": ["spreadsheet_id", "columns"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "insert_rows",
+            "description": "Insert empty rows into a spreadsheet. Use when someone asks to add new rows. Existing rows shift down.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "row": {
+                        "type": "integer",
+                        "description": "Row number where new rows will be inserted (1-indexed). Existing content at this row moves down."
+                    },
+                    "count": {
+                        "type": "integer",
+                        "description": "Number of rows to insert (default 1)"
+                    }
+                },
+                "required": ["spreadsheet_id", "row"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "insert_columns",
+            "description": "Insert empty columns into a spreadsheet. Use when someone asks to add new columns. Existing columns shift right.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "column": {
+                        "type": "string",
+                        "description": "Column letter where new columns will be inserted (e.g., 'C'). Existing content at this column moves right."
+                    },
+                    "count": {
+                        "type": "integer",
+                        "description": "Number of columns to insert (default 1)"
+                    }
+                },
+                "required": ["spreadsheet_id", "column"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_sheet",
+            "description": "Add a new sheet/tab to a spreadsheet. Use when someone wants to create a new tab.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Name for the new sheet/tab"
+                    }
+                },
+                "required": ["spreadsheet_id", "title"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_sheet",
+            "description": "Delete a sheet/tab from a spreadsheet. Use when someone wants to remove an entire tab. Cannot delete the last remaining sheet.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "sheet_name": {
+                        "type": "string",
+                        "description": "Name of the sheet/tab to delete"
+                    }
+                },
+                "required": ["spreadsheet_id", "sheet_name"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "rename_sheet",
+            "description": "Rename a sheet/tab in a spreadsheet. Use when someone wants to change a tab's name.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "old_name": {
+                        "type": "string",
+                        "description": "Current name of the sheet/tab"
+                    },
+                    "new_name": {
+                        "type": "string",
+                        "description": "New name for the sheet/tab"
+                    }
+                },
+                "required": ["spreadsheet_id", "old_name", "new_name"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "freeze_rows",
+            "description": "Freeze rows at the top of a sheet so they stay visible when scrolling. Use when someone wants to keep headers visible.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "num_rows": {
+                        "type": "integer",
+                        "description": "Number of rows to freeze (e.g., 1 for just the header row). Use 0 to unfreeze."
+                    },
+                    "sheet_name": {
+                        "type": "string",
+                        "description": "Optional: specific sheet name. Defaults to first sheet if not provided."
+                    }
+                },
+                "required": ["spreadsheet_id", "num_rows"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "freeze_columns",
+            "description": "Freeze columns at the left of a sheet so they stay visible when scrolling. Use when someone wants to keep labels visible.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "num_columns": {
+                        "type": "integer",
+                        "description": "Number of columns to freeze (e.g., 1 for just column A). Use 0 to unfreeze."
+                    },
+                    "sheet_name": {
+                        "type": "string",
+                        "description": "Optional: specific sheet name. Defaults to first sheet if not provided."
+                    }
+                },
+                "required": ["spreadsheet_id", "num_columns"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "sort_range",
+            "description": "Sort data in a spreadsheet by a column. Use when someone asks to sort data alphabetically, by number, by date, etc.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "column": {
+                        "type": "string",
+                        "description": "Column to sort by (e.g., 'B' to sort by column B)"
+                    },
+                    "ascending": {
+                        "type": "boolean",
+                        "description": "True for A-Z/smallest-first (default), False for Z-A/largest-first"
+                    },
+                    "has_header": {
+                        "type": "boolean",
+                        "description": "True if first row is a header and should not be sorted (default True)"
+                    }
+                },
+                "required": ["spreadsheet_id", "column"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "auto_resize_columns",
+            "description": "Auto-resize columns to fit their content. Use when columns are too narrow or too wide for the data.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "columns": {
+                        "type": "string",
+                        "description": "Optional: column range to resize (e.g., 'A:E'). If not provided, resizes all columns."
+                    }
+                },
+                "required": ["spreadsheet_id"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "merge_cells",
+            "description": "Merge multiple cells into one. Use for creating headers that span multiple columns, or combining cells for layout purposes.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "range": {
+                        "type": "string",
+                        "description": "Range of cells to merge in A1 notation (e.g., 'A1:C1' to merge first 3 cells of row 1)"
+                    }
+                },
+                "required": ["spreadsheet_id", "range"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "unmerge_cells",
+            "description": "Unmerge previously merged cells back into individual cells.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "range": {
+                        "type": "string",
+                        "description": "Range of merged cells to unmerge in A1 notation (e.g., 'A1:C1')"
+                    }
+                },
+                "required": ["spreadsheet_id", "range"],
+                "additionalProperties": False
+            }
+        }
+    },
+    # Batch 4: Formatting & Validation
+    {
+        "type": "function",
+        "function": {
+            "name": "conditional_format",
+            "description": "Add conditional formatting to highlight cells based on their values. Use when someone asks to highlight values greater/less than a threshold, color cells containing certain text, or show empty/filled cells differently.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "range": {
+                        "type": "string",
+                        "description": "Range to format in A1 notation (e.g., 'B2:B100')"
+                    },
+                    "rule_type": {
+                        "type": "string",
+                        "enum": ["greater_than", "less_than", "equals", "contains", "not_empty", "is_empty"],
+                        "description": "Type of condition to check"
+                    },
+                    "condition_value": {
+                        "type": "string",
+                        "description": "Value to compare against (e.g., '100' for greater_than 100, 'error' for contains 'error'). Not needed for not_empty/is_empty."
+                    },
+                    "format_type": {
+                        "type": "string",
+                        "enum": ["background", "text"],
+                        "description": "What to color: 'background' for cell fill, 'text' for font color. Default: background"
+                    },
+                    "color": {
+                        "type": "string",
+                        "enum": ["red", "green", "yellow", "orange", "blue", "purple"],
+                        "description": "Color to apply when condition is met. Default: red"
+                    }
+                },
+                "required": ["spreadsheet_id", "range", "rule_type"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "data_validation",
+            "description": "Add data validation rules to cells. Use for dropdown lists, restricting to number ranges, or adding checkboxes. Helps prevent invalid data entry.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "range": {
+                        "type": "string",
+                        "description": "Range to validate in A1 notation (e.g., 'C2:C100')"
+                    },
+                    "validation_type": {
+                        "type": "string",
+                        "enum": ["dropdown", "number_range", "date", "checkbox"],
+                        "description": "Type of validation: dropdown (list of options), number_range (min/max), date (valid dates only), checkbox (true/false)"
+                    },
+                    "values": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "For dropdown: list of allowed values (e.g., ['Yes', 'No', 'Maybe'])"
+                    },
+                    "min_value": {
+                        "type": "number",
+                        "description": "For number_range: minimum allowed value"
+                    },
+                    "max_value": {
+                        "type": "number",
+                        "description": "For number_range: maximum allowed value"
+                    },
+                    "strict": {
+                        "type": "boolean",
+                        "description": "If true (default), reject invalid input. If false, show warning but allow."
+                    }
+                },
+                "required": ["spreadsheet_id", "range", "validation_type"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "alternating_colors",
+            "description": "Add alternating row colors (zebra stripes) to make data easier to read. Applies a header color and two alternating band colors for data rows.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "range": {
+                        "type": "string",
+                        "description": "Range to apply banding in A1 notation (e.g., 'A1:E100')"
+                    },
+                    "header_color": {
+                        "type": "string",
+                        "enum": ["blue", "green", "gray", "orange", "purple", "red"],
+                        "description": "Color for the header row. Default: blue"
+                    },
+                    "first_band_color": {
+                        "type": "string",
+                        "enum": ["white", "lightgray", "lightblue", "lightgreen", "lightyellow", "lightpurple"],
+                        "description": "Color for odd data rows. Default: white"
+                    },
+                    "second_band_color": {
+                        "type": "string",
+                        "enum": ["white", "lightgray", "lightblue", "lightgreen", "lightyellow", "lightpurple"],
+                        "description": "Color for even data rows. Default: lightgray"
+                    }
+                },
+                "required": ["spreadsheet_id", "range"],
+                "additionalProperties": False
+            }
+        }
     }
 ]
 
