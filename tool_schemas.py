@@ -536,6 +536,140 @@ REACTION_TOOL = {
     }
 }
 
+# Google Sheets tools for Signal bots
+SHEETS_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "create_spreadsheet",
+            "description": "Create a new Google Sheets spreadsheet for tracking data, expenses, lists, or any collaborative information. The spreadsheet will be registered for this group and can be accessed later. Use when someone wants to track something, create a list, or organize data collaboratively.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "Title for the spreadsheet (e.g., 'Colorado Trip Expenses 2025', 'Movie Watchlist', 'Fantasy Football Standings')"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Brief description of what this spreadsheet is for",
+                        "default": ""
+                    }
+                },
+                "required": ["title"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_spreadsheets",
+            "description": "List all spreadsheets that have been created for this group. Returns titles, descriptions, URLs, and when they were last accessed. Use when someone asks what sheets exist or wants to find a specific one.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_sheet",
+            "description": "Read data from a spreadsheet range. Returns the values as a table. Use when someone wants to see what's in a sheet, check totals, or view the current data.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID (from list_spreadsheets or create_spreadsheet)"
+                    },
+                    "range": {
+                        "type": "string",
+                        "description": "The range to read in A1 notation (e.g., 'Sheet1!A1:D10', 'Sheet1!A:D' for full columns). Default reads the first 100 rows.",
+                        "default": "Sheet1!A1:Z100"
+                    }
+                },
+                "required": ["spreadsheet_id"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_to_sheet",
+            "description": "Write data to a specific range in a spreadsheet. Overwrites existing data in that range. Use for setting up headers, updating specific cells, or replacing a section of data.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "range": {
+                        "type": "string",
+                        "description": "Target range in A1 notation (e.g., 'Sheet1!A1' to start at A1, 'Sheet1!A1:C3' for a specific area)"
+                    },
+                    "values": {
+                        "type": "array",
+                        "description": "2D array of values to write. Each inner array is a row. Example: [[\"Name\", \"Amount\"], [\"John\", 50], [\"Jane\", 75]]",
+                        "items": {
+                            "type": "array",
+                            "items": {}
+                        }
+                    }
+                },
+                "required": ["spreadsheet_id", "range", "values"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_row_to_sheet",
+            "description": "Add a new row of data to a spreadsheet. Automatically appends to the end of existing data and adds a timestamp and the name of who added it. Use when someone wants to log an expense, add an item to a list, or record any new entry.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "spreadsheet_id": {
+                        "type": "string",
+                        "description": "The Google Sheets ID"
+                    },
+                    "values": {
+                        "type": "array",
+                        "description": "Array of values for the new row. A timestamp and the person's name will be automatically added as the first two columns. Example: [\"Groceries\", 45.50, \"Beer and snacks\"]",
+                        "items": {}
+                    }
+                },
+                "required": ["spreadsheet_id", "values"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_sheets",
+            "description": "Search for spreadsheets by title. Use when you need to find a specific sheet but don't have the ID, or when someone references a sheet by name.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search term to find in spreadsheet titles (e.g., 'Colorado', 'expenses', 'watchlist')"
+                    }
+                },
+                "required": ["query"],
+                "additionalProperties": False
+            }
+        }
+    }
+]
+
 def get_tools_for_context(
     context: str = "gui",
     image_enabled: bool = False,
@@ -543,7 +677,8 @@ def get_tools_for_context(
     finance_enabled: bool = False,
     time_enabled: bool = False,
     wikipedia_enabled: bool = False,
-    reaction_enabled: bool = False
+    reaction_enabled: bool = False,
+    sheets_enabled: bool = False
 ) -> list:
     """
     Return appropriate tools based on context and enabled features.
@@ -556,6 +691,7 @@ def get_tools_for_context(
         time_enabled: Include time/date tools (Signal bot only)
         wikipedia_enabled: Include Wikipedia tools (Signal bot only)
         reaction_enabled: Include emoji reaction tool (Signal bot only)
+        sheets_enabled: Include Google Sheets tools (Signal bot only)
 
     Returns:
         List of tool definitions appropriate for the context
@@ -574,6 +710,8 @@ def get_tools_for_context(
             tools.extend(WIKIPEDIA_TOOLS)
         if reaction_enabled:
             tools.append(REACTION_TOOL)
+        if sheets_enabled:
+            tools.extend(SHEETS_TOOLS)
         return tools
     return AGENT_TOOLS
 

@@ -92,7 +92,7 @@ class ToolExecutor:
 class SignalToolExecutor:
     """
     Executes tool calls for the Signal bot.
-    Supports image generation, weather, time, wikipedia, finance, and emoji reactions.
+    Supports image generation, weather, time, wikipedia, finance, emoji reactions, and Google Sheets.
     """
 
     def __init__(
@@ -120,6 +120,7 @@ class SignalToolExecutor:
         self.reaction_metadata = reaction_metadata or []
         self.max_reactions = max_reactions
         self.reactions_sent = 0  # Track reactions sent in this response
+        self.sender_name = None  # Set by message handler for sheet attribution
 
     def execute(self, function_name: str, arguments: dict) -> dict:
         """
@@ -176,6 +177,20 @@ class SignalToolExecutor:
         # Reaction tool
         if function_name == "react_to_message":
             return self._execute_react_to_message(arguments)
+
+        # Google Sheets tools
+        if function_name == "create_spreadsheet":
+            return self._execute_create_spreadsheet(arguments)
+        if function_name == "list_spreadsheets":
+            return self._execute_list_spreadsheets(arguments)
+        if function_name == "read_sheet":
+            return self._execute_read_sheet(arguments)
+        if function_name == "write_to_sheet":
+            return self._execute_write_to_sheet(arguments)
+        if function_name == "add_row_to_sheet":
+            return self._execute_add_row_to_sheet(arguments)
+        if function_name == "search_sheets":
+            return self._execute_search_sheets(arguments)
 
         if function_name != "generate_image":
             return {"success": False, "message": f"Unsupported function: {function_name}"}
@@ -747,6 +762,217 @@ class SignalToolExecutor:
         except Exception as e:
             logger.error(f"Error sending reaction: {e}")
             return {"success": False, "message": f"Failed to send reaction: {str(e)}"}
+
+    # Google Sheets tool execution methods
+
+    def _sheets_enabled(self) -> bool:
+        """Check if Google Sheets is enabled and connected."""
+        return (
+            self.bot_data.get('google_sheets_enabled', False) and
+            self.bot_data.get('google_connected', False)
+        )
+
+    def _execute_create_spreadsheet(self, arguments: dict) -> dict:
+        """Execute the create_spreadsheet tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        title = arguments.get("title", "")
+        description = arguments.get("description", "")
+
+        if not title:
+            return {"success": False, "message": "Title is required"}
+
+        try:
+            from signal_bot.google_sheets_client import create_spreadsheet_sync
+
+            result = create_spreadsheet_sync(
+                bot_data=self.bot_data,
+                group_id=self.group_id,
+                title=title,
+                description=description,
+                created_by=self.sender_name
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": f"Created spreadsheet '{title}': {result.get('url', 'URL unavailable')}"
+            }
+
+        except Exception as e:
+            logger.error(f"Error creating spreadsheet: {e}")
+            return {"success": False, "message": f"Error creating spreadsheet: {str(e)}"}
+
+    def _execute_list_spreadsheets(self, arguments: dict) -> dict:
+        """Execute the list_spreadsheets tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        try:
+            from signal_bot.google_sheets_client import list_spreadsheets_sync
+
+            result = list_spreadsheets_sync(
+                bot_data=self.bot_data,
+                group_id=self.group_id
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": f"Found {result.get('count', 0)} spreadsheet(s) for this group"
+            }
+
+        except Exception as e:
+            logger.error(f"Error listing spreadsheets: {e}")
+            return {"success": False, "message": f"Error listing spreadsheets: {str(e)}"}
+
+    def _execute_read_sheet(self, arguments: dict) -> dict:
+        """Execute the read_sheet tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "")
+        range_notation = arguments.get("range", "Sheet1!A1:Z100")
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+
+        try:
+            from signal_bot.google_sheets_client import read_sheet_sync
+
+            result = read_sheet_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                range_notation=range_notation
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": f"Read {result.get('row_count', 0)} rows from sheet"
+            }
+
+        except Exception as e:
+            logger.error(f"Error reading sheet: {e}")
+            return {"success": False, "message": f"Error reading sheet: {str(e)}"}
+
+    def _execute_write_to_sheet(self, arguments: dict) -> dict:
+        """Execute the write_to_sheet tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "")
+        range_notation = arguments.get("range", "")
+        values = arguments.get("values", [])
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not range_notation:
+            return {"success": False, "message": "range is required"}
+        if not values:
+            return {"success": False, "message": "values are required"}
+
+        try:
+            from signal_bot.google_sheets_client import write_sheet_sync
+
+            result = write_sheet_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                range_notation=range_notation,
+                values=values
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": f"Updated {result.get('updated_cells', 0)} cells"
+            }
+
+        except Exception as e:
+            logger.error(f"Error writing to sheet: {e}")
+            return {"success": False, "message": f"Error writing to sheet: {str(e)}"}
+
+    def _execute_add_row_to_sheet(self, arguments: dict) -> dict:
+        """Execute the add_row_to_sheet tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        spreadsheet_id = arguments.get("spreadsheet_id", "")
+        values = arguments.get("values", [])
+
+        if not spreadsheet_id:
+            return {"success": False, "message": "spreadsheet_id is required"}
+        if not values:
+            return {"success": False, "message": "values are required"}
+
+        try:
+            from signal_bot.google_sheets_client import append_to_sheet_sync
+
+            result = append_to_sheet_sync(
+                bot_data=self.bot_data,
+                spreadsheet_id=spreadsheet_id,
+                values=values,
+                added_by=self.sender_name
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            row_added = result.get("row_added", [])
+            return {
+                "success": True,
+                "data": result,
+                "message": f"Added row: {', '.join(str(v) for v in row_added[:5])}{'...' if len(row_added) > 5 else ''}"
+            }
+
+        except Exception as e:
+            logger.error(f"Error adding row to sheet: {e}")
+            return {"success": False, "message": f"Error adding row to sheet: {str(e)}"}
+
+    def _execute_search_sheets(self, arguments: dict) -> dict:
+        """Execute the search_sheets tool call."""
+        if not self._sheets_enabled():
+            return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
+
+        query = arguments.get("query", "")
+
+        if not query:
+            return {"success": False, "message": "Search query is required"}
+
+        try:
+            from signal_bot.google_sheets_client import search_sheets_sync
+
+            result = search_sheets_sync(
+                bot_data=self.bot_data,
+                group_id=self.group_id,
+                query=query
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": f"Found {result.get('count', 0)} spreadsheet(s) matching '{query}'"
+            }
+
+        except Exception as e:
+            logger.error(f"Error searching sheets: {e}")
+            return {"success": False, "message": f"Error searching sheets: {str(e)}"}
 
 
 def create_tool_executor_callback(executor: ToolExecutor) -> Callable[[str, dict], dict]:

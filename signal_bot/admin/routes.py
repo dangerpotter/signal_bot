@@ -114,6 +114,17 @@ def register_routes(app):
             bot.finance_enabled = request.form.get("finance_enabled") == "on"
             bot.time_enabled = request.form.get("time_enabled") == "on"
             bot.wikipedia_enabled = request.form.get("wikipedia_enabled") == "on"
+
+            # Google Sheets settings
+            bot.google_sheets_enabled = request.form.get("google_sheets_enabled") == "on"
+            # Only update credentials if provided (to avoid clearing on each save)
+            new_client_id = request.form.get("google_client_id", "").strip()
+            new_client_secret = request.form.get("google_client_secret", "").strip()
+            if new_client_id:
+                bot.google_client_id = new_client_id
+            if new_client_secret:
+                bot.google_client_secret = new_client_secret
+
             bot.idle_news_enabled = request.form.get("idle_news_enabled") == "on"
             bot.idle_threshold_minutes = int(request.form.get("idle_threshold_minutes", 15))
             bot.idle_check_interval_minutes = int(request.form.get("idle_check_interval_minutes", 5))
@@ -144,6 +155,112 @@ def register_routes(app):
         _log_activity("bot_deleted", None, None, f"Bot '{name}' deleted")
         flash(f"Bot '{name}' deleted", "success")
         return redirect(url_for("bots_list"))
+
+    # Google OAuth routes for Sheets integration
+    @app.route("/bots/<bot_id>/google/connect")
+    def google_oauth_start(bot_id):
+        """Start Google OAuth flow for a bot."""
+        import secrets
+        from flask import session
+
+        bot = Bot.query.get_or_404(bot_id)
+
+        if not bot.google_client_id:
+            flash("Please configure Google Client ID first", "error")
+            return redirect(url_for("edit_bot", bot_id=bot_id))
+
+        if not bot.google_client_secret:
+            flash("Please configure Google Client Secret first", "error")
+            return redirect(url_for("edit_bot", bot_id=bot_id))
+
+        # Generate state token for CSRF protection
+        state = secrets.token_urlsafe(32)
+        session[f'google_oauth_state_{bot_id}'] = state
+        session[f'google_oauth_bot_id'] = bot_id
+
+        # Build redirect URI
+        redirect_uri = url_for('google_oauth_callback', _external=True)
+
+        # Get OAuth URL
+        from signal_bot.google_sheets_client import get_oauth_url
+        oauth_url = get_oauth_url(bot.google_client_id, redirect_uri, state)
+
+        return redirect(oauth_url)
+
+    @app.route("/oauth/google/callback")
+    def google_oauth_callback():
+        """Handle Google OAuth callback."""
+        from flask import session
+        from datetime import datetime, timedelta
+
+        # Get parameters
+        code = request.args.get('code')
+        state = request.args.get('state')
+        error = request.args.get('error')
+
+        if error:
+            flash(f"Google authorization failed: {error}", "error")
+            return redirect(url_for("bots_list"))
+
+        # Get bot_id from session
+        bot_id = session.get('google_oauth_bot_id')
+        if not bot_id:
+            flash("OAuth session expired. Please try again.", "error")
+            return redirect(url_for("bots_list"))
+
+        # Verify state
+        expected_state = session.get(f'google_oauth_state_{bot_id}')
+        if not expected_state or state != expected_state:
+            flash("Invalid OAuth state. Please try again.", "error")
+            return redirect(url_for("edit_bot", bot_id=bot_id))
+
+        bot = Bot.query.get_or_404(bot_id)
+
+        # Exchange code for tokens
+        redirect_uri = url_for('google_oauth_callback', _external=True)
+
+        from signal_bot.google_sheets_client import exchange_code_for_tokens_sync
+        result = exchange_code_for_tokens_sync(
+            code=code,
+            client_id=bot.google_client_id,
+            client_secret=bot.google_client_secret,
+            redirect_uri=redirect_uri
+        )
+
+        if "error" in result:
+            flash(f"Token exchange failed: {result['error']}", "error")
+            return redirect(url_for("edit_bot", bot_id=bot_id))
+
+        # Store tokens
+        bot.google_refresh_token = result.get('refresh_token')
+        expires_in = result.get('expires_in', 3600)
+        bot.google_token_expiry = datetime.utcnow() + timedelta(seconds=expires_in)
+        bot.google_connected = True
+
+        db.session.commit()
+
+        # Clear session
+        session.pop(f'google_oauth_state_{bot_id}', None)
+        session.pop('google_oauth_bot_id', None)
+
+        _log_activity("google_connected", bot_id, None, f"Bot '{bot.name}' connected to Google Sheets")
+        flash(f"Successfully connected '{bot.name}' to Google!", "success")
+        return redirect(url_for("edit_bot", bot_id=bot_id))
+
+    @app.route("/bots/<bot_id>/google/disconnect", methods=["POST"])
+    def google_oauth_disconnect(bot_id):
+        """Disconnect a bot from Google."""
+        bot = Bot.query.get_or_404(bot_id)
+
+        bot.google_refresh_token = None
+        bot.google_token_expiry = None
+        bot.google_connected = False
+
+        db.session.commit()
+
+        _log_activity("google_disconnected", bot_id, None, f"Bot '{bot.name}' disconnected from Google Sheets")
+        flash(f"Disconnected '{bot.name}' from Google", "success")
+        return redirect(url_for("edit_bot", bot_id=bot_id))
 
     @app.route("/groups")
     def groups_list():

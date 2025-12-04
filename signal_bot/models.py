@@ -28,6 +28,14 @@ class Bot(db.Model):
     time_enabled = db.Column(db.Boolean, default=False)  # Enable time/date tool (timezone-aware)
     wikipedia_enabled = db.Column(db.Boolean, default=False)  # Enable Wikipedia tool
 
+    # Google Sheets integration
+    google_sheets_enabled = db.Column(db.Boolean, default=False)  # Enable Google Sheets tools
+    google_client_id = db.Column(db.String(200), nullable=True)  # OAuth client ID
+    google_client_secret = db.Column(db.Text, nullable=True)  # OAuth client secret (encrypted in production)
+    google_refresh_token = db.Column(db.Text, nullable=True)  # Stored refresh token for API access
+    google_token_expiry = db.Column(db.DateTime, nullable=True)  # When access token expires
+    google_connected = db.Column(db.Boolean, default=False)  # Whether OAuth flow is complete
+
     # Idle news settings
     idle_news_enabled = db.Column(db.Boolean, default=False)  # Post news when group is quiet
     idle_threshold_minutes = db.Column(db.Integer, default=15)  # Minutes of silence before idle mode (5-120)
@@ -73,6 +81,11 @@ class Bot(db.Model):
             "finance_enabled": self.finance_enabled,
             "time_enabled": self.time_enabled,
             "wikipedia_enabled": self.wikipedia_enabled,
+            "google_sheets_enabled": self.google_sheets_enabled,
+            "google_connected": self.google_connected,
+            "google_client_id": self.google_client_id,
+            "google_refresh_token": self.google_refresh_token,  # Needed by sheets client
+            "google_token_expiry": self.google_token_expiry.isoformat() if self.google_token_expiry else None,
             "idle_news_enabled": self.idle_news_enabled,
             "idle_threshold_minutes": self.idle_threshold_minutes or 15,
             "idle_check_interval_minutes": self.idle_check_interval_minutes or 5,
@@ -341,3 +354,57 @@ class CustomModel(db.Model):
         """Get all enabled custom models as a dict for merging with config.AI_MODELS."""
         models = CustomModel.query.filter_by(enabled=True).all()
         return {m.display_name: m.id for m in models}
+
+
+class SheetsRegistry(db.Model):
+    """Registry of spreadsheets created/managed by bots for each group."""
+    __tablename__ = "sheets_registry"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    bot_id = db.Column(db.String(50), db.ForeignKey("bots.id"), nullable=False)
+    group_id = db.Column(db.String(100), db.ForeignKey("groups.id"), nullable=False)
+    spreadsheet_id = db.Column(db.String(100), nullable=False, unique=True)  # Google Sheets ID
+    title = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text, nullable=True)  # What this sheet is for
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    last_accessed = db.Column(db.DateTime, default=datetime.utcnow)
+    created_by = db.Column(db.String(100), nullable=True)  # Signal user who requested creation
+
+    # Relationships
+    bot = db.relationship("Bot", backref="sheets")
+    group = db.relationship("GroupConnection", backref="sheets")
+
+    __table_args__ = (
+        db.Index('idx_sheets_bot_group', 'bot_id', 'group_id'),
+    )
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "bot_id": self.bot_id,
+            "group_id": self.group_id,
+            "spreadsheet_id": self.spreadsheet_id,
+            "title": self.title,
+            "description": self.description,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "last_accessed": self.last_accessed.isoformat() if self.last_accessed else None,
+            "created_by": self.created_by,
+            "url": f"https://docs.google.com/spreadsheets/d/{self.spreadsheet_id}",
+        }
+
+    @staticmethod
+    def get_sheets_for_group(bot_id: str, group_id: str) -> list:
+        """Get all sheets for a specific bot+group combination."""
+        return SheetsRegistry.query.filter_by(
+            bot_id=bot_id,
+            group_id=group_id
+        ).order_by(SheetsRegistry.last_accessed.desc()).all()
+
+    @staticmethod
+    def search_sheets(bot_id: str, group_id: str, query: str) -> list:
+        """Search sheets by title for a specific bot+group."""
+        return SheetsRegistry.query.filter(
+            SheetsRegistry.bot_id == bot_id,
+            SheetsRegistry.group_id == group_id,
+            SheetsRegistry.title.ilike(f"%{query}%")
+        ).all()

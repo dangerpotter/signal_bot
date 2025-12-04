@@ -187,6 +187,71 @@
                     </div>
                 </div>
             </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-file-earmark-spreadsheet"></i> Google Sheets Integration
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input type="checkbox" name="google_sheets_enabled" class="form-check-input" id="sheetsEnabled" {% if bot.google_sheets_enabled %}checked{% endif %}>
+                            <label class="form-check-label" for="sheetsEnabled">Enable Google Sheets tools</label>
+                        </div>
+                        <small class="text-muted">Bot can create and manage spreadsheets for expense tracking, lists, and collaborative data (requires tool-capable model)</small>
+                    </div>
+
+                    <hr>
+
+                    <h6>OAuth Credentials</h6>
+                    <p class="text-muted small mb-2">
+                        <a href="https://console.cloud.google.com/apis/credentials" target="_blank">Create OAuth credentials</a> in Google Cloud Console.
+                        Enable <strong>Sheets API</strong> and <strong>Drive API</strong>.
+                        Add this redirect URI: <code>{{ url_for('google_oauth_callback', _external=True) }}</code>
+                    </p>
+
+                    <div class="mb-3">
+                        <label class="form-label">Client ID</label>
+                        <input type="text" name="google_client_id" class="form-control" value="{{ bot.google_client_id or '' }}" placeholder="123456789.apps.googleusercontent.com">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Client Secret</label>
+                        <input type="password" name="google_client_secret" class="form-control" value="" placeholder="{% if bot.google_client_secret %}(configured - leave blank to keep){% else %}Enter client secret{% endif %}">
+                        <small class="text-muted">Leave blank to keep existing secret</small>
+                    </div>
+
+                    <hr>
+
+                    <h6>Connection Status</h6>
+                    {% if bot.google_connected %}
+                        <div class="alert alert-success mb-3">
+                            <i class="bi bi-check-circle"></i> <strong>Connected to Google</strong>
+                            {% if bot.google_token_expiry %}
+                                <br><small>Token refreshes automatically</small>
+                            {% endif %}
+                        </div>
+                        <form action="{{ url_for('google_oauth_disconnect', bot_id=bot.id) }}" method="post" class="d-inline">
+                            <button type="submit" class="btn btn-outline-danger btn-sm">
+                                <i class="bi bi-x-circle"></i> Disconnect
+                            </button>
+                        </form>
+                    {% else %}
+                        <div class="alert alert-warning mb-3">
+                            <i class="bi bi-exclamation-triangle"></i> <strong>Not Connected</strong>
+                            <br><small>Configure credentials and click Connect to authorize</small>
+                        </div>
+                        {% if bot.google_client_id and bot.google_client_secret %}
+                            <a href="{{ url_for('google_oauth_start', bot_id=bot.id) }}" class="btn btn-primary btn-sm">
+                                <i class="bi bi-google"></i> Connect to Google
+                            </a>
+                        {% else %}
+                            <button class="btn btn-secondary btn-sm" disabled>
+                                <i class="bi bi-google"></i> Configure credentials first
+                            </button>
+                        {% endif %}
+                    {% endif %}
+                </div>
+            </div>
         </div>
     </div>
 

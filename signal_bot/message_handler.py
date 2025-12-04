@@ -339,14 +339,16 @@ class MessageHandler:
             use_tools = None
             tool_executor = None
 
-            # Check if any tools are enabled (image generation, weather, finance, time, wikipedia, or reaction)
+            # Check if any tools are enabled (image generation, weather, finance, time, wikipedia, reaction, or sheets)
             image_enabled = bot_data.get('image_generation_enabled', False)
             weather_enabled = bot_data.get('weather_enabled', False)
             finance_enabled = bot_data.get('finance_enabled', False)
             time_enabled = bot_data.get('time_enabled', False)
             wikipedia_enabled = bot_data.get('wikipedia_enabled', False)
+            # Sheets requires both enabled AND connected to Google
+            sheets_enabled = bot_data.get('google_sheets_enabled', False) and bot_data.get('google_connected', False)
             # reaction_enabled already set above for context formatting
-            any_tools_enabled = image_enabled or weather_enabled or finance_enabled or time_enabled or wikipedia_enabled or reaction_enabled
+            any_tools_enabled = image_enabled or weather_enabled or finance_enabled or time_enabled or wikipedia_enabled or reaction_enabled or sheets_enabled
 
             if (OPENROUTER_TOOL_CALLING_ENABLED and
                 any_tools_enabled and
@@ -359,7 +361,8 @@ class MessageHandler:
                     finance_enabled=finance_enabled,
                     time_enabled=time_enabled,
                     wikipedia_enabled=wikipedia_enabled,
-                    reaction_enabled=reaction_enabled
+                    reaction_enabled=reaction_enabled,
+                    sheets_enabled=sheets_enabled
                 )
                 signal_executor = SignalToolExecutor(
                     bot_data=bot_data,
@@ -369,6 +372,8 @@ class MessageHandler:
                     reaction_metadata=reaction_metadata,
                     max_reactions=bot_data.get('max_reactions_per_response', 3)
                 )
+                # Set sender name for sheet attribution
+                signal_executor.sender_name = sender_name
                 tool_executor = signal_executor.execute
                 tools_list = [t['function']['name'] for t in use_tools]
                 logger.info(f"Tool calling enabled for {bot_data.get('name')}: {tools_list}")
