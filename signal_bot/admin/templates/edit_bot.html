@@ -261,11 +261,9 @@
                                 <br><small>Token refreshes automatically</small>
                             {% endif %}
                         </div>
-                        <form action="{{ url_for('google_oauth_disconnect', bot_id=bot.id) }}" method="post" class="d-inline">
-                            <button type="submit" class="btn btn-outline-danger btn-sm">
-                                <i class="bi bi-x-circle"></i> Disconnect
-                            </button>
-                        </form>
+                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="disconnectGoogle()">
+                            <i class="bi bi-x-circle"></i> Disconnect
+                        </button>
                     {% else %}
                         <div class="alert alert-warning mb-3">
                             <i class="bi bi-exclamation-triangle"></i> <strong>Not Connected</strong>
@@ -325,10 +323,50 @@
     </div>
 </form>
 
+<hr class="my-4">
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card border-warning">
+            <div class="card-header bg-warning text-dark">
+                <i class="bi bi-tools"></i> Maintenance
+            </div>
+            <div class="card-body">
+                <h6>Clear Message Logs</h6>
+                <p class="text-muted small">Delete all message history for this bot's assigned groups. Use this to fix context pollution issues.</p>
+                <button type="button" class="btn btn-warning btn-sm" onclick="clearLogs()">
+                    <i class="bi bi-trash"></i> Clear Message Logs
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 function loadPromptTemplate(value) {
     if (value) {
         document.getElementById('systemPrompt').value = value;
+    }
+}
+
+function disconnectGoogle() {
+    if (confirm('Disconnect from Google? You will need to re-authorize to use Sheets features.')) {
+        // Create a temporary form and submit it
+        var form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '{{ url_for("google_oauth_disconnect", bot_id=bot.id) }}';
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+
+function clearLogs() {
+    if (confirm('Clear all message logs for this bot\'s groups? This will reset the conversation context and cannot be undone.')) {
+        var form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '{{ url_for("clear_bot_logs", bot_id=bot.id) }}';
+        document.body.appendChild(form);
+        form.submit();
     }
 }
 </script>

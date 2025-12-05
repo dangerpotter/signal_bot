@@ -160,6 +160,27 @@ def register_routes(app):
         flash(f"Bot '{name}' deleted", "success")
         return redirect(url_for("bots_list"))
 
+    @app.route("/bots/<bot_id>/clear-logs", methods=["POST"])
+    def clear_bot_logs(bot_id):
+        """Clear all message logs for a bot's assigned groups."""
+        bot = Bot.query.get_or_404(bot_id)
+
+        # Get all group IDs assigned to this bot
+        assignments = BotGroupAssignment.query.filter_by(bot_id=bot_id).all()
+        group_ids = [a.group_id for a in assignments]
+
+        if not group_ids:
+            flash("No groups assigned to this bot", "warning")
+            return redirect(url_for("edit_bot", bot_id=bot_id))
+
+        # Delete all message logs for these groups
+        deleted_count = MessageLog.query.filter(MessageLog.group_id.in_(group_ids)).delete()
+        db.session.commit()
+
+        _log_activity("logs_cleared", bot_id, None, f"Cleared {deleted_count} message logs for bot '{bot.name}'")
+        flash(f"Cleared {deleted_count} message logs for {len(group_ids)} group(s)", "success")
+        return redirect(url_for("edit_bot", bot_id=bot_id))
+
     # Google OAuth routes for Sheets integration
     @app.route("/bots/<bot_id>/google/connect")
     def google_oauth_start(bot_id):

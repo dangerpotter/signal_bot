@@ -4273,18 +4273,21 @@ class SignalToolExecutor:
             return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "")
+        sheet_name = arguments.get("sheet_name", "Sheet1")
         data_range = arguments.get("data_range", "")
-        filter_column_index = arguments.get("filter_column_index")
+        # Accept schema name 'column_index'
+        column_index = arguments.get("column_index")
         title = arguments.get("title")
-        row_index = arguments.get("row_index", 0)
-        column_index = arguments.get("column_index", 0)
+        # Accept schema names 'anchor_row/anchor_col'
+        anchor_row = arguments.get("anchor_row", 0)
+        anchor_col = arguments.get("anchor_col", 0)
 
         if not spreadsheet_id:
             return {"success": False, "message": "spreadsheet_id is required"}
         if not data_range:
             return {"success": False, "message": "data_range is required"}
-        if filter_column_index is None:
-            return {"success": False, "message": "filter_column_index is required"}
+        if column_index is None:
+            return {"success": False, "message": "column_index is required"}
 
         try:
             from signal_bot.google_sheets_client import create_slicer_sync
@@ -4292,11 +4295,12 @@ class SignalToolExecutor:
             result = create_slicer_sync(
                 bot_data=self.bot_data,
                 spreadsheet_id=spreadsheet_id,
+                sheet_name=sheet_name,
                 data_range=data_range,
-                filter_column_index=filter_column_index,
+                column_index=column_index,
                 title=title,
-                row_index=row_index,
-                column_index=column_index
+                anchor_row=anchor_row,
+                anchor_col=anchor_col
             )
 
             if "error" in result:
@@ -4425,13 +4429,16 @@ class SignalToolExecutor:
             return {"success": False, "message": "Google Sheets not enabled or not connected. Connect via admin panel."}
 
         spreadsheet_id = arguments.get("spreadsheet_id", "")
-        range_str = arguments.get("range", "")
+        sheet_name = arguments.get("sheet_name", "Sheet1")
+        # Accept both schema name 'range_notation' and legacy 'range'
+        range_notation = arguments.get("range_notation") or arguments.get("range", "")
+        table_name = arguments.get("name", "Table1")
         columns = arguments.get("columns", [])
 
         if not spreadsheet_id:
             return {"success": False, "message": "spreadsheet_id is required"}
-        if not range_str:
-            return {"success": False, "message": "range is required"}
+        if not range_notation:
+            return {"success": False, "message": "range_notation is required"}
         if not columns:
             return {"success": False, "message": "columns is required (list of column definitions)"}
 
@@ -4441,7 +4448,9 @@ class SignalToolExecutor:
             result = create_table_sync(
                 bot_data=self.bot_data,
                 spreadsheet_id=spreadsheet_id,
-                range_str=range_str,
+                sheet_name=sheet_name,
+                range_notation=range_notation,
+                name=table_name,
                 columns=columns
             )
 

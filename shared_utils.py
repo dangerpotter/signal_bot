@@ -529,6 +529,10 @@ def call_openrouter_responses_api(
         print(f"  Streaming: {stream_callback is not None}")
         if tools:
             print(f"  Function tools: {[t['function']['name'] for t in tools if t.get('type') == 'function']}")
+        # Debug: verify message format
+        if input_messages:
+            first_msg = input_messages[0]
+            print(f"  First msg has 'type' key: {'type' in first_msg}, type value: {first_msg.get('type', 'MISSING')}")
 
         def make_request(req_payload, stream=False):
             """Make a request to the Responses API, handling streaming if enabled."""
@@ -553,8 +557,17 @@ def call_openrouter_responses_api(
 
         print(f"[OpenRouter Responses API] Response received")
 
-        # Extract output items
+        # Debug: log raw output structure
         output = response_data.get("output", [])
+        print(f"[OpenRouter Responses API] Output items: {len(output)}, types: {[item.get('type') for item in output]}")
+        if output and output[0].get("type") == "message":
+            content = output[0].get("content", [])
+            if content:
+                print(f"[OpenRouter Responses API] First message content type: {content[0].get('type') if content else 'none'}")
+                if content[0].get("type") == "output_text":
+                    print(f"[OpenRouter Responses API] Text preview: {content[0].get('text', '')[:200]}")
+
+        # Extract output items
         text = ""
         annotations = []
         function_calls = []
@@ -578,13 +591,13 @@ def call_openrouter_responses_api(
 
             for fc in function_calls:
                 func_name = fc.get("name")
-                func_args = fc.get("arguments", "{}")
+                func_args = fc.get("arguments") or "{}"  # Handle empty string case
                 call_id = fc.get("call_id", fc.get("id", ""))
                 fc_id = fc.get("id", f"fc_{uuid_module.uuid4().hex[:8]}")
 
                 print(f"[OpenRouter Responses API] Executing tool: {func_name}")
                 try:
-                    args_dict = json.loads(func_args) if isinstance(func_args, str) else func_args
+                    args_dict = json.loads(func_args) if isinstance(func_args, str) else (func_args or {})
                     tool_result = tool_executor(func_name, args_dict)
                     print(f"[OpenRouter Responses API] Tool result: {str(tool_result)[:200]}")
 
@@ -671,13 +684,13 @@ def call_openrouter_responses_api(
 
                             for fc in follow_up_function_calls:
                                 func_name = fc.get("name")
-                                func_args = fc.get("arguments", "{}")
+                                func_args = fc.get("arguments") or "{}"  # Handle empty string case
                                 call_id = fc.get("call_id", fc.get("id", ""))
                                 fc_id = fc.get("id", f"fc_{uuid_module.uuid4().hex[:8]}")
 
                                 print(f"[OpenRouter Responses API] Executing chained tool: {func_name}")
                                 try:
-                                    args_dict = json.loads(func_args) if isinstance(func_args, str) else func_args
+                                    args_dict = json.loads(func_args) if isinstance(func_args, str) else (func_args or {})
                                     tool_result = tool_executor(func_name, args_dict)
                                     print(f"[OpenRouter Responses API] Chained tool result: {str(tool_result)[:200]}")
 
@@ -1143,12 +1156,12 @@ def call_openrouter_api(
                             for tc in tool_calls:
                                 try:
                                     fn_name = tc.get('function', {}).get('name', '')
-                                    fn_args_str = tc.get('function', {}).get('arguments', '{}')
+                                    fn_args_str = tc.get('function', {}).get('arguments') or '{}'  # Handle empty string
                                     tc_id = tc.get('id', '')
 
                                     # Parse arguments
                                     try:
-                                        fn_args = json.loads(fn_args_str) if isinstance(fn_args_str, str) else fn_args_str
+                                        fn_args = json.loads(fn_args_str) if isinstance(fn_args_str, str) else (fn_args_str or {})
                                     except json.JSONDecodeError:
                                         fn_args = {}
 
@@ -1219,11 +1232,11 @@ def call_openrouter_api(
                                             for tc in follow_up_tool_calls:
                                                 try:
                                                     fn_name = tc.get('function', {}).get('name', '')
-                                                    fn_args_str = tc.get('function', {}).get('arguments', '{}')
+                                                    fn_args_str = tc.get('function', {}).get('arguments') or '{}'  # Handle empty string
                                                     tc_id = tc.get('id', '')
 
                                                     try:
-                                                        fn_args = json.loads(fn_args_str) if isinstance(fn_args_str, str) else fn_args_str
+                                                        fn_args = json.loads(fn_args_str) if isinstance(fn_args_str, str) else (fn_args_str or {})
                                                     except json.JSONDecodeError:
                                                         fn_args = {}
 
