@@ -6,7 +6,7 @@ from flask import render_template, request, jsonify, redirect, url_for, flash
 from signal_bot.models import (
     db, Bot, GroupConnection, BotGroupAssignment,
     SystemPromptTemplate, ActivityLog, MemorySnippet, GroupMemberMemory, MessageLog,
-    CustomModel
+    CustomModel, ScheduledTrigger
 )
 
 
@@ -157,6 +157,10 @@ def register_routes(app):
 
             # Member memory settings
             bot.member_memory_model = request.form.get("member_memory_model", "").strip() or None
+
+            # Scheduled triggers settings
+            bot.triggers_enabled = request.form.get("triggers_enabled") == "on"
+            bot.max_triggers = int(request.form.get("max_triggers", 10))
 
             db.session.commit()
             _log_activity("bot_updated", bot_id, None, f"Bot '{bot.name}' settings updated")
@@ -964,6 +968,256 @@ def register_routes(app):
             {"name": m.sender_name, "id": m.sender_id}
             for m in members if m.sender_name
         ])
+
+    # ===== Scheduled Triggers =====
+
+    @app.route("/triggers")
+    def triggers_list():
+        """List all scheduled triggers with filters."""
+        # Get filter parameters
+        bot_filter = request.args.get("bot_id", "")
+        group_filter = request.args.get("group_id", "")
+        type_filter = request.args.get("trigger_type", "")
+        status_filter = request.args.get("status", "")
+
+        # Build query
+        query = ScheduledTrigger.query
+
+        if bot_filter:
+            query = query.filter(ScheduledTrigger.bot_id == bot_filter)
+        if group_filter:
+            query = query.filter(ScheduledTrigger.group_id == group_filter)
+        if type_filter:
+            query = query.filter(ScheduledTrigger.trigger_type == type_filter)
+        if status_filter == "enabled":
+            query = query.filter(ScheduledTrigger.enabled == True)
+        elif status_filter == "disabled":
+            query = query.filter(ScheduledTrigger.enabled == False)
+
+        triggers = query.order_by(ScheduledTrigger.next_fire_time.asc()).all()
+
+        # Get bots and groups for filter dropdowns
+        bots = Bot.query.all()
+        groups = GroupConnection.query.all()
+
+        return render_template("triggers.html",
+                               triggers=triggers,
+                               bots=bots,
+                               groups=groups,
+                               bot_filter=bot_filter,
+                               group_filter=group_filter,
+                               type_filter=type_filter,
+                               status_filter=status_filter)
+
+    @app.route("/triggers/add", methods=["GET", "POST"])
+    def add_trigger():
+        """Add a new scheduled trigger."""
+        from datetime import datetime, time
+
+        if request.method == "POST":
+            bot_id = request.form.get("bot_id", "").strip()
+            group_id = request.form.get("group_id", "").strip()
+            trigger_type = request.form.get("trigger_type", "reminder")
+            name = request.form.get("name", "").strip()
+            content = request.form.get("content", "").strip()
+            trigger_mode = request.form.get("trigger_mode", "once")
+
+            if not bot_id or not group_id or not name or not content:
+                flash("Bot, group, name, and content are required", "error")
+                return redirect(url_for("add_trigger"))
+
+            # Check bot's trigger limit
+            bot = Bot.query.get_or_404(bot_id)
+            if not bot.triggers_enabled:
+                flash(f"Triggers are disabled for bot '{bot.name}'", "error")
+                return redirect(url_for("add_trigger"))
+
+            current_count = ScheduledTrigger.query.filter_by(bot_id=bot_id, enabled=True).count()
+            if current_count >= bot.max_triggers:
+                flash(f"Bot '{bot.name}' has reached its trigger limit ({bot.max_triggers})", "error")
+                return redirect(url_for("add_trigger"))
+
+            trigger = ScheduledTrigger(
+                bot_id=bot_id,
+                group_id=group_id,
+                trigger_type=trigger_type,
+                name=name,
+                content=content,
+                trigger_mode=trigger_mode,
+                created_via="admin"
+            )
+
+            # Handle one-time vs recurring
+            if trigger_mode == "once":
+                scheduled_time_str = request.form.get("scheduled_time", "").strip()
+                if scheduled_time_str:
+                    trigger.scheduled_time = datetime.fromisoformat(scheduled_time_str)
+            else:
+                # Recurring settings
+                trigger.recurrence_pattern = request.form.get("recurrence_pattern", "daily")
+                trigger.recurrence_interval = int(request.form.get("recurrence_interval", 1))
+
+                recurrence_time_str = request.form.get("recurrence_time", "09:00")
+                if recurrence_time_str:
+                    h, m = map(int, recurrence_time_str.split(":"))
+                    trigger.recurrence_time = time(h, m)
+
+                trigger.recurrence_day_of_week = request.form.get("recurrence_day_of_week", type=int)
+                trigger.recurrence_day_of_month = request.form.get("recurrence_day_of_month", type=int)
+                trigger.timezone = request.form.get("timezone", "UTC")
+
+                end_date_str = request.form.get("end_date", "").strip()
+                if end_date_str:
+                    trigger.end_date = datetime.fromisoformat(end_date_str)
+
+            # Compute initial fire time
+            from signal_bot.trigger_scheduler import TriggerScheduler
+            trigger.next_fire_time = TriggerScheduler.compute_initial_fire_time(trigger)
+
+            db.session.add(trigger)
+            db.session.commit()
+
+            _log_activity("trigger_created", bot_id, group_id, f"Trigger '{name}' created via admin")
+            flash(f"Trigger '{name}' created successfully", "success")
+            return redirect(url_for("triggers_list"))
+
+        # GET - show form
+        bots = Bot.query.filter_by(triggers_enabled=True).all()
+        groups = GroupConnection.query.all()
+
+        return render_template("add_trigger.html", bots=bots, groups=groups)
+
+    @app.route("/triggers/<int:trigger_id>/edit", methods=["GET", "POST"])
+    def edit_trigger(trigger_id):
+        """Edit an existing trigger."""
+        from datetime import datetime, time
+
+        trigger = ScheduledTrigger.query.get_or_404(trigger_id)
+
+        if request.method == "POST":
+            trigger.name = request.form.get("name", trigger.name).strip()
+            trigger.content = request.form.get("content", trigger.content).strip()
+            trigger.trigger_type = request.form.get("trigger_type", trigger.trigger_type)
+            trigger.trigger_mode = request.form.get("trigger_mode", trigger.trigger_mode)
+
+            # Handle one-time vs recurring
+            if trigger.trigger_mode == "once":
+                scheduled_time_str = request.form.get("scheduled_time", "").strip()
+                if scheduled_time_str:
+                    trigger.scheduled_time = datetime.fromisoformat(scheduled_time_str)
+            else:
+                # Recurring settings
+                trigger.recurrence_pattern = request.form.get("recurrence_pattern", "daily")
+                trigger.recurrence_interval = int(request.form.get("recurrence_interval", 1))
+
+                recurrence_time_str = request.form.get("recurrence_time", "09:00")
+                if recurrence_time_str:
+                    h, m = map(int, recurrence_time_str.split(":"))
+                    trigger.recurrence_time = time(h, m)
+
+                trigger.recurrence_day_of_week = request.form.get("recurrence_day_of_week", type=int)
+                trigger.recurrence_day_of_month = request.form.get("recurrence_day_of_month", type=int)
+                trigger.timezone = request.form.get("timezone", "UTC")
+
+                end_date_str = request.form.get("end_date", "").strip()
+                if end_date_str:
+                    trigger.end_date = datetime.fromisoformat(end_date_str)
+                else:
+                    trigger.end_date = None
+
+            # Recompute next fire time
+            from signal_bot.trigger_scheduler import TriggerScheduler
+            trigger.next_fire_time = TriggerScheduler.compute_initial_fire_time(trigger)
+
+            db.session.commit()
+            _log_activity("trigger_updated", trigger.bot_id, trigger.group_id, f"Trigger '{trigger.name}' updated")
+            flash(f"Trigger '{trigger.name}' updated successfully", "success")
+            return redirect(url_for("triggers_list"))
+
+        # GET - show form
+        bots = Bot.query.all()
+        groups = GroupConnection.query.all()
+
+        return render_template("edit_trigger.html", trigger=trigger, bots=bots, groups=groups)
+
+    @app.route("/triggers/<int:trigger_id>/toggle", methods=["POST"])
+    def toggle_trigger(trigger_id):
+        """Enable/disable a trigger."""
+        trigger = ScheduledTrigger.query.get_or_404(trigger_id)
+
+        # If enabling, check bot's limit
+        if not trigger.enabled:
+            bot = Bot.query.get(trigger.bot_id)
+            if bot and not bot.triggers_enabled:
+                flash(f"Triggers are disabled for bot '{bot.name}'", "error")
+                return redirect(url_for("triggers_list"))
+
+            current_count = ScheduledTrigger.query.filter_by(bot_id=trigger.bot_id, enabled=True).count()
+            if bot and current_count >= bot.max_triggers:
+                flash(f"Bot '{bot.name}' has reached its trigger limit ({bot.max_triggers})", "error")
+                return redirect(url_for("triggers_list"))
+
+        trigger.enabled = not trigger.enabled
+
+        # If re-enabling, recompute next fire time
+        if trigger.enabled:
+            from signal_bot.trigger_scheduler import TriggerScheduler
+            trigger.next_fire_time = TriggerScheduler.compute_initial_fire_time(trigger)
+
+        db.session.commit()
+
+        status = "enabled" if trigger.enabled else "disabled"
+        _log_activity("trigger_toggled", trigger.bot_id, trigger.group_id, f"Trigger '{trigger.name}' {status}")
+        flash(f"Trigger '{trigger.name}' {status}", "success")
+        return redirect(url_for("triggers_list"))
+
+    @app.route("/triggers/<int:trigger_id>/delete", methods=["POST"])
+    def delete_trigger(trigger_id):
+        """Delete a trigger."""
+        trigger = ScheduledTrigger.query.get_or_404(trigger_id)
+        name = trigger.name
+        bot_id = trigger.bot_id
+        group_id = trigger.group_id
+
+        db.session.delete(trigger)
+        db.session.commit()
+
+        _log_activity("trigger_deleted", bot_id, group_id, f"Trigger '{name}' deleted")
+        flash(f"Trigger '{name}' deleted", "success")
+        return redirect(url_for("triggers_list"))
+
+    @app.route("/triggers/<int:trigger_id>/fire-now", methods=["POST"])
+    def fire_trigger_now(trigger_id):
+        """Manually fire a trigger immediately (for testing)."""
+        import asyncio
+        from signal_bot.trigger_scheduler import get_trigger_scheduler
+
+        trigger = ScheduledTrigger.query.get_or_404(trigger_id)
+
+        scheduler = get_trigger_scheduler()
+        if not scheduler:
+            flash("Trigger scheduler not running. Start bots first.", "error")
+            return redirect(url_for("triggers_list"))
+
+        try:
+            # Run the trigger execution in a new event loop
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(scheduler._execute_trigger(trigger))
+            loop.close()
+
+            # Update stats
+            from datetime import datetime
+            trigger.last_fired_at = datetime.utcnow()
+            trigger.fire_count += 1
+            db.session.commit()
+
+            _log_activity("trigger_fired_manual", trigger.bot_id, trigger.group_id, f"Trigger '{trigger.name}' manually fired")
+            flash(f"Trigger '{trigger.name}' fired successfully", "success")
+        except Exception as e:
+            flash(f"Failed to fire trigger: {e}", "error")
+
+        return redirect(url_for("triggers_list"))
 
 
 def _log_activity(event_type: str, bot_id: str | None, group_id: str | None, description: str):

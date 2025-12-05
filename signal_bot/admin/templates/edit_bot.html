@@ -325,6 +325,36 @@
                     {% endif %}
                 </div>
             </div>
+
+            <!-- Scheduled Triggers -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-clock-history"></i> Scheduled Triggers
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input type="checkbox" name="triggers_enabled" class="form-check-input" id="triggersEnabled" {% if bot.triggers_enabled is not defined or bot.triggers_enabled %}checked{% endif %}>
+                            <label class="form-check-label" for="triggersEnabled">Enable scheduled triggers</label>
+                        </div>
+                        <small class="text-muted">Allow scheduled reminders and AI tasks for this bot</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Max Triggers</label>
+                        <input type="number" name="max_triggers" class="form-control" min="1" max="100" value="{{ bot.max_triggers if bot.max_triggers is defined else 10 }}">
+                        <small class="text-muted">Maximum number of active triggers for this bot (1-100, default: 10)</small>
+                    </div>
+
+                    <hr>
+
+                    <p class="text-muted small mb-0">
+                        <i class="bi bi-info-circle"></i>
+                        Manage triggers in the <a href="{{ url_for('triggers_list') }}?bot_id={{ bot.id }}">Triggers</a> tab.
+                        Triggers can send reminders or execute AI tasks on a schedule.
+                    </p>
+                </div>
+            </div>
         </div>
     </div>
 

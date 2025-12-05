@@ -357,8 +357,10 @@ class MessageHandler:
             calendar_enabled = bot_data.get('google_calendar_enabled', False) and bot_data.get('google_connected', False)
             # Member memory tools
             member_memory_tools_enabled = bot_data.get('member_memory_tools_enabled', False)
+            # Scheduled triggers
+            triggers_enabled = bot_data.get('triggers_enabled', True)  # Default to True for backwards compatibility
             # reaction_enabled already set above for context formatting
-            any_tools_enabled = image_enabled or weather_enabled or finance_enabled or time_enabled or wikipedia_enabled or reaction_enabled or sheets_enabled or calendar_enabled or member_memory_tools_enabled
+            any_tools_enabled = image_enabled or weather_enabled or finance_enabled or time_enabled or wikipedia_enabled or reaction_enabled or sheets_enabled or calendar_enabled or member_memory_tools_enabled or triggers_enabled
 
             # Build prompt - include images if present
             if incoming_images:
@@ -398,6 +400,7 @@ class MessageHandler:
                         sheets_enabled=sheets_enabled,
                         calendar_enabled=calendar_enabled,
                         member_memory_enabled=member_memory_tools_enabled,
+                        triggers_enabled=triggers_enabled,
                         expanded_categories=expanded_categories
                     )
                     signal_executor = SignalToolExecutor(

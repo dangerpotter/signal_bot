@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+
+{% block title %}Add Trigger - Signal Bot Admin{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h1><i class="bi bi-plus-lg"></i> Add Trigger</h1>
+        <p class="text-muted">Create a new scheduled trigger for a bot</p>
+    </div>
+</div>
+
+<form method="post" id="triggerForm">
+    <div class="row">
+        <!-- Left column: Basic settings -->
+        <div class="col-md-6">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-gear"></i> Basic Settings
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">Bot <span class="text-danger">*</span></label>
+                        <select name="bot_id" class="form-select" required>
+                            <option value="">Select a bot...</option>
+                            {% for bot in bots %}
+                            <option value="{{ bot.id }}">{{ bot.name }} ({{ bot.max_triggers - bot.triggers|selectattr('enabled')|list|length }} slots available)</option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted">Only bots with triggers enabled are shown</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Group <span class="text-danger">*</span></label>
+                        <select name="group_id" class="form-select" required>
+                            <option value="">Select a group...</option>
+                            {% for group in groups %}
+                            <option value="{{ group.id }}">{{ group.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Trigger Name <span class="text-danger">*</span></label>
+                        <input type="text" name="name" class="form-control" placeholder="e.g., Daily BTC Update" required>
+                        <small class="text-muted">A short descriptive name</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Trigger Type <span class="text-danger">*</span></label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="trigger_type" id="typeReminder" value="reminder" checked>
+                            <label class="form-check-label" for="typeReminder">
+                                <i class="bi bi-bell"></i> <strong>Reminder</strong> - Send a message directly
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="trigger_type" id="typeTask" value="task">
+                            <label class="form-check-label" for="typeTask">
+                                <i class="bi bi-robot"></i> <strong>AI Task</strong> - AI processes instructions with tools
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Content <span class="text-danger">*</span></label>
+                        <textarea name="content" class="form-control" rows="4" placeholder="For reminders: The message to send.&#10;For AI tasks: Instructions for the AI (e.g., 'Check BTC price, add to spreadsheet, and post a summary')" required></textarea>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right column: Schedule settings -->
+        <div class="col-md-6">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-calendar-event"></i> Schedule
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">Trigger Mode <span class="text-danger">*</span></label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="trigger_mode" id="modeOnce" value="once" checked onchange="toggleScheduleFields()">
+                            <label class="form-check-label" for="modeOnce">
+                                <strong>One-time</strong> - Fire once at a specific date/time
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="trigger_mode" id="modeRecurring" value="recurring" onchange="toggleScheduleFields()">
+                            <label class="form-check-label" for="modeRecurring">
+                                <strong>Recurring</strong> - Fire on a schedule
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- One-time fields -->
+                    <div id="onceFields">
+                        <div class="mb-3">
+                            <label class="form-label">Scheduled Time (UTC)</label>
+                            <input type="datetime-local" name="scheduled_time" class="form-control">
+                        </div>
+                    </div>
+
+                    <!-- Recurring fields -->
+                    <div id="recurringFields" style="display: none;">
+                        <div class="mb-3">
+                            <label class="form-label">Pattern</label>
+                            <select name="recurrence_pattern" class="form-select" onchange="togglePatternFields()">
+                                <option value="daily">Daily</option>
+                                <option value="weekly">Weekly</option>
+                                <option value="monthly">Monthly</option>
+                                <option value="custom">Custom interval (minutes)</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Every</label>
+                            <div class="input-group">
+                                <input type="number" name="recurrence_interval" class="form-control" value="1" min="1">
+                                <span class="input-group-text" id="intervalLabel">day(s)</span>
+                            </div>
+                        </div>
+
+                        <div class="mb-3" id="weekdayField" style="display: none;">
+                            <label class="form-label">Day of Week</label>
+                            <select name="recurrence_day_of_week" class="form-select">
+                                <option value="0">Monday</option>
+                                <option value="1">Tuesday</option>
+                                <option value="2">Wednesday</option>
+                                <option value="3">Thursday</option>
+                                <option value="4">Friday</option>
+                                <option value="5">Saturday</option>
+                                <option value="6">Sunday</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3" id="monthdayField" style="display: none;">
+                            <label class="form-label">Day of Month</label>
+                            <select name="recurrence_day_of_month" class="form-select">
+                                {% for i in range(1, 29) %}
+                                <option value="{{ i }}">{{ i }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="mb-3" id="timeField">
+                            <label class="form-label">Time (UTC)</label>
+                            <input type="time" name="recurrence_time" class="form-control" value="09:00">
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Timezone</label>
+                            <select name="timezone" class="form-select">
+                                <option value="UTC">UTC</option>
+                                <option value="America/New_York">Eastern Time</option>
+                                <option value="America/Chicago">Central Time</option>
+                                <option value="America/Denver">Mountain Time</option>
+                                <option value="America/Los_Angeles">Pacific Time</option>
+                                <option value="Europe/London">London</option>
+                                <option value="Europe/Paris">Paris</option>
+                                <option value="Asia/Tokyo">Tokyo</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">End Date (optional)</label>
+                            <input type="datetime-local" name="end_date" class="form-control">
+                            <small class="text-muted">Leave empty to run forever</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-check-lg"></i> Create Trigger
+                </button>
+                <a href="{{ url_for('triggers_list') }}" class="btn btn-outline-secondary">Cancel</a>
+            </div>
+        </div>
+    </div>
+</form>
+
+<script>
+function toggleScheduleFields() {
+    const mode = document.querySelector('input[name="trigger_mode"]:checked').value;
+    document.getElementById('onceFields').style.display = mode === 'once' ? 'block' : 'none';
+    document.getElementById('recurringFields').style.display = mode === 'recurring' ? 'block' : 'none';
+}
+
+function togglePatternFields() {
+    const pattern = document.querySelector('select[name="recurrence_pattern"]').value;
+    document.getElementById('weekdayField').style.display = pattern === 'weekly' ? 'block' : 'none';
+    document.getElementById('monthdayField').style.display = pattern === 'monthly' ? 'block' : 'none';
+    document.getElementById('timeField').style.display = pattern !== 'custom' ? 'block' : 'none';
+
+    const labels = {
+        'daily': 'day(s)',
+        'weekly': 'week(s)',
+        'monthly': 'month(s)',
+        'custom': 'minute(s)'
+    };
+    document.getElementById('intervalLabel').textContent = labels[pattern];
+}
+</script>
+{% endblock %}

@@ -55,6 +55,11 @@
                             <i class="bi bi-person-lines-fill"></i> Member Info
                         </a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint in ['triggers_list', 'add_trigger', 'edit_trigger'] %}active{% endif %}" href="{{ url_for('triggers_list') }}">
+                            <i class="bi bi-clock-history"></i> Triggers
+                        </a>
+                    </li>
                 </ul>
             </div>
         </div>

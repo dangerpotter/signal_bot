@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Trigger - Signal Bot Admin{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h1><i class="bi bi-pencil"></i> Edit Trigger</h1>
+        <p class="text-muted">Modify scheduled trigger: <strong>{{ trigger.name }}</strong></p>
+    </div>
+</div>
+
+<form method="post" id="triggerForm">
+    <div class="row">
+        <!-- Left column: Basic settings -->
+        <div class="col-md-6">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-gear"></i> Basic Settings
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">Bot</label>
+                        {% set current_bot = bots|selectattr('id', 'equalto', trigger.bot_id)|first %}
+                        <input type="text" class="form-control" value="{{ current_bot.name if current_bot else 'Unknown' }}" disabled>
+                        <small class="text-muted">Bot cannot be changed after creation</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Group</label>
+                        {% set current_group = groups|selectattr('id', 'equalto', trigger.group_id)|first %}
+                        <input type="text" class="form-control" value="{{ current_group.name if current_group else 'Unknown' }}" disabled>
+                        <small class="text-muted">Group cannot be changed after creation</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Trigger Name <span class="text-danger">*</span></label>
+                        <input type="text" name="name" class="form-control" value="{{ trigger.name }}" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Trigger Type <span class="text-danger">*</span></label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="trigger_type" id="typeReminder" value="reminder" {% if trigger.trigger_type == 'reminder' %}checked{% endif %}>
+                            <label class="form-check-label" for="typeReminder">
+                                <i class="bi bi-bell"></i> <strong>Reminder</strong> - Send a message directly
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="trigger_type" id="typeTask" value="task" {% if trigger.trigger_type == 'task' %}checked{% endif %}>
+                            <label class="form-check-label" for="typeTask">
+                                <i class="bi bi-robot"></i> <strong>AI Task</strong> - AI processes instructions with tools
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Content <span class="text-danger">*</span></label>
+                        <textarea name="content" class="form-control" rows="4" required>{{ trigger.content }}</textarea>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stats card -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-bar-chart"></i> Statistics
+                </div>
+                <div class="card-body">
+                    <div class="row text-center">
+                        <div class="col-4">
+                            <h4>{{ trigger.fire_count }}</h4>
+                            <small class="text-muted">Times Fired</small>
+                        </div>
+                        <div class="col-4">
+                            <h6>{{ trigger.last_fired_at.strftime('%Y-%m-%d %H:%M') if trigger.last_fired_at else 'Never' }}</h6>
+                            <small class="text-muted">Last Fired</small>
+                        </div>
+                        <div class="col-4">
+                            <h6>{{ trigger.created_at.strftime('%Y-%m-%d') }}</h6>
+                            <small class="text-muted">Created</small>
+                        </div>
+                    </div>
+                    <hr>
+                    <small class="text-muted">
+                        Created via: <strong>{{ trigger.created_via }}</strong>
+                        {% if trigger.created_by %} by {{ trigger.created_by }}{% endif %}
+                    </small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right column: Schedule settings -->
+        <div class="col-md-6">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-calendar-event"></i> Schedule
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">Trigger Mode <span class="text-danger">*</span></label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="trigger_mode" id="modeOnce" value="once" {% if trigger.trigger_mode == 'once' %}checked{% endif %} onchange="toggleScheduleFields()">
+                            <label class="form-check-label" for="modeOnce">
+                                <strong>One-time</strong> - Fire once at a specific date/time
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="trigger_mode" id="modeRecurring" value="recurring" {% if trigger.trigger_mode == 'recurring' %}checked{% endif %} onchange="toggleScheduleFields()">
+                            <label class="form-check-label" for="modeRecurring">
+                                <strong>Recurring</strong> - Fire on a schedule
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- One-time fields -->
+                    <div id="onceFields" {% if trigger.trigger_mode != 'once' %}style="display: none;"{% endif %}>
+                        <div class="mb-3">
+                            <label class="form-label">Scheduled Time (UTC)</label>
+                            <input type="datetime-local" name="scheduled_time" class="form-control"
+                                value="{{ trigger.scheduled_time.strftime('%Y-%m-%dT%H:%M') if trigger.scheduled_time else '' }}">
+                        </div>
+                    </div>
+
+                    <!-- Recurring fields -->
+                    <div id="recurringFields" {% if trigger.trigger_mode != 'recurring' %}style="display: none;"{% endif %}>
+                        <div class="mb-3">
+                            <label class="form-label">Pattern</label>
+                            <select name="recurrence_pattern" class="form-select" onchange="togglePatternFields()">
+                                <option value="daily" {% if trigger.recurrence_pattern == 'daily' %}selected{% endif %}>Daily</option>
+                                <option value="weekly" {% if trigger.recurrence_pattern == 'weekly' %}selected{% endif %}>Weekly</option>
+                                <option value="monthly" {% if trigger.recurrence_pattern == 'monthly' %}selected{% endif %}>Monthly</option>
+                                <option value="custom" {% if trigger.recurrence_pattern == 'custom' %}selected{% endif %}>Custom interval (minutes)</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Every</label>
+                            <div class="input-group">
+                                <input type="number" name="recurrence_interval" class="form-control" value="{{ trigger.recurrence_interval or 1 }}" min="1">
+                                <span class="input-group-text" id="intervalLabel">
+                                    {% if trigger.recurrence_pattern == 'weekly' %}week(s){% elif trigger.recurrence_pattern == 'monthly' %}month(s){% elif trigger.recurrence_pattern == 'custom' %}minute(s){% else %}day(s){% endif %}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div class="mb-3" id="weekdayField" {% if trigger.recurrence_pattern != 'weekly' %}style="display: none;"{% endif %}>
+                            <label class="form-label">Day of Week</label>
+                            <select name="recurrence_day_of_week" class="form-select">
+                                <option value="0" {% if trigger.recurrence_day_of_week == 0 %}selected{% endif %}>Monday</option>
+                                <option value="1" {% if trigger.recurrence_day_of_week == 1 %}selected{% endif %}>Tuesday</option>
+                                <option value="2" {% if trigger.recurrence_day_of_week == 2 %}selected{% endif %}>Wednesday</option>
+                                <option value="3" {% if trigger.recurrence_day_of_week == 3 %}selected{% endif %}>Thursday</option>
+                                <option value="4" {% if trigger.recurrence_day_of_week == 4 %}selected{% endif %}>Friday</option>
+                                <option value="5" {% if trigger.recurrence_day_of_week == 5 %}selected{% endif %}>Saturday</option>
+                                <option value="6" {% if trigger.recurrence_day_of_week == 6 %}selected{% endif %}>Sunday</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3" id="monthdayField" {% if trigger.recurrence_pattern != 'monthly' %}style="display: none;"{% endif %}>
+                            <label class="form-label">Day of Month</label>
+                            <select name="recurrence_day_of_month" class="form-select">
+                                {% for i in range(1, 29) %}
+                                <option value="{{ i }}" {% if trigger.recurrence_day_of_month == i %}selected{% endif %}>{{ i }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="mb-3" id="timeField" {% if trigger.recurrence_pattern == 'custom' %}style="display: none;"{% endif %}>
+                            <label class="form-label">Time (UTC)</label>
+                            <input type="time" name="recurrence_time" class="form-control"
+                                value="{{ trigger.recurrence_time.strftime('%H:%M') if trigger.recurrence_time else '09:00' }}">
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Timezone</label>
+                            <select name="timezone" class="form-select">
+                                <option value="UTC" {% if trigger.timezone == 'UTC' %}selected{% endif %}>UTC</option>
+                                <option value="America/New_York" {% if trigger.timezone == 'America/New_York' %}selected{% endif %}>Eastern Time</option>
+                                <option value="America/Chicago" {% if trigger.timezone == 'America/Chicago' %}selected{% endif %}>Central Time</option>
+                                <option value="America/Denver" {% if trigger.timezone == 'America/Denver' %}selected{% endif %}>Mountain Time</option>
+                                <option value="America/Los_Angeles" {% if trigger.timezone == 'America/Los_Angeles' %}selected{% endif %}>Pacific Time</option>
+                                <option value="Europe/London" {% if trigger.timezone == 'Europe/London' %}selected{% endif %}>London</option>
+                                <option value="Europe/Paris" {% if trigger.timezone == 'Europe/Paris' %}selected{% endif %}>Paris</option>
+                                <option value="Asia/Tokyo" {% if trigger.timezone == 'Asia/Tokyo' %}selected{% endif %}>Tokyo</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">End Date (optional)</label>
+                            <input type="datetime-local" name="end_date" class="form-control"
+                                value="{{ trigger.end_date.strftime('%Y-%m-%dT%H:%M') if trigger.end_date else '' }}">
+                            <small class="text-muted">Leave empty to run forever</small>
+                        </div>
+                    </div>
+
+                    {% if trigger.next_fire_time %}
+                    <div class="alert alert-info">
+                        <i class="bi bi-clock"></i> Next scheduled fire: <strong>{{ trigger.next_fire_time.strftime('%Y-%m-%d %H:%M') }} UTC</strong>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-check-lg"></i> Save Changes
+                </button>
+                <a href="{{ url_for('triggers_list') }}" class="btn btn-outline-secondary">Cancel</a>
+                <form action="{{ url_for('delete_trigger', trigger_id=trigger.id) }}" method="post" class="d-inline ms-auto" onsubmit="return confirm('Delete this trigger?')">
+                    <button type="submit" class="btn btn-outline-danger">
+                        <i class="bi bi-trash"></i> Delete
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</form>
+
+<script>
+function toggleScheduleFields() {
+    const mode = document.querySelector('input[name="trigger_mode"]:checked').value;
+    document.getElementById('onceFields').style.display = mode === 'once' ? 'block' : 'none';
+    document.getElementById('recurringFields').style.display = mode === 'recurring' ? 'block' : 'none';
+}
+
+function togglePatternFields() {
+    const pattern = document.querySelector('select[name="recurrence_pattern"]').value;
+    document.getElementById('weekdayField').style.display = pattern === 'weekly' ? 'block' : 'none';
+    document.getElementById('monthdayField').style.display = pattern === 'monthly' ? 'block' : 'none';
+    document.getElementById('timeField').style.display = pattern !== 'custom' ? 'block' : 'none';
+
+    const labels = {
+        'daily': 'day(s)',
+        'weekly': 'week(s)',
+        'monthly': 'month(s)',
+        'custom': 'minute(s)'
+    };
+    document.getElementById('intervalLabel').textContent = labels[pattern];
+}
+</script>
+{% endblock %}

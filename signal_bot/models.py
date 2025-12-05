@@ -65,6 +65,10 @@ class Bot(db.Model):
     # Member memory settings
     member_memory_model = db.Column(db.String(100), nullable=True)  # Small/fast model for relevance detection
 
+    # Scheduled triggers settings
+    triggers_enabled = db.Column(db.Boolean, default=True)  # Enable trigger tools for AI
+    max_triggers = db.Column(db.Integer, default=10)  # Max active triggers per bot (1-100)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -105,6 +109,8 @@ class Bot(db.Model):
             "read_receipts_enabled": self.read_receipts_enabled,
             "context_window": self.context_window or 25,
             "member_memory_model": self.member_memory_model,
+            "triggers_enabled": self.triggers_enabled if self.triggers_enabled is not None else True,
+            "max_triggers": self.max_triggers or 10,
         }
 
 
@@ -477,3 +483,104 @@ class CalendarRegistry(db.Model):
     def get_by_calendar_id(calendar_id: str):
         """Get registry entry by Google Calendar ID."""
         return CalendarRegistry.query.filter_by(calendar_id=calendar_id).first()
+
+
+class ScheduledTrigger(db.Model):
+    """Scheduled triggers for bots - reminders and AI tasks."""
+    __tablename__ = "scheduled_triggers"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    bot_id = db.Column(db.String(50), db.ForeignKey("bots.id"), nullable=False)
+    group_id = db.Column(db.String(100), db.ForeignKey("groups.id"), nullable=False)
+
+    # Trigger type and content
+    trigger_type = db.Column(db.String(20), nullable=False)  # "reminder" or "task"
+    name = db.Column(db.String(200), nullable=False)  # Human-readable name
+    content = db.Column(db.Text, nullable=False)  # Message text or AI instructions
+
+    # Timing configuration
+    trigger_mode = db.Column(db.String(20), nullable=False)  # "once" or "recurring"
+    scheduled_time = db.Column(db.DateTime, nullable=True)  # For one-time triggers
+
+    # Recurring configuration
+    recurrence_pattern = db.Column(db.String(20), nullable=True)  # "daily", "weekly", "monthly", "custom"
+    recurrence_interval = db.Column(db.Integer, default=1)  # Every N days/weeks/months
+    recurrence_day_of_week = db.Column(db.Integer, nullable=True)  # 0-6 for weekly (Monday=0)
+    recurrence_day_of_month = db.Column(db.Integer, nullable=True)  # 1-28 for monthly
+    recurrence_time = db.Column(db.Time, nullable=True)  # Time of day for recurring
+    end_date = db.Column(db.DateTime, nullable=True)  # Optional end date (None = forever)
+    timezone = db.Column(db.String(100), default="UTC")  # IANA timezone
+
+    # State tracking
+    enabled = db.Column(db.Boolean, default=True)
+    next_fire_time = db.Column(db.DateTime, nullable=True)  # Pre-computed next execution
+    last_fired_at = db.Column(db.DateTime, nullable=True)
+    fire_count = db.Column(db.Integer, default=0)  # Total times fired
+
+    # Metadata
+    created_by = db.Column(db.String(100), nullable=True)  # Signal user who created
+    created_via = db.Column(db.String(20), default="admin")  # "admin" or "ai_tool"
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    bot = db.relationship("Bot", backref="triggers")
+    group = db.relationship("GroupConnection", backref="triggers")
+
+    __table_args__ = (
+        db.Index('idx_triggers_bot_group', 'bot_id', 'group_id'),
+        db.Index('idx_triggers_next_fire', 'next_fire_time', 'enabled'),
+    )
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "bot_id": self.bot_id,
+            "group_id": self.group_id,
+            "trigger_type": self.trigger_type,
+            "name": self.name,
+            "content": self.content,
+            "trigger_mode": self.trigger_mode,
+            "scheduled_time": self.scheduled_time.isoformat() if self.scheduled_time else None,
+            "recurrence_pattern": self.recurrence_pattern,
+            "recurrence_interval": self.recurrence_interval,
+            "recurrence_day_of_week": self.recurrence_day_of_week,
+            "recurrence_day_of_month": self.recurrence_day_of_month,
+            "recurrence_time": self.recurrence_time.strftime("%H:%M") if self.recurrence_time else None,
+            "end_date": self.end_date.isoformat() if self.end_date else None,
+            "timezone": self.timezone,
+            "enabled": self.enabled,
+            "next_fire_time": self.next_fire_time.isoformat() if self.next_fire_time else None,
+            "last_fired_at": self.last_fired_at.isoformat() if self.last_fired_at else None,
+            "fire_count": self.fire_count,
+            "created_by": self.created_by,
+            "created_via": self.created_via,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+    @staticmethod
+    def get_triggers_for_group(bot_id: str, group_id: str, include_disabled: bool = False) -> list:
+        """Get all triggers for a specific bot+group combination."""
+        query = ScheduledTrigger.query.filter_by(bot_id=bot_id, group_id=group_id)
+        if not include_disabled:
+            query = query.filter_by(enabled=True)
+        return query.order_by(ScheduledTrigger.next_fire_time.asc()).all()
+
+    @staticmethod
+    def get_due_triggers():
+        """Get all triggers that are due for execution."""
+        from datetime import datetime
+        now = datetime.utcnow()
+        return ScheduledTrigger.query.filter(
+            ScheduledTrigger.enabled == True,
+            ScheduledTrigger.next_fire_time <= now,
+            db.or_(
+                ScheduledTrigger.end_date == None,
+                ScheduledTrigger.end_date > now
+            )
+        ).all()
+
+    @staticmethod
+    def count_active_triggers(bot_id: str) -> int:
+        """Count active triggers for a bot (for limit checking)."""
+        return ScheduledTrigger.query.filter_by(bot_id=bot_id, enabled=True).count()

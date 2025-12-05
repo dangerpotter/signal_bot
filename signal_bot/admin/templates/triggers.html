@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+
+{% block title %}Triggers - Signal Bot Admin{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h1><i class="bi bi-clock-history"></i> Scheduled Triggers</h1>
+        <p class="text-muted">Reminders and scheduled AI tasks for your bots</p>
+    </div>
+    <div class="col-auto">
+        <a href="{{ url_for('add_trigger') }}" class="btn btn-primary">
+            <i class="bi bi-plus-lg"></i> Add Trigger
+        </a>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">Bot</label>
+                <select name="bot_id" class="form-select">
+                    <option value="">All Bots</option>
+                    {% for bot in bots %}
+                    <option value="{{ bot.id }}" {% if bot_filter == bot.id %}selected{% endif %}>{{ bot.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Group</label>
+                <select name="group_id" class="form-select">
+                    <option value="">All Groups</option>
+                    {% for group in groups %}
+                    <option value="{{ group.id }}" {% if group_filter == group.id %}selected{% endif %}>{{ group.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Type</label>
+                <select name="trigger_type" class="form-select">
+                    <option value="">All Types</option>
+                    <option value="reminder" {% if type_filter == 'reminder' %}selected{% endif %}>Reminder</option>
+                    <option value="task" {% if type_filter == 'task' %}selected{% endif %}>AI Task</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Status</label>
+                <select name="status" class="form-select">
+                    <option value="">All</option>
+                    <option value="enabled" {% if status_filter == 'enabled' %}selected{% endif %}>Enabled</option>
+                    <option value="disabled" {% if status_filter == 'disabled' %}selected{% endif %}>Disabled</option>
+                </select>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-outline-primary w-100">
+                    <i class="bi bi-funnel"></i> Filter
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Triggers Table -->
+<div class="card">
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Status</th>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Bot</th>
+                    <th>Group</th>
+                    <th>Schedule</th>
+                    <th>Next Fire</th>
+                    <th>Stats</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for trigger in triggers %}
+                {% set bot = bots|selectattr('id', 'equalto', trigger.bot_id)|first %}
+                {% set group = groups|selectattr('id', 'equalto', trigger.group_id)|first %}
+                <tr>
+                    <td>
+                        <form action="{{ url_for('toggle_trigger', trigger_id=trigger.id) }}" method="post" class="d-inline">
+                            <button type="submit" class="btn btn-sm {% if trigger.enabled %}btn-success{% else %}btn-outline-secondary{% endif %}">
+                                {% if trigger.enabled %}<i class="bi bi-toggle-on"></i>{% else %}<i class="bi bi-toggle-off"></i>{% endif %}
+                            </button>
+                        </form>
+                    </td>
+                    <td>
+                        <strong>{{ trigger.name }}</strong>
+                        <br>
+                        <small class="text-muted">{{ trigger.content[:50] }}{% if trigger.content|length > 50 %}...{% endif %}</small>
+                    </td>
+                    <td>
+                        {% if trigger.trigger_type == 'reminder' %}
+                        <span class="badge bg-info"><i class="bi bi-bell"></i> Reminder</span>
+                        {% else %}
+                        <span class="badge bg-warning text-dark"><i class="bi bi-robot"></i> AI Task</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ bot.name if bot else 'Unknown' }}</td>
+                    <td>{{ group.name if group else 'Unknown' }}</td>
+                    <td>
+                        {% if trigger.trigger_mode == 'once' %}
+                        <span class="badge bg-secondary">One-time</span>
+                        <br>
+                        <small>{{ trigger.scheduled_time.strftime('%Y-%m-%d %H:%M') if trigger.scheduled_time else 'Not set' }}</small>
+                        {% else %}
+                        <span class="badge bg-primary">Recurring</span>
+                        <br>
+                        <small>
+                            {{ trigger.recurrence_pattern|capitalize }}
+                            {% if trigger.recurrence_interval > 1 %}every {{ trigger.recurrence_interval }}{% endif %}
+                            @ {{ trigger.recurrence_time.strftime('%H:%M') if trigger.recurrence_time else '09:00' }}
+                        </small>
+                        {% if trigger.end_date %}
+                        <br><small class="text-muted">Until {{ trigger.end_date.strftime('%Y-%m-%d') }}</small>
+                        {% endif %}
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if trigger.next_fire_time %}
+                        <span class="{% if trigger.enabled %}text-success{% else %}text-muted{% endif %}">
+                            {{ trigger.next_fire_time.strftime('%Y-%m-%d %H:%M') }}
+                        </span>
+                        {% else %}
+                        <span class="text-muted">-</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <small>
+                            <i class="bi bi-lightning"></i> {{ trigger.fire_count }}x
+                            {% if trigger.last_fired_at %}
+                            <br><span class="text-muted">Last: {{ trigger.last_fired_at.strftime('%m/%d %H:%M') }}</span>
+                            {% endif %}
+                        </small>
+                    </td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <form action="{{ url_for('fire_trigger_now', trigger_id=trigger.id) }}" method="post" class="d-inline">
+                                <button type="submit" class="btn btn-outline-success" title="Fire Now" onclick="return confirm('Fire this trigger now?')">
+                                    <i class="bi bi-play-fill"></i>
+                                </button>
+                            </form>
+                            <a href="{{ url_for('edit_trigger', trigger_id=trigger.id) }}" class="btn btn-outline-primary" title="Edit">
+                                <i class="bi bi-pencil"></i>
+                            </a>
+                            <form action="{{ url_for('delete_trigger', trigger_id=trigger.id) }}" method="post" class="d-inline" onsubmit="return confirm('Delete this trigger?')">
+                                <button type="submit" class="btn btn-outline-danger" title="Delete">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="9" class="text-center py-4">
+                        <i class="bi bi-info-circle"></i> No triggers found.
+                        <a href="{{ url_for('add_trigger') }}">Create one</a> or adjust your filters.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Legend -->
+<div class="mt-3">
+    <small class="text-muted">
+        <i class="bi bi-bell"></i> <strong>Reminder</strong>: Sends a message directly to the group.
+        <i class="bi bi-robot"></i> <strong>AI Task</strong>: The AI processes instructions and can use tools (weather, finance, sheets, etc.)
+    </small>
+</div>
+{% endblock %}

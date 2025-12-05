@@ -12,6 +12,7 @@ A web-based management dashboard for running AI bots in Signal group chats. Conf
 - **Models**: Add custom OpenRouter models with live search (beyond built-in list)
 - **Memories**: View and manage long-term conversation memories
 - **Member Memories**: Track personal info about group members (location, interests, etc.)
+- **Triggers**: Schedule reminders and AI tasks to run at specific times or on recurring schedules
 
 ### Bot Capabilities
 - **Smart Triggering**: Responds to @mentions + configurable random chance (0-100%)
@@ -23,6 +24,7 @@ A web-based management dashboard for running AI bots in Signal group chats. Conf
 - **Finance Tools**: Stock quotes, analyst ratings, dividends, financials, and more via Yahoo Finance (toggle per-bot)
 - **Time Tool**: Accurate time/date across timezones for multi-timezone group chats (toggle per-bot)
 - **Google Sheets**: Full spreadsheet management with 90+ tools - create sheets, track expenses, charts, pivot tables, and more (OAuth per-bot)
+- **Scheduled Triggers**: Create reminders or recurring AI tasks that fire on a schedule (toggle per-bot, configurable max triggers)
 
 ### Memory System
 - **Rolling Context**: Maintains a configurable window of recent messages (default 25)
@@ -133,6 +135,8 @@ python run_signal.py --bots-only  # Headless mode - bots only, no web UI
 | **Reactions** | Enable emoji reactions to messages |
 | **Reaction Chance %** | Random animal emoji chance |
 | **LLM Reactions** | Use AI to detect funny messages |
+| **Scheduled Triggers** | Enable scheduled reminders and AI tasks |
+| **Max Triggers** | Maximum active triggers per bot (1-100, default 10) |
 
 ### Finance Tools (via yfinance + TheNewsAPI)
 
@@ -188,6 +192,35 @@ Connect each bot to Google via OAuth for full spreadsheet management. Setup:
 
 Features per-group spreadsheet registry, automatic attribution, and token refresh.
 
+### Scheduled Triggers
+
+Schedule reminders or AI tasks to fire at specific times or on recurring schedules. Create via chat commands or the admin UI.
+
+| Tool | Description |
+|------|-------------|
+| **create_trigger** | Create a reminder or AI task with one-time or recurring schedule |
+| **list_triggers** | List all triggers for the current group |
+| **cancel_trigger** | Cancel a trigger by ID or name |
+| **update_trigger** | Modify trigger content, timing, or enabled status |
+
+**Trigger Types:**
+- **Reminder**: Sends a message directly to the group at the scheduled time
+- **AI Task**: The AI executes instructions with full tool access (weather, finance, sheets, etc.)
+
+**Scheduling Options:**
+- One-time: Fire at a specific date/time
+- Recurring: Daily, weekly, monthly, or custom interval (minutes)
+- Optional end date (defaults to "run forever")
+
+**Examples:**
+```
+"Remind us about the trip 24 hours before"
+→ Creates one-time reminder
+
+"Track BTC price daily at 8am and add to our spreadsheet"
+→ Creates recurring AI task using finance + sheets tools
+```
+
 ### Memory Settings (config_signal.py)
 
 ```python
@@ -230,6 +263,7 @@ SQLite database (`signal_bot.db`) with tables:
 - `custom_models` - User-added OpenRouter models
 - `activity_logs` - Admin activity feed
 - `sheets_registry` - Google Sheets per group
+- `scheduled_triggers` - Scheduled reminders and AI tasks
 
 ## Project Structure
 
@@ -245,6 +279,7 @@ signal_bot/
 ├── member_memory_scanner.py # Extracts member info from chats (background scan)
 ├── realtime_memory.py      # Instant memory saves ("remember I prefer...")
 ├── trigger_logic.py        # Mention detection, random chance
+├── trigger_scheduler.py    # Background scheduler for scheduled triggers
 ├── weather_client.py       # WeatherAPI.com integration
 ├── finance_client.py       # Yahoo Finance integration (yfinance)
 ├── news_client.py          # TheNewsAPI fallback for stock news

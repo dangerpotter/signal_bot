@@ -3132,7 +3132,7 @@ CALENDAR_TOOLS = [
         "type": "function",
         "function": {
             "name": "create_calendar",
-            "description": "Create a new Google Calendar for the group. Use when someone wants to track events, schedule meetings, or coordinate activities. The calendar will be registered for this group and can be shared. Share the returned URL with the group.",
+            "description": "Create a new Google Calendar for the group. By default, calendars are PUBLIC so everyone can view them via the share link. Use when someone wants to track events, schedule meetings, or coordinate activities. Share the returned URL with the group.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -3149,6 +3149,11 @@ CALENDAR_TOOLS = [
                         "type": "string",
                         "description": "IANA timezone (e.g., 'America/New_York', 'Europe/London', 'UTC')",
                         "default": "UTC"
+                    },
+                    "make_public": {
+                        "type": "boolean",
+                        "description": "If true (default), calendar is publicly viewable via the share link. Set to false for private calendars only the owner can see.",
+                        "default": True
                     }
                 },
                 "required": ["title"],
@@ -3226,7 +3231,7 @@ CALENDAR_TOOLS = [
         "type": "function",
         "function": {
             "name": "create_event",
-            "description": "Create a new event on a calendar. Use when someone wants to add an event, schedule something, or create a meeting. Returns the event link that can be shared.",
+            "description": "Create a new event on a calendar. Use when someone wants to add an event, schedule something, or create a meeting. Can invite attendees via email. Returns the event link that can be shared.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -3265,6 +3270,17 @@ CALENDAR_TOOLS = [
                         "type": "string",
                         "description": "IANA timezone for the event times (e.g., 'America/New_York')",
                         "default": "UTC"
+                    },
+                    "attendees": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of email addresses to invite. They will receive calendar invitations via email.",
+                        "default": []
+                    },
+                    "send_notifications": {
+                        "type": "boolean",
+                        "description": "If true (default), send email invitations to attendees",
+                        "default": True
                     }
                 },
                 "required": ["calendar_id", "title", "start_time", "end_time"],
@@ -3392,6 +3408,161 @@ CALENDAR_TOOLS = [
                     }
                 },
                 "required": ["calendar_id"],
+                "additionalProperties": False
+            }
+        }
+    }
+]
+
+# =============================================================================
+# SCHEDULED TRIGGER TOOLS
+# Create and manage scheduled reminders and AI tasks
+# =============================================================================
+
+TRIGGER_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "create_trigger",
+            "description": "Create a scheduled trigger for reminders or AI tasks. Reminders send a message directly at the scheduled time. AI tasks execute instructions (using your tools like weather, finance, sheets) at the scheduled time. Use when someone asks you to remind them about something, track something on a schedule, or perform recurring tasks.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Short descriptive name for this trigger (e.g., 'Daily BTC Update', 'Trip Reminder')"
+                    },
+                    "trigger_type": {
+                        "type": "string",
+                        "enum": ["reminder", "task"],
+                        "description": "'reminder' sends a message directly. 'task' makes the AI process instructions with access to all tools."
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "For reminders: the message to send. For tasks: detailed instructions for the AI (e.g., 'Check BTC price, add to our spreadsheet, and post a summary')"
+                    },
+                    "trigger_mode": {
+                        "type": "string",
+                        "enum": ["once", "recurring"],
+                        "description": "'once' fires at a specific time then disables. 'recurring' repeats on a schedule."
+                    },
+                    "scheduled_time": {
+                        "type": "string",
+                        "description": "For one-time triggers: ISO 8601 datetime when to fire (e.g., '2025-03-05T14:00:00')"
+                    },
+                    "recurrence_pattern": {
+                        "type": "string",
+                        "enum": ["daily", "weekly", "monthly", "custom"],
+                        "description": "For recurring: 'daily', 'weekly' (specify day_of_week), 'monthly' (specify day_of_month), or 'custom' (interval in minutes)"
+                    },
+                    "recurrence_interval": {
+                        "type": "integer",
+                        "description": "Every N periods (e.g., every 2 days, every 1 week). For 'custom' pattern, this is minutes.",
+                        "default": 1
+                    },
+                    "recurrence_time": {
+                        "type": "string",
+                        "description": "Time of day in HH:MM format (e.g., '08:00', '14:30'). Default: '09:00'",
+                        "default": "09:00"
+                    },
+                    "recurrence_day_of_week": {
+                        "type": "integer",
+                        "description": "For weekly: day of week (0=Monday, 1=Tuesday, ..., 6=Sunday)"
+                    },
+                    "recurrence_day_of_month": {
+                        "type": "integer",
+                        "description": "For monthly: day of month (1-28 recommended to avoid month-end issues)"
+                    },
+                    "timezone": {
+                        "type": "string",
+                        "description": "IANA timezone (e.g., 'America/New_York', 'UTC'). Default: 'UTC'",
+                        "default": "UTC"
+                    },
+                    "end_date": {
+                        "type": "string",
+                        "description": "Optional ISO 8601 datetime after which recurring triggers stop. Omit for 'run forever'."
+                    }
+                },
+                "required": ["name", "trigger_type", "content", "trigger_mode"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_triggers",
+            "description": "List all scheduled triggers for this group. Shows active triggers, their schedules, and when they'll fire next.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "include_disabled": {
+                        "type": "boolean",
+                        "description": "Include disabled/completed triggers in the list",
+                        "default": False
+                    }
+                },
+                "required": [],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "cancel_trigger",
+            "description": "Cancel (delete) a scheduled trigger. Use when someone wants to stop a reminder or scheduled task.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "trigger_id": {
+                        "type": "integer",
+                        "description": "The ID of the trigger to cancel (from list_triggers)"
+                    },
+                    "trigger_name": {
+                        "type": "string",
+                        "description": "Alternatively, the name of the trigger to cancel (case-insensitive partial match)"
+                    }
+                },
+                "required": [],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_trigger",
+            "description": "Update an existing trigger's schedule, content, or status. Use to modify reminder text, change timing, or pause/resume triggers.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "trigger_id": {
+                        "type": "integer",
+                        "description": "The ID of the trigger to update (from list_triggers)"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "New name for the trigger"
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "New message or instructions"
+                    },
+                    "enabled": {
+                        "type": "boolean",
+                        "description": "Enable (true) or disable (false) the trigger"
+                    },
+                    "recurrence_time": {
+                        "type": "string",
+                        "description": "New time of day in HH:MM format"
+                    },
+                    "end_date": {
+                        "type": "string",
+                        "description": "New end date (ISO 8601) or empty string to clear"
+                    }
+                },
+                "required": ["trigger_id"],
                 "additionalProperties": False
             }
         }
@@ -3537,6 +3708,7 @@ def get_tools_for_context(
     sheets_enabled: bool = False,
     calendar_enabled: bool = False,
     member_memory_enabled: bool = False,
+    triggers_enabled: bool = False,
     expanded_categories: dict = None
 ) -> list:
     """
@@ -3558,6 +3730,7 @@ def get_tools_for_context(
         sheets_enabled: Include Google Sheets tools (Signal bot only)
         calendar_enabled: Include Google Calendar tools (Signal bot only)
         member_memory_enabled: Include member memory tools (Signal bot only)
+        triggers_enabled: Include scheduled trigger tools (Signal bot only)
         expanded_categories: Dict mapping tool group to expanded category name
                             e.g. {"finance": "finance_quotes", "sheets": "sheets_core"}
 
@@ -3612,6 +3785,11 @@ def get_tools_for_context(
 
         if member_memory_enabled:
             tools.extend(MEMBER_MEMORY_TOOLS)
+
+        # Trigger tools - simple list (4 tools)
+        if triggers_enabled:
+            tools.extend(TRIGGER_TOOLS)
+
         return tools
     return AGENT_TOOLS
 

@@ -14,6 +14,7 @@ from signal_bot.models import db, Bot, GroupConnection, BotGroupAssignment, Acti
 from signal_bot.config_signal import get_signal_api_url
 from signal_bot.message_handler import get_message_handler
 from signal_bot.member_memory_scanner import get_memory_scanner, set_flask_app as set_scanner_app
+from signal_bot.trigger_scheduler import create_trigger_scheduler, set_flask_app as set_scheduler_app
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +26,9 @@ def set_flask_app(app: Flask):
     """Set the Flask app for database context."""
     global _flask_app
     _flask_app = app
-    # Also set for memory scanner
+    # Also set for memory scanner and trigger scheduler
     set_scanner_app(app)
+    set_scheduler_app(app)
 
 
 @dataclass
@@ -62,6 +64,9 @@ class SignalBotManager:
         # Member memory scanner
         self.memory_scanner = get_memory_scanner()
 
+        # Trigger scheduler (created here, started in start())
+        self.trigger_scheduler = create_trigger_scheduler(self)
+
     async def start(self):
         """Start the bot manager and all enabled bots."""
         if self.running:
@@ -88,12 +93,18 @@ class SignalBotManager:
         # Start the member memory scanner (runs every 12 hours)
         await self.memory_scanner.start()
 
-        logger.info(f"Started {len(bot_ids)} bots + idle news checker + memory scanner")
+        # Start the trigger scheduler (checks every 60 seconds)
+        await self.trigger_scheduler.start()
+
+        logger.info(f"Started {len(bot_ids)} bots + idle news checker + memory scanner + trigger scheduler")
 
     async def stop(self):
         """Stop all bots and the manager."""
         self.running = False
         logger.info("Stopping Signal Bot Manager")
+
+        # Stop trigger scheduler
+        await self.trigger_scheduler.stop()
 
         # Stop memory scanner
         await self.memory_scanner.stop()
