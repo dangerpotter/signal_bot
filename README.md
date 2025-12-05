@@ -86,6 +86,7 @@ Edit `.env` with your API keys:
 ```env
 OPENROUTER_API_KEY=your_key_here    # Required - routes all AI models
 OPENAI_API_KEY=your_key_here        # Optional - for Sora video generation
+NEWS_API_KEY=your_key_here          # Optional - TheNewsAPI fallback (100 free/month)
 ```
 
 ### 3. Start Signal API Containers
@@ -133,9 +134,9 @@ python run_signal.py --bots-only  # Headless mode - bots only, no web UI
 | **Reaction Chance %** | Random animal emoji chance |
 | **LLM Reactions** | Use AI to detect funny messages |
 
-### Finance Tools (via yfinance)
+### Finance Tools (via yfinance + TheNewsAPI)
 
-When finance tools are enabled, bots can answer questions about stocks, crypto, and markets:
+When finance tools are enabled, bots can answer questions about stocks, crypto, and markets. Stock news uses Yahoo Finance with automatic fallback to TheNewsAPI when Yahoo returns null data:
 
 | Tool | Description |
 |------|-------------|
@@ -246,6 +247,7 @@ signal_bot/
 ├── trigger_logic.py        # Mention detection, random chance
 ├── weather_client.py       # WeatherAPI.com integration
 ├── finance_client.py       # Yahoo Finance integration (yfinance)
+├── news_client.py          # TheNewsAPI fallback for stock news
 ├── time_client.py          # Timezone-aware time/date utilities
 ├── google_sheets_client.py # Google Sheets/Drive API (90+ tools)
 ├── wikipedia_client.py     # Wikipedia REST API integration
