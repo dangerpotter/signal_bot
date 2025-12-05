@@ -29,16 +29,34 @@ def register_routes(app):
     @app.route("/")
     def dashboard():
         """Main dashboard view."""
+        from datetime import datetime, timedelta
+
         bots = Bot.query.all()
         groups = GroupConnection.query.all()
         recent_activity = ActivityLog.query.order_by(
             ActivityLog.timestamp.desc()
         ).limit(20).all()
 
+        # Get today's start (midnight)
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+
+        # Count messages sent today
+        messages_today = ActivityLog.query.filter(
+            ActivityLog.event_type == "message_sent",
+            ActivityLog.timestamp >= today_start
+        ).count()
+
+        # Count images generated (all time for now)
+        images_generated = ActivityLog.query.filter(
+            ActivityLog.event_type == "image_generated"
+        ).count()
+
         return render_template("dashboard.html",
                                bots=bots,
                                groups=groups,
-                               activity=recent_activity)
+                               activity=recent_activity,
+                               messages_today=messages_today,
+                               images_generated=images_generated)
 
     @app.route("/bots")
     def bots_list():
