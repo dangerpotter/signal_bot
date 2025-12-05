@@ -47,6 +47,14 @@ REMEMBER_TRIGGERS = {
         r"be\s+(more\s+)?(brief|concise|succinct|direct|detailed|verbose)",
         r"i\s+prefer\s+(short|long|brief|detailed|succinct|concise)\s+(responses?|answers?|replies?)",
         r"respond\s+(to\s+me\s+)?(with|in)\s+(bullets?|lists?|paragraphs?)",
+        # Additional patterns for common phrasings
+        r"limit\s+(your\s+)?(responses?|replies?|answers?)\s+to",  # "limit responses to 1 sentence"
+        r"only\s+(speak|respond|reply|answer)\s+when\s+(prompted|mentioned|asked|tagged)",  # "only speak when prompted"
+        r"(keep|make)\s+(it|them|responses?)\s+(short|brief|concise)",  # "keep it short"
+        r"(shorter|briefer|less\s+wordy)\s*(please|thanks|thx)?$",  # "shorter please"
+        r"(one|1|two|2|three|3)\s+(sentence|word|line|paragraph)",  # "1 sentence responses"
+        r"don\'?t\s+(respond|reply|answer)\s+(unless|until)",  # "don't respond unless asked"
+        r"(no|stop)\s+(unsolicited|random|unprompted)\s+(responses?|replies?|comments?)",  # "no random responses"
     ],
 
     # Location indicators

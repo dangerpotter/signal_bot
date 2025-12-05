@@ -45,13 +45,31 @@ A web-based management dashboard for running AI bots in Signal group chats. Conf
 ## Quick Start
 
 ### Prerequisites
-- Python 3.10-3.11
-- Poetry
+- Python 3.10-3.13
 - Docker & Docker Compose
 - Signal phone numbers (one per bot)
 
 ### 1. Clone and Install
 
+**Using Conda (recommended):**
+```bash
+git clone https://github.com/dangerpotter/signal_bot.git
+cd signal_bot
+conda create -n signal_bot python=3.12
+conda activate signal_bot
+pip install -r requirements.txt
+```
+
+**Using pip/venv:**
+```bash
+git clone https://github.com/dangerpotter/signal_bot.git
+cd signal_bot
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+**Using Poetry (legacy):**
 ```bash
 git clone https://github.com/dangerpotter/signal_bot.git
 cd signal_bot
@@ -81,7 +99,7 @@ This starts signal-cli-rest-api containers. You'll need to register/link your Si
 ### 4. Run the Admin UI
 
 ```bash
-poetry run python run_signal.py
+python run_signal.py
 ```
 
 Open http://localhost:5000 to access the dashboard.

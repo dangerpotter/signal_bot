@@ -5,6 +5,7 @@ import logging
 import httpx
 import random
 import time
+import uuid
 from typing import Optional, Callable
 from dataclasses import dataclass
 from flask import Flask
@@ -561,26 +562,99 @@ class SignalBotManager:
         invite_url: str,
         port: int = 8080
     ) -> Optional[dict]:
-        """Join a group via an invitation link."""
-        url = f"http://localhost:{port}/v1/groups/{phone_number}/join"
+        """Join a group via an invitation link.
 
-        payload = {
-            "uri": invite_url
+        Since the bbernhard REST API doesn't expose joinGroup, we need to:
+        1. Stop the container (releases the config lock)
+        2. Run signal-cli joinGroup directly on the host-mounted volume
+        3. Restart the container
+
+        This requires the signal-cli data to be mounted at a known host path.
+        """
+        import subprocess
+        import time
+        import os
+
+        # Get the project root directory (where docker-compose.signal.yml is)
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+        # Map port to container name and data path (absolute)
+        container_map = {
+            8080: ("signal-bot-1", os.path.join(project_root, "signal-data", "bot1")),
+            8081: ("signal-bot-2", os.path.join(project_root, "signal-data", "bot2")),
+            8082: ("signal-bot-3", os.path.join(project_root, "signal-data", "bot3"))
         }
 
-        try:
-            client = await self._get_http_client(port)
-            response = await client.post(url, json=payload, timeout=30.0)
+        if port not in container_map:
+            logger.error(f"Unknown port {port} for join_group_by_link")
+            return None
 
-            if response.status_code in (200, 201):
-                result = response.json()
-                logger.info(f"Joined group via link: {result}")
-                return result
-            else:
-                logger.error(f"Join group failed: {response.status_code} - {response.text}")
+        container_name, data_path = container_map[port]
+
+        try:
+            logger.info(f"Joining group via invite link (container: {container_name})")
+
+            # Step 1: Stop the container to release the config lock
+            logger.info(f"Stopping {container_name}...")
+            stop_result = subprocess.run(
+                ["docker", "stop", container_name],
+                capture_output=True, text=True, timeout=30
+            )
+            if stop_result.returncode != 0:
+                logger.error(f"Failed to stop container: {stop_result.stderr}")
                 return None
+
+            # Step 2: Run signal-cli joinGroup using a temporary container
+            # This uses the same image but overrides entrypoint to run signal-cli directly
+            logger.info(f"Running joinGroup command...")
+            join_cmd = [
+                "docker", "run", "--rm",
+                "--entrypoint", "",
+                "-v", f"{data_path}:/home/.local/share/signal-cli",
+                "bbernhard/signal-cli-rest-api:latest",
+                "signal-cli", "--config", "/home/.local/share/signal-cli",
+                "-a", phone_number,
+                "joinGroup", "--uri", invite_url
+            ]
+
+            logger.info(f"Command: {' '.join(join_cmd)}")
+            join_result = subprocess.run(
+                join_cmd,
+                capture_output=True, text=True, timeout=120  # Increased timeout
+            )
+            logger.info(f"Join result: rc={join_result.returncode}, stdout={join_result.stdout}, stderr={join_result.stderr}")
+
+            # Step 3: Restart the original container
+            logger.info(f"Restarting {container_name}...")
+            start_result = subprocess.run(
+                ["docker", "start", container_name],
+                capture_output=True, text=True, timeout=30
+            )
+
+            # Wait for container to be healthy
+            time.sleep(3)
+
+            if join_result.returncode == 0:
+                logger.info(f"Successfully joined group: {join_result.stdout}")
+                # Return a dict with group info if available
+                return {"status": "joined", "output": join_result.stdout.strip()}
+            else:
+                error_msg = join_result.stderr or join_result.stdout or "Unknown error"
+                logger.error(f"Join group failed: {error_msg}")
+                return None
+
+        except subprocess.TimeoutExpired:
+            logger.error("Join group timed out")
+            # Try to restart container on timeout
+            subprocess.run(["docker", "start", container_name], capture_output=True, timeout=30)
+            return None
         except Exception as e:
             logger.error(f"Error joining group: {e}")
+            # Try to restart container on error
+            try:
+                subprocess.run(["docker", "start", container_name], capture_output=True, timeout=30)
+            except Exception:
+                pass
             return None
 
     async def edit_message(
