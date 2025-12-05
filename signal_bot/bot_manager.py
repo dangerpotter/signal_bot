@@ -831,7 +831,7 @@ class SignalBotManager:
             # Extract sender and message
             sender_id = envelope.get("sourceUuid", envelope.get("source", "Unknown"))
             sender_name = envelope.get("sourceName", "Unknown")
-            message_text = data_message.get("message", "")
+            message_text = data_message.get("message") or ""  # Handle None value from image-only messages
             message_timestamp = data_message.get("timestamp")  # For reactions
 
             # Extract image attachments

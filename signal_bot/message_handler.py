@@ -376,8 +376,9 @@ class MessageHandler:
                 prompt_content = trigger_message
 
             # Two-phase meta-tool expansion loop
-            expanded_categories = {}  # Track expanded categories: {"finance": "finance_quotes", "sheets": "sheets_core"}
-            max_expansions = 3  # Allow finance + sheets + one retry
+            expanded_categories = {}  # Track expanded categories: {"finance": {"finance_quotes"}, "sheets": {"sheets_core"}}
+            expansion_intents = []  # Track intents from meta-tool calls for context in retry
+            max_expansions = 5  # Allow multiple sheet categories + finance + retries
 
             for expansion_iteration in range(max_expansions + 1):
                 if (OPENROUTER_TOOL_CALLING_ENABLED and
@@ -413,12 +414,23 @@ class MessageHandler:
                     use_tools = None
                     tool_executor = None
 
+                # Build effective system prompt (include expansion context if retrying)
+                effective_system_prompt = system_prompt
+                if expansion_intents:
+                    intent_context = "\n\n[TOOL EXPANSION CONTEXT - You previously requested these tools and should now execute them:]\n"
+                    for intent_info in expansion_intents:
+                        intent_context += f"- Category '{intent_info['category']}' for intent: \"{intent_info['intent']}\"\n"
+                        intent_context += f"  Available tools: {', '.join(intent_info['tools'])}\n"
+                    intent_context += "\nPlease proceed with the actual tool calls to fulfill the user's request."
+                    effective_system_prompt += intent_context
+                    logger.info(f"Added expansion context to system prompt: {expansion_intents}")
+
                 # Call the AI API
                 response = call_openrouter_api(
                     prompt=prompt_content,
                     conversation_history=formatted_messages,
                     model=model_id,
-                    system_prompt=system_prompt,
+                    system_prompt=effective_system_prompt,
                     stream_callback=None,  # No streaming for Signal
                     web_search=bot_data.get('web_search_enabled', False),
                     tools=use_tools,
@@ -429,9 +441,22 @@ class MessageHandler:
                 if (signal_executor and
                     signal_executor.expansion_requested and
                     signal_executor.expanded_categories):
-                    # Merge newly expanded categories
-                    expanded_categories.update(signal_executor.expanded_categories)
-                    logger.info(f"Meta-tool expansion triggered, expanded categories: {expanded_categories}")
+                    # Merge newly expanded categories (union sets, don't overwrite)
+                    for group, categories in signal_executor.expanded_categories.items():
+                        if group not in expanded_categories:
+                            expanded_categories[group] = set()
+                        expanded_categories[group].update(categories)
+                    # Capture intent information for context in retry
+                    from tool_schemas import ALL_META_CATEGORIES
+                    for group, meta_tools in signal_executor.expanded_categories.items():
+                        for meta_tool in meta_tools:
+                            if meta_tool in ALL_META_CATEGORIES:
+                                expansion_intents.append({
+                                    "category": meta_tool,
+                                    "intent": signal_executor.last_meta_intent or "perform requested operation",
+                                    "tools": ALL_META_CATEGORIES[meta_tool]["sub_tools"]
+                                })
+                    logger.info(f"Meta-tool expansion triggered, expanded categories: {expanded_categories}, intents: {expansion_intents}")
                     # Continue loop with expanded tools
                     continue
 
@@ -440,6 +465,9 @@ class MessageHandler:
 
             # Max iterations reached (shouldn't normally happen)
             logger.warning(f"Max tool expansion iterations ({max_expansions}) reached")
+            # Don't return None (expansion signal) as a response - provide error message
+            if response is None:
+                return "I need more tool categories to complete this task. Please try a simpler request or break it into steps."
             return response
 
         except Exception as e:

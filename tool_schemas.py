@@ -542,7 +542,7 @@ SHEETS_TOOLS = [
         "type": "function",
         "function": {
             "name": "create_spreadsheet",
-            "description": "Create a new Google Sheets spreadsheet for tracking data, expenses, lists, or any collaborative information. The spreadsheet will be registered for this group and can be accessed later. Use when someone wants to track something, create a list, or organize data collaboratively.",
+            "description": "Create a new Google Sheets spreadsheet for tracking data, expenses, lists, or any collaborative information. The spreadsheet will be registered for this group and can be accessed later. IMPORTANT: After creating, always share the returned URL link with the user so they can access it. Use when someone wants to track something, create a list, or organize data collaboratively.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -565,7 +565,7 @@ SHEETS_TOOLS = [
         "type": "function",
         "function": {
             "name": "list_spreadsheets",
-            "description": "List all spreadsheets that have been created for this group. Returns titles, descriptions, URLs, and when they were last accessed. Use when someone asks what sheets exist or wants to find a specific one.",
+            "description": "List all spreadsheets created for this group. Returns titles, descriptions, shareable URLs, and access history. Use when someone asks for a spreadsheet link/URL, what sheets exist, or wants to find a previously created sheet.",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -631,7 +631,7 @@ SHEETS_TOOLS = [
         "type": "function",
         "function": {
             "name": "add_row_to_sheet",
-            "description": "Add a new row of data to a spreadsheet. Appends to the end of existing data. By default adds timestamp and attribution columns (for expense tracking, logging). Set include_metadata to false for simple data entry where you want values placed directly in columns (like adding a member name to column A).",
+            "description": "Add a new row of data to a spreadsheet. Appends to the end of existing data. IMPORTANT: Set include_metadata=false when the spreadsheet has predefined columns (Symbol/Price/Time, or any custom headers), so your values align with existing columns. Use include_metadata=true (default) only when you want auto-generated timestamp + attribution columns prepended (useful for expense logs).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -646,7 +646,7 @@ SHEETS_TOOLS = [
                     },
                     "include_metadata": {
                         "type": "boolean",
-                        "description": "If true (default), prepends timestamp and who-added-it columns. Set to false for simple data entry where you want values in columns as-is (e.g., adding a name to a member list)."
+                        "description": "Set to false when the spreadsheet has predefined column headers (like Symbol/Price/Time). Set to true only when you need auto-generated timestamp + attribution columns added. Default: true (adds 2 extra columns at the start)."
                     }
                 },
                 "required": ["spreadsheet_id", "values"],
@@ -3298,12 +3298,13 @@ def get_tools_for_context(
 
         # Finance tools - use two-phase expansion
         if finance_enabled:
-            finance_expanded = expanded_categories.get("finance")
+            finance_expanded = expanded_categories.get("finance", set())
             if finance_expanded:
-                # Phase 2: Show expanded category's tools + other meta-tools
-                tools.extend(get_finance_tools_for_category(finance_expanded))
+                # Phase 2: Show expanded categories' tools + remaining meta-tools
+                for category in finance_expanded:
+                    tools.extend(get_finance_tools_for_category(category))
                 tools.extend([m for m in get_finance_meta_tools()
-                             if m["function"]["name"] != finance_expanded])
+                             if m["function"]["name"] not in finance_expanded])
             else:
                 # Phase 1: Show only meta-tools
                 tools.extend(get_finance_meta_tools())
@@ -3317,12 +3318,13 @@ def get_tools_for_context(
 
         # Sheets tools - use two-phase expansion
         if sheets_enabled:
-            sheets_expanded = expanded_categories.get("sheets")
+            sheets_expanded = expanded_categories.get("sheets", set())
             if sheets_expanded:
-                # Phase 2: Show expanded category's tools + other meta-tools
-                tools.extend(get_sheets_tools_for_category(sheets_expanded))
+                # Phase 2: Show expanded categories' tools + remaining meta-tools
+                for category in sheets_expanded:
+                    tools.extend(get_sheets_tools_for_category(category))
                 tools.extend([m for m in get_sheets_meta_tools()
-                             if m["function"]["name"] != sheets_expanded])
+                             if m["function"]["name"] not in sheets_expanded])
             else:
                 # Phase 1: Show only meta-tools
                 tools.extend(get_sheets_meta_tools())

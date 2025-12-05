@@ -608,8 +608,8 @@ def call_openrouter_responses_api(
                     # Check for meta-tool expansion signal - return early to allow re-call with expanded tools
                     if isinstance(tool_result, dict) and tool_result.get("expansion_needed"):
                         print(f"[OpenRouter Responses API] Meta-tool expansion requested for {func_name}, returning early")
-                        # Return the expansion message so the model's response reflects the available tools
-                        return tool_result.get("message", f"Expanded {func_name}")
+                        # Return None to signal expansion needed - don't send a message to the user
+                        return None
 
                     tool_results.append({
                         "function_call": {
@@ -703,7 +703,8 @@ def call_openrouter_responses_api(
                                     # Check for meta-tool expansion signal
                                     if isinstance(tool_result, dict) and tool_result.get("expansion_needed"):
                                         print(f"[OpenRouter Responses API] Meta-tool expansion in chained call for {func_name}, returning early")
-                                        return tool_result.get("message", f"Expanded {func_name}")
+                                        # Return None to signal expansion needed - don't send a message to the user
+                                        return None
 
                                     follow_up_input.append({
                                         "type": "function_call",

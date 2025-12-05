@@ -126,6 +126,7 @@ class SignalToolExecutor:
         # Two-phase meta-tool expansion state
         self.expansion_requested = False
         self.expanded_categories = {}  # {"finance": "finance_quotes", "sheets": "sheets_core"}
+        self.last_meta_intent = None  # Track intent from the most recent meta-tool call
 
     def execute(self, function_name: str, arguments: dict) -> dict:
         """
@@ -141,13 +142,18 @@ class SignalToolExecutor:
         # Two-phase meta-tool detection
         if function_name in ALL_META_CATEGORIES:
             self.expansion_requested = True
-            # Track which group this meta-tool belongs to
+            # Track which group this meta-tool belongs to (use sets to accumulate multiple categories)
             if function_name in FINANCE_CATEGORIES:
-                self.expanded_categories["finance"] = function_name
+                if "finance" not in self.expanded_categories:
+                    self.expanded_categories["finance"] = set()
+                self.expanded_categories["finance"].add(function_name)
             elif function_name in SHEETS_CATEGORIES:
-                self.expanded_categories["sheets"] = function_name
+                if "sheets" not in self.expanded_categories:
+                    self.expanded_categories["sheets"] = set()
+                self.expanded_categories["sheets"].add(function_name)
 
             intent = arguments.get("intent", "")
+            self.last_meta_intent = intent  # Store for context in retry
             available_tools = ALL_META_CATEGORIES[function_name]["sub_tools"]
             logger.info(f"Meta-tool expansion requested: {function_name} (intent: {intent})")
 
@@ -1017,7 +1023,7 @@ class SignalToolExecutor:
             return {
                 "success": True,
                 "data": result,
-                "message": f"Created spreadsheet '{title}': {result.get('url', 'URL unavailable')}"
+                "message": f"Created spreadsheet '{title}'. IMPORTANT - Share this link with the user: {result.get('url', 'URL unavailable')}"
             }
 
         except Exception as e:

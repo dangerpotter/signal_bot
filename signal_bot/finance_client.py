@@ -98,6 +98,8 @@ def get_ticker_news(symbol: str, count: int = 5) -> dict:
     """
     Get recent news for a stock/crypto.
 
+    Tries Yahoo Finance first, falls back to TheNewsAPI if Yahoo returns null data.
+
     Args:
         symbol: Ticker symbol
         count: Number of news items (1-20)
@@ -109,36 +111,112 @@ def get_ticker_news(symbol: str, count: int = 5) -> dict:
         return {"error": "Symbol is required"}
 
     count = max(1, min(20, count))
+    company_name = None
 
     try:
         import yfinance as yf
 
         ticker = yf.Ticker(symbol.upper())
+
+        # Get company name for fallback search
+        try:
+            info = ticker.info
+            company_name = info.get("longName") or info.get("shortName")
+        except Exception:
+            pass
+
         news = ticker.news
 
-        if not news:
-            return {"symbol": symbol.upper(), "news": [], "message": "No recent news found"}
+        # Check if news is valid (not empty and has non-null titles)
+        valid_news = []
+        if news:
+            for item in news[:count]:
+                if item.get("title"):  # Only include items with actual titles
+                    valid_news.append({
+                        "title": item.get("title"),
+                        "publisher": item.get("publisher"),
+                        "link": item.get("link"),
+                        "published": datetime.fromtimestamp(item.get("providerPublishTime", 0)).isoformat()
+                        if item.get("providerPublishTime") else None,
+                        "type": item.get("type"),
+                    })
 
+        if valid_news:
+            return {
+                "symbol": symbol.upper(),
+                "news": valid_news,
+                "count": len(valid_news),
+                "source": "yahoo_finance"
+            }
+
+        # Yahoo Finance returned no valid news, try TheNewsAPI as fallback
+        logger.info(f"Yahoo Finance returned no valid news for {symbol}, trying TheNewsAPI fallback")
+        return _get_news_from_thenewsapi(symbol, company_name, count)
+
+    except Exception as e:
+        logger.error(f"Error getting news for {symbol} from Yahoo Finance: {e}")
+        # Try TheNewsAPI as fallback on error
+        logger.info(f"Trying TheNewsAPI fallback for {symbol}")
+        return _get_news_from_thenewsapi(symbol, company_name, count)
+
+
+def _get_news_from_thenewsapi(symbol: str, company_name: Optional[str], count: int) -> dict:
+    """
+    Fallback function to get news from TheNewsAPI.
+
+    Args:
+        symbol: Stock ticker symbol
+        company_name: Optional company name for better search
+        count: Number of articles to return
+
+    Returns:
+        dict with news list or error
+    """
+    try:
+        from signal_bot.news_client import get_stock_news as thenewsapi_get_stock_news
+
+        result = thenewsapi_get_stock_news(symbol, company_name, count)
+
+        if "error" in result:
+            return {
+                "symbol": symbol.upper(),
+                "news": [],
+                "message": f"No news available: {result['error']}"
+            }
+
+        # Convert TheNewsAPI format to match Yahoo Finance format
         formatted_news = []
-        for item in news[:count]:
+        for article in result.get("news", []):
             formatted_news.append({
-                "title": item.get("title"),
-                "publisher": item.get("publisher"),
-                "link": item.get("link"),
-                "published": datetime.fromtimestamp(item.get("providerPublishTime", 0)).isoformat()
-                if item.get("providerPublishTime") else None,
-                "type": item.get("type"),
+                "title": article.get("title"),
+                "publisher": article.get("source"),
+                "link": article.get("url"),
+                "published": article.get("published_at"),
+                "type": "article",
+                "description": article.get("description")
             })
 
         return {
             "symbol": symbol.upper(),
             "news": formatted_news,
-            "count": len(formatted_news)
+            "count": len(formatted_news),
+            "source": "thenewsapi"
         }
 
+    except ImportError:
+        logger.warning("news_client not available for fallback")
+        return {
+            "symbol": symbol.upper(),
+            "news": [],
+            "message": "No news available (news API not configured)"
+        }
     except Exception as e:
-        logger.error(f"Error getting news for {symbol}: {e}")
-        return {"error": f"Failed to get news for {symbol}: {str(e)}"}
+        logger.error(f"TheNewsAPI fallback failed for {symbol}: {e}")
+        return {
+            "symbol": symbol.upper(),
+            "news": [],
+            "message": f"Failed to get news: {str(e)}"
+        }
 
 
 def search_symbols(query: str, count: int = 10) -> dict:
