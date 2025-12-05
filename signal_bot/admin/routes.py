@@ -328,7 +328,7 @@ def register_routes(app):
         flash(f"Group '{name}' added successfully", "success")
         return redirect(url_for("groups_list"))
 
-    @app.route("/groups/<group_id>/assign", methods=["POST"])
+    @app.route("/groups/<path:group_id>/assign", methods=["POST"])
     def assign_bot_to_group(group_id):
         """Assign a bot to a group."""
         group = GroupConnection.query.get_or_404(group_id)
@@ -349,7 +349,7 @@ def register_routes(app):
 
         return redirect(url_for("groups_list"))
 
-    @app.route("/groups/<group_id>/unassign/<bot_id>", methods=["POST"])
+    @app.route("/groups/<path:group_id>/unassign/<bot_id>", methods=["POST"])
     def unassign_bot_from_group(group_id, bot_id):
         """Remove a bot from a group."""
         assignment = BotGroupAssignment.query.filter_by(
@@ -362,7 +362,7 @@ def register_routes(app):
 
         return redirect(url_for("groups_list"))
 
-    @app.route("/groups/<group_id>/toggle", methods=["POST"])
+    @app.route("/groups/<path:group_id>/toggle", methods=["POST"])
     def toggle_group(group_id):
         """Toggle group enabled/disabled."""
         group = GroupConnection.query.get_or_404(group_id)
@@ -370,33 +370,34 @@ def register_routes(app):
         db.session.commit()
         return redirect(url_for("groups_list"))
 
-    @app.route("/groups/<group_id>/edit", methods=["GET", "POST"])
+    @app.route("/groups/<path:group_id>/edit", methods=["GET", "POST"])
     def edit_group(group_id):
         """Edit group settings."""
         group = GroupConnection.query.get_or_404(group_id)
 
         if request.method == "POST":
-            group.name = request.form.get("name", group.name).strip()
+            new_name = request.form.get("name", group.name).strip()
             new_group_id = request.form.get("group_id", group.id).strip()
 
             # If the group ID changed, we need to update the primary key
             if new_group_id != group.id:
-                # Update all related assignments
+                # Update all related assignments first
                 for assignment in group.bot_assignments:
                     assignment.group_id = new_group_id
-                # Update group ID
+                # Update group ID and name with raw SQL (primary key change)
                 old_id = group.id
                 db.session.execute(
-                    db.text("UPDATE group_connections SET id = :new_id WHERE id = :old_id"),
-                    {"new_id": new_group_id, "old_id": old_id}
+                    db.text("UPDATE groups SET id = :new_id, name = :name WHERE id = :old_id"),
+                    {"new_id": new_group_id, "name": new_name, "old_id": old_id}
                 )
                 db.session.commit()
-                _log_activity("group_updated", None, new_group_id, f"Group '{group.name}' updated")
+                _log_activity("group_updated", None, new_group_id, f"Group '{new_name}' updated")
             else:
+                group.name = new_name
                 db.session.commit()
-                _log_activity("group_updated", None, group_id, f"Group '{group.name}' updated")
+                _log_activity("group_updated", None, group_id, f"Group '{new_name}' updated")
 
-            flash(f"Group '{group.name}' updated successfully", "success")
+            flash(f"Group '{new_name}' updated successfully", "success")
             return redirect(url_for("groups_list"))
 
         bots = Bot.query.all()
@@ -416,7 +417,7 @@ def register_routes(app):
 
         return render_template("edit_group.html", group=group, bots=bots, members=group_members)
 
-    @app.route("/groups/<group_id>/delete", methods=["POST"])
+    @app.route("/groups/<path:group_id>/delete", methods=["POST"])
     def delete_group(group_id):
         """Delete a group and its assignments."""
         group = GroupConnection.query.get_or_404(group_id)
@@ -879,7 +880,7 @@ def register_routes(app):
         db.session.commit()
         return redirect(url_for("member_memories_list"))
 
-    @app.route("/member-memories/force-scan/<group_id>", methods=["POST"])
+    @app.route("/member-memories/force-scan/<path:group_id>", methods=["POST"])
     def force_memory_scan(group_id):
         """Force a memory scan for a group (admin action)."""
         import asyncio
@@ -923,7 +924,7 @@ def register_routes(app):
         ).limit(20).all()
         return jsonify([a.to_dict() for a in activity])
 
-    @app.route("/api/groups/<group_id>/members")
+    @app.route("/api/groups/<path:group_id>/members")
     def api_group_members(group_id):
         """Get members for a specific group from message logs."""
         members = db.session.query(

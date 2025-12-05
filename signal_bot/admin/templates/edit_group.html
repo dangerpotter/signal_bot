@@ -9,9 +9,9 @@
     </div>
 </div>
 
-<form action="{{ url_for('edit_group', group_id=group.id) }}" method="post">
-    <div class="row">
-        <div class="col-md-6">
+<div class="row">
+    <div class="col-md-6">
+        <form action="{{ url_for('edit_group', group_id=group.id) }}" method="post">
             <div class="card mb-4">
                 <div class="card-header">Group Settings</div>
                 <div class="card-body">
@@ -26,98 +26,95 @@
                         <small class="text-muted">The internal Signal group identifier (be careful when changing this)</small>
                     </div>
                 </div>
-            </div>
-        </div>
-
-        <div class="col-md-6">
-            <div class="card mb-4">
-                <div class="card-header">Assigned Bots</div>
-                <div class="card-body">
-                    {% if group.bot_assignments %}
-                        <div class="mb-3">
-                            {% for assignment in group.bot_assignments %}
-                            <span class="badge bg-primary me-1 mb-1">
-                                {{ assignment.bot.name }}
-                                <form action="{{ url_for('unassign_bot_from_group', group_id=group.id, bot_id=assignment.bot.id) }}" method="post" class="d-inline">
-                                    <button type="submit" class="btn-close btn-close-white ms-1" style="font-size: 0.6rem;" title="Remove"></button>
-                                </form>
-                            </span>
-                            {% endfor %}
-                        </div>
-                    {% else %}
-                        <p class="text-muted">No bots assigned to this group</p>
-                    {% endif %}
-
-                    <form action="{{ url_for('assign_bot_to_group', group_id=group.id) }}" method="post">
-                        <div class="input-group input-group-sm">
-                            <select name="bot_id" class="form-select">
-                                <option value="">Add bot...</option>
-                                {% for bot in bots %}
-                                    {% set already_assigned = group.bot_assignments|selectattr('bot_id', 'equalto', bot.id)|list|length > 0 %}
-                                    {% if not already_assigned %}
-                                    <option value="{{ bot.id }}">{{ bot.name }}</option>
-                                    {% endif %}
-                                {% endfor %}
-                            </select>
-                            <button type="submit" class="btn btn-outline-primary">
-                                <i class="bi bi-plus"></i>
-                            </button>
-                        </div>
-                    </form>
+                <div class="card-footer">
+                    <a href="{{ url_for('groups_list') }}" class="btn btn-secondary">
+                        <i class="bi bi-arrow-left"></i> Back
+                    </a>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg"></i> Save Changes
+                    </button>
                 </div>
             </div>
+        </form>
+    </div>
 
-            <div class="card mb-4">
-                <div class="card-header">Members</div>
-                <div class="card-body">
-                    {% if members %}
-                        <div class="mb-2">
-                            {% for member in members %}
-                            <span class="badge bg-secondary me-1 mb-1">
-                                <i class="bi bi-person"></i> {{ member.name }}
-                            </span>
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header">Assigned Bots</div>
+            <div class="card-body">
+                {% if group.bot_assignments %}
+                    <div class="mb-3">
+                        {% for assignment in group.bot_assignments %}
+                        <span class="badge bg-primary me-1 mb-1">
+                            {{ assignment.bot.name }}
+                            <form action="{{ url_for('unassign_bot_from_group', group_id=group.id, bot_id=assignment.bot.id) }}" method="post" class="d-inline">
+                                <button type="submit" class="btn-close btn-close-white ms-1" style="font-size: 0.6rem;" title="Remove"></button>
+                            </form>
+                        </span>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="text-muted">No bots assigned to this group</p>
+                {% endif %}
+
+                <form action="{{ url_for('assign_bot_to_group', group_id=group.id) }}" method="post">
+                    <div class="input-group input-group-sm">
+                        <select name="bot_id" class="form-select">
+                            <option value="">Add bot...</option>
+                            {% for bot in bots %}
+                                {% set already_assigned = group.bot_assignments|selectattr('bot_id', 'equalto', bot.id)|list|length > 0 %}
+                                {% if not already_assigned %}
+                                <option value="{{ bot.id }}">{{ bot.name }}</option>
+                                {% endif %}
                             {% endfor %}
-                        </div>
-                        <small class="text-muted">{{ members|length }} member(s) have sent messages in this group</small>
-                    {% else %}
-                        <p class="text-muted mb-0">No members found (members appear after messages are received)</p>
-                    {% endif %}
-                </div>
-            </div>
-
-            <div class="card mb-4">
-                <div class="card-header">Status</div>
-                <div class="card-body">
-                    <p>
-                        {% if group.enabled %}
-                            <span class="badge bg-success"><i class="bi bi-check-circle"></i> Active</span>
-                        {% else %}
-                            <span class="badge bg-secondary"><i class="bi bi-x-circle"></i> Disabled</span>
-                        {% endif %}
-                    </p>
-                    <form action="{{ url_for('toggle_group', group_id=group.id) }}" method="post">
-                        <button type="submit" class="btn btn-sm {% if group.enabled %}btn-outline-warning{% else %}btn-outline-success{% endif %}">
-                            {% if group.enabled %}
-                                <i class="bi bi-pause-circle"></i> Disable Group
-                            {% else %}
-                                <i class="bi bi-play-circle"></i> Enable Group
-                            {% endif %}
+                        </select>
+                        <button type="submit" class="btn btn-outline-primary">
+                            <i class="bi bi-plus"></i>
                         </button>
-                    </form>
-                </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">Members</div>
+            <div class="card-body">
+                {% if members %}
+                    <div class="mb-2">
+                        {% for member in members %}
+                        <span class="badge bg-secondary me-1 mb-1">
+                            <i class="bi bi-person"></i> {{ member.name }}
+                        </span>
+                        {% endfor %}
+                    </div>
+                    <small class="text-muted">{{ members|length }} member(s) have sent messages in this group</small>
+                {% else %}
+                    <p class="text-muted mb-0">No members found (members appear after messages are received)</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">Status</div>
+            <div class="card-body">
+                <p>
+                    {% if group.enabled %}
+                        <span class="badge bg-success"><i class="bi bi-check-circle"></i> Active</span>
+                    {% else %}
+                        <span class="badge bg-secondary"><i class="bi bi-x-circle"></i> Disabled</span>
+                    {% endif %}
+                </p>
+                <form action="{{ url_for('toggle_group', group_id=group.id) }}" method="post">
+                    <button type="submit" class="btn btn-sm {% if group.enabled %}btn-outline-warning{% else %}btn-outline-success{% endif %}">
+                        {% if group.enabled %}
+                            <i class="bi bi-pause-circle"></i> Disable Group
+                        {% else %}
+                            <i class="bi bi-play-circle"></i> Enable Group
+                        {% endif %}
+                    </button>
+                </form>
             </div>
         </div>
     </div>
-
-    <div class="row">
-        <div class="col">
-            <a href="{{ url_for('groups_list') }}" class="btn btn-secondary">
-                <i class="bi bi-arrow-left"></i> Back
-            </a>
-            <button type="submit" class="btn btn-primary">
-                <i class="bi bi-check-lg"></i> Save Changes
-            </button>
-        </div>
-    </div>
-</form>
+</div>
 {% endblock %}
