@@ -358,35 +358,6 @@ class MessageHandler:
             # reaction_enabled already set above for context formatting
             any_tools_enabled = image_enabled or weather_enabled or finance_enabled or time_enabled or wikipedia_enabled or reaction_enabled or sheets_enabled or member_memory_tools_enabled
 
-            if (OPENROUTER_TOOL_CALLING_ENABLED and
-                any_tools_enabled and
-                model_supports_tools(model_id)):
-
-                use_tools = get_tools_for_context(
-                    context="signal",
-                    image_enabled=image_enabled,
-                    weather_enabled=weather_enabled,
-                    finance_enabled=finance_enabled,
-                    time_enabled=time_enabled,
-                    wikipedia_enabled=wikipedia_enabled,
-                    reaction_enabled=reaction_enabled,
-                    sheets_enabled=sheets_enabled,
-                    member_memory_enabled=member_memory_tools_enabled
-                )
-                signal_executor = SignalToolExecutor(
-                    bot_data=bot_data,
-                    group_id=group_id,
-                    send_image_callback=send_image_callback,
-                    send_reaction_callback=send_reaction_callback,
-                    reaction_metadata=reaction_metadata,
-                    max_reactions=bot_data.get('max_reactions_per_response', 3)
-                )
-                # Set sender name for sheet attribution
-                signal_executor.sender_name = sender_name
-                tool_executor = signal_executor.execute
-                tools_list = [t['function']['name'] for t in use_tools]
-                logger.info(f"Tool calling enabled for {bot_data.get('name')}: {tools_list}")
-
             # Build prompt - include images if present
             if incoming_images:
                 # Create structured content with text and images
@@ -404,18 +375,71 @@ class MessageHandler:
             else:
                 prompt_content = trigger_message
 
-            # Call the AI API
-            response = call_openrouter_api(
-                prompt=prompt_content,
-                conversation_history=formatted_messages,
-                model=model_id,
-                system_prompt=system_prompt,
-                stream_callback=None,  # No streaming for Signal
-                web_search=bot_data.get('web_search_enabled', False),
-                tools=use_tools,
-                tool_executor=tool_executor
-            )
+            # Two-phase meta-tool expansion loop
+            expanded_categories = {}  # Track expanded categories: {"finance": "finance_quotes", "sheets": "sheets_core"}
+            max_expansions = 3  # Allow finance + sheets + one retry
 
+            for expansion_iteration in range(max_expansions + 1):
+                if (OPENROUTER_TOOL_CALLING_ENABLED and
+                    any_tools_enabled and
+                    model_supports_tools(model_id)):
+
+                    use_tools = get_tools_for_context(
+                        context="signal",
+                        image_enabled=image_enabled,
+                        weather_enabled=weather_enabled,
+                        finance_enabled=finance_enabled,
+                        time_enabled=time_enabled,
+                        wikipedia_enabled=wikipedia_enabled,
+                        reaction_enabled=reaction_enabled,
+                        sheets_enabled=sheets_enabled,
+                        member_memory_enabled=member_memory_tools_enabled,
+                        expanded_categories=expanded_categories
+                    )
+                    signal_executor = SignalToolExecutor(
+                        bot_data=bot_data,
+                        group_id=group_id,
+                        send_image_callback=send_image_callback,
+                        send_reaction_callback=send_reaction_callback,
+                        reaction_metadata=reaction_metadata,
+                        max_reactions=bot_data.get('max_reactions_per_response', 3)
+                    )
+                    # Set sender name for sheet attribution
+                    signal_executor.sender_name = sender_name
+                    tool_executor = signal_executor.execute
+                    tools_list = [t['function']['name'] for t in use_tools]
+                    logger.info(f"Tool calling enabled for {bot_data.get('name')} (expansion {expansion_iteration}): {tools_list}")
+                else:
+                    use_tools = None
+                    tool_executor = None
+
+                # Call the AI API
+                response = call_openrouter_api(
+                    prompt=prompt_content,
+                    conversation_history=formatted_messages,
+                    model=model_id,
+                    system_prompt=system_prompt,
+                    stream_callback=None,  # No streaming for Signal
+                    web_search=bot_data.get('web_search_enabled', False),
+                    tools=use_tools,
+                    tool_executor=tool_executor
+                )
+
+                # Check if meta-tool expansion was requested
+                if (signal_executor and
+                    signal_executor.expansion_requested and
+                    signal_executor.expanded_categories):
+                    # Merge newly expanded categories
+                    expanded_categories.update(signal_executor.expanded_categories)
+                    logger.info(f"Meta-tool expansion triggered, expanded categories: {expanded_categories}")
+                    # Continue loop with expanded tools
+                    continue
+
+                # No expansion needed, return response
+                return response
+
+            # Max iterations reached (shouldn't normally happen)
+            logger.warning(f"Max tool expansion iterations ({max_expansions}) reached")
             return response
 
         except Exception as e:

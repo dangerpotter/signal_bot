@@ -605,6 +605,12 @@ def call_openrouter_responses_api(
                     if func_name == "generate_image" and tool_result:
                         image_generated = True
 
+                    # Check for meta-tool expansion signal - return early to allow re-call with expanded tools
+                    if isinstance(tool_result, dict) and tool_result.get("expansion_needed"):
+                        print(f"[OpenRouter Responses API] Meta-tool expansion requested for {func_name}, returning early")
+                        # Return the expansion message so the model's response reflects the available tools
+                        return tool_result.get("message", f"Expanded {func_name}")
+
                     tool_results.append({
                         "function_call": {
                             "type": "function_call",
@@ -693,6 +699,11 @@ def call_openrouter_responses_api(
                                     args_dict = json.loads(func_args) if isinstance(func_args, str) else (func_args or {})
                                     tool_result = tool_executor(func_name, args_dict)
                                     print(f"[OpenRouter Responses API] Chained tool result: {str(tool_result)[:200]}")
+
+                                    # Check for meta-tool expansion signal
+                                    if isinstance(tool_result, dict) and tool_result.get("expansion_needed"):
+                                        print(f"[OpenRouter Responses API] Meta-tool expansion in chained call for {func_name}, returning early")
+                                        return tool_result.get("message", f"Expanded {func_name}")
 
                                     follow_up_input.append({
                                         "type": "function_call",
@@ -1170,6 +1181,11 @@ def call_openrouter_api(
                                     # Execute the tool
                                     tool_result = tool_executor(fn_name, fn_args)
 
+                                    # Check for meta-tool expansion signal
+                                    if isinstance(tool_result, dict) and tool_result.get("expansion_needed"):
+                                        print(f"[OpenRouter] Meta-tool expansion requested for {fn_name}, returning early")
+                                        return tool_result.get("message", f"Expanded {fn_name}")
+
                                     # Add tool result to messages
                                     msgs.append({
                                         "role": "tool",
@@ -1242,6 +1258,11 @@ def call_openrouter_api(
 
                                                     print(f"[OpenRouter] Executing chained tool: {fn_name}({fn_args})")
                                                     tool_result = tool_executor(fn_name, fn_args)
+
+                                                    # Check for meta-tool expansion signal
+                                                    if isinstance(tool_result, dict) and tool_result.get("expansion_needed"):
+                                                        print(f"[OpenRouter] Meta-tool expansion in chained call for {fn_name}, returning early")
+                                                        return True, tool_result.get("message", f"Expanded {fn_name}")
 
                                                     msgs.append({
                                                         "role": "tool",

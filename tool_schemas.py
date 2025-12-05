@@ -3123,6 +3123,134 @@ MEMBER_MEMORY_TOOLS = [
     }
 ]
 
+# =============================================================================
+# TWO-PHASE META-TOOL SYSTEM
+# Categories for tools with >5 items to reduce token overhead
+# =============================================================================
+
+FINANCE_CATEGORIES = {
+    "finance_quotes": {
+        "description": "Get current stock/crypto prices, search tickers, find top movers",
+        "sub_tools": ["get_stock_quote", "search_stocks", "get_top_stocks"]
+    },
+    "finance_analysis": {
+        "description": "Get news, analyst ratings, and ownership data",
+        "sub_tools": ["get_stock_news", "get_analyst_ratings", "get_holders"]
+    },
+    "finance_fundamentals": {
+        "description": "Get price history, earnings, dividends, financials, options",
+        "sub_tools": ["get_price_history", "get_earnings", "get_dividends", "get_financials", "get_options"]
+    }
+}
+
+SHEETS_CATEGORIES = {
+    "sheets_core": {
+        "description": "Create, read, write, and search spreadsheets",
+        "sub_tools": ["create_spreadsheet", "list_spreadsheets", "read_sheet", "write_to_sheet", "add_row_to_sheet", "search_sheets"]
+    },
+    "sheets_rows_columns": {
+        "description": "Insert, delete, clear, and sort rows/columns",
+        "sub_tools": ["delete_rows", "delete_columns", "insert_rows", "insert_columns", "clear_range", "sort_range"]
+    },
+    "sheets_tabs": {
+        "description": "Add, delete, rename, hide/show sheet tabs",
+        "sub_tools": ["add_sheet", "delete_sheet", "rename_sheet", "hide_sheet", "show_sheet", "get_sheet_properties"]
+    },
+    "sheets_formatting": {
+        "description": "Text styles, colors, borders, alignment, cell formatting",
+        "sub_tools": ["format_columns", "set_text_format", "set_text_color", "set_background_color", "set_alignment", "set_borders", "set_text_direction", "set_text_rotation", "set_cell_padding", "set_rich_text", "merge_cells", "unmerge_cells"]
+    },
+    "sheets_layout": {
+        "description": "Freeze rows/columns, resize, banding, tab colors",
+        "sub_tools": ["freeze_rows", "freeze_columns", "auto_resize_columns", "alternating_colors", "set_tab_color"]
+    },
+    "sheets_charts": {
+        "description": "Create, update, list, delete charts",
+        "sub_tools": ["create_chart", "list_charts", "update_chart", "delete_chart"]
+    },
+    "sheets_pivot_tables": {
+        "description": "Create and manage pivot tables for data analysis",
+        "sub_tools": ["create_pivot_table", "delete_pivot_table", "list_pivot_tables", "get_pivot_table"]
+    },
+    "sheets_validation": {
+        "description": "Conditional formatting, data validation, cell notes",
+        "sub_tools": ["conditional_format", "data_validation", "add_note"]
+    },
+    "sheets_filtering": {
+        "description": "Basic filters and filter views",
+        "sub_tools": ["set_basic_filter", "clear_basic_filter", "create_filter_view", "delete_filter_view", "list_filter_views"]
+    },
+    "sheets_protection": {
+        "description": "Named ranges and cell/sheet protection",
+        "sub_tools": ["create_named_range", "delete_named_range", "list_named_ranges", "protect_range", "list_protected_ranges", "update_protected_range", "delete_protected_range", "protect_sheet"]
+    },
+    "sheets_grouping": {
+        "description": "Row/column groups and slicers for interactive filtering",
+        "sub_tools": ["create_row_group", "create_column_group", "delete_row_group", "delete_column_group", "collapse_expand_group", "set_group_control_position", "list_slicers", "create_slicer", "update_slicer", "delete_slicer"]
+    },
+    "sheets_advanced": {
+        "description": "Tables, find/replace, copy/paste, spreadsheet properties, developer metadata",
+        "sub_tools": ["list_tables", "create_table", "delete_table", "update_table_column", "add_hyperlink", "find_replace", "copy_paste", "cut_paste", "set_spreadsheet_timezone", "set_spreadsheet_locale", "set_recalculation_interval", "get_spreadsheet_properties", "set_spreadsheet_theme", "set_developer_metadata", "get_developer_metadata", "delete_developer_metadata", "set_right_to_left"]
+    }
+}
+
+# Combined lookup for all meta-tool categories
+ALL_META_CATEGORIES = {**FINANCE_CATEGORIES, **SHEETS_CATEGORIES}
+
+
+def get_meta_tools_for_categories(categories: dict) -> list:
+    """Generate meta-tool definitions from a categories dict."""
+    meta_tools = []
+    for name, info in categories.items():
+        meta_tools.append({
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": info["description"] + f". Available tools: {', '.join(info['sub_tools'])}",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "intent": {
+                            "type": "string",
+                            "description": "Brief description of what you want to accomplish"
+                        }
+                    },
+                    "required": ["intent"],
+                    "additionalProperties": False
+                }
+            }
+        })
+    return meta_tools
+
+
+def get_finance_meta_tools() -> list:
+    """Get the 3 finance meta-tools for Phase 1."""
+    return get_meta_tools_for_categories(FINANCE_CATEGORIES)
+
+
+def get_sheets_meta_tools() -> list:
+    """Get the 12 sheets meta-tools for Phase 1."""
+    return get_meta_tools_for_categories(SHEETS_CATEGORIES)
+
+
+def get_tools_for_category(category: str, source_tools: list, categories: dict) -> list:
+    """Get actual tool definitions for a category (Phase 2 expansion)."""
+    if category not in categories:
+        return []
+    sub_tool_names = set(categories[category]["sub_tools"])
+    return [t for t in source_tools if t["function"]["name"] in sub_tool_names]
+
+
+def get_finance_tools_for_category(category: str) -> list:
+    """Get finance tools for a specific category."""
+    return get_tools_for_category(category, FINANCE_TOOLS, FINANCE_CATEGORIES)
+
+
+def get_sheets_tools_for_category(category: str) -> list:
+    """Get sheets tools for a specific category."""
+    return get_tools_for_category(category, SHEETS_TOOLS, SHEETS_CATEGORIES)
+
+
 def get_tools_for_context(
     context: str = "gui",
     image_enabled: bool = False,
@@ -3132,10 +3260,16 @@ def get_tools_for_context(
     wikipedia_enabled: bool = False,
     reaction_enabled: bool = False,
     sheets_enabled: bool = False,
-    member_memory_enabled: bool = False
+    member_memory_enabled: bool = False,
+    expanded_categories: dict = None
 ) -> list:
     """
     Return appropriate tools based on context and enabled features.
+
+    Uses two-phase meta-tool expansion for large tool groups (>5 tools):
+    - Phase 1: Returns meta-tools (category selectors) instead of all tools
+    - Phase 2: When expanded_categories specifies a category, returns that
+               category's actual tools plus remaining meta-tools
 
     Args:
         context: "gui" for main app (all tools), "signal" for Signal bot
@@ -3147,26 +3281,52 @@ def get_tools_for_context(
         reaction_enabled: Include emoji reaction tool (Signal bot only)
         sheets_enabled: Include Google Sheets tools (Signal bot only)
         member_memory_enabled: Include member memory tools (Signal bot only)
+        expanded_categories: Dict mapping tool group to expanded category name
+                            e.g. {"finance": "finance_quotes", "sheets": "sheets_core"}
 
     Returns:
         List of tool definitions appropriate for the context
     """
+    expanded_categories = expanded_categories or {}
+
     if context == "signal":
         tools = []
         if image_enabled:
             tools.extend(SIGNAL_TOOLS)
         if weather_enabled:
             tools.append(WEATHER_TOOL)
+
+        # Finance tools - use two-phase expansion
         if finance_enabled:
-            tools.extend(FINANCE_TOOLS)
+            finance_expanded = expanded_categories.get("finance")
+            if finance_expanded:
+                # Phase 2: Show expanded category's tools + other meta-tools
+                tools.extend(get_finance_tools_for_category(finance_expanded))
+                tools.extend([m for m in get_finance_meta_tools()
+                             if m["function"]["name"] != finance_expanded])
+            else:
+                # Phase 1: Show only meta-tools
+                tools.extend(get_finance_meta_tools())
+
         if time_enabled:
             tools.extend(TIME_TOOLS)
         if wikipedia_enabled:
             tools.extend(WIKIPEDIA_TOOLS)
         if reaction_enabled:
             tools.append(REACTION_TOOL)
+
+        # Sheets tools - use two-phase expansion
         if sheets_enabled:
-            tools.extend(SHEETS_TOOLS)
+            sheets_expanded = expanded_categories.get("sheets")
+            if sheets_expanded:
+                # Phase 2: Show expanded category's tools + other meta-tools
+                tools.extend(get_sheets_tools_for_category(sheets_expanded))
+                tools.extend([m for m in get_sheets_meta_tools()
+                             if m["function"]["name"] != sheets_expanded])
+            else:
+                # Phase 1: Show only meta-tools
+                tools.extend(get_sheets_meta_tools())
+
         if member_memory_enabled:
             tools.extend(MEMBER_MEMORY_TOOLS)
         return tools

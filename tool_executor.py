@@ -10,6 +10,7 @@ import logging
 from typing import Callable, Optional
 
 from command_parser import AgentCommand
+from tool_schemas import ALL_META_CATEGORIES, FINANCE_CATEGORIES, SHEETS_CATEGORIES
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +123,10 @@ class SignalToolExecutor:
         self.reactions_sent = 0  # Track reactions sent in this response
         self.sender_name = None  # Set by message handler for sheet attribution
 
+        # Two-phase meta-tool expansion state
+        self.expansion_requested = False
+        self.expanded_categories = {}  # {"finance": "finance_quotes", "sheets": "sheets_core"}
+
     def execute(self, function_name: str, arguments: dict) -> dict:
         """
         Execute a tool call for Signal bot.
@@ -131,8 +136,30 @@ class SignalToolExecutor:
             arguments: Dictionary of function arguments
 
         Returns:
-            Dict with 'success' and 'message' keys
+            Dict with 'success' and 'message' keys, or expansion signal for meta-tools
         """
+        # Two-phase meta-tool detection
+        if function_name in ALL_META_CATEGORIES:
+            self.expansion_requested = True
+            # Track which group this meta-tool belongs to
+            if function_name in FINANCE_CATEGORIES:
+                self.expanded_categories["finance"] = function_name
+            elif function_name in SHEETS_CATEGORIES:
+                self.expanded_categories["sheets"] = function_name
+
+            intent = arguments.get("intent", "")
+            available_tools = ALL_META_CATEGORIES[function_name]["sub_tools"]
+            logger.info(f"Meta-tool expansion requested: {function_name} (intent: {intent})")
+
+            return {
+                "success": True,
+                "expansion_needed": True,
+                "category": function_name,
+                "intent": intent,
+                "available_tools": available_tools,
+                "message": f"Expanding {function_name}. Available tools: {', '.join(available_tools)}"
+            }
+
         if function_name == "get_weather":
             return self._execute_weather(arguments)
 
