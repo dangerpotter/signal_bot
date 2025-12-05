@@ -167,6 +167,12 @@ class SignalBotManager:
                 'google_refresh_token': getattr(bot, 'google_refresh_token', None),
                 'google_token_expiry': getattr(bot, 'google_token_expiry', None),
                 'google_connected': getattr(bot, 'google_connected', False),
+                # Google Calendar integration (shares OAuth with Sheets)
+                'google_calendar_enabled': getattr(bot, 'google_calendar_enabled', False),
+                # Member memory tools
+                'member_memory_tools_enabled': getattr(bot, 'member_memory_tools_enabled', False),
+                'member_memory_model': getattr(bot, 'member_memory_model', None),
+                'context_window': getattr(bot, 'context_window', 25),
             }
 
         # Create task to listen for messages

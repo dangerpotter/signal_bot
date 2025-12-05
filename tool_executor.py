@@ -407,6 +407,26 @@ class SignalToolExecutor:
         if function_name == "update_table_column":
             return self._execute_update_table_column(arguments)
 
+        # Google Calendar tools
+        if function_name == "create_calendar":
+            return self._execute_create_calendar(arguments)
+        if function_name == "list_calendars":
+            return self._execute_list_calendars(arguments)
+        if function_name == "list_events":
+            return self._execute_list_events(arguments)
+        if function_name == "get_event":
+            return self._execute_get_event(arguments)
+        if function_name == "create_event":
+            return self._execute_create_event(arguments)
+        if function_name == "update_event":
+            return self._execute_update_event(arguments)
+        if function_name == "delete_event":
+            return self._execute_delete_event(arguments)
+        if function_name == "quick_add_event":
+            return self._execute_quick_add_event(arguments)
+        if function_name == "share_calendar":
+            return self._execute_share_calendar(arguments)
+
         # Member memory tools
         if function_name == "save_member_memory":
             return self._execute_save_member_memory(arguments)
@@ -4577,6 +4597,339 @@ class SignalToolExecutor:
         except Exception as e:
             logger.error(f"Error updating table column: {e}")
             return {"success": False, "message": f"Error updating table column: {str(e)}"}
+
+    # =========================================================================
+    # Google Calendar Tools
+    # =========================================================================
+
+    def _calendar_enabled(self) -> bool:
+        """Check if Google Calendar is enabled and connected."""
+        return (
+            self.bot_data.get('google_calendar_enabled', False) and
+            self.bot_data.get('google_connected', False)
+        )
+
+    def _execute_create_calendar(self, arguments: dict) -> dict:
+        """Execute the create_calendar tool call."""
+        if not self._calendar_enabled():
+            return {"success": False, "message": "Google Calendar not enabled or not connected. Connect via admin panel."}
+
+        title = arguments.get("title", "")
+        description = arguments.get("description", "")
+        timezone = arguments.get("timezone", "UTC")
+
+        if not title:
+            return {"success": False, "message": "Title is required"}
+
+        try:
+            from signal_bot.google_calendar_client import create_calendar_sync
+
+            result = create_calendar_sync(
+                bot_data=self.bot_data,
+                group_id=self.group_id,
+                title=title,
+                description=description,
+                timezone=timezone,
+                created_by=self.sender_name
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": f"Created calendar '{title}'. Share this link: {result.get('url', 'URL unavailable')}"
+            }
+
+        except Exception as e:
+            logger.error(f"Error creating calendar: {e}")
+            return {"success": False, "message": f"Error creating calendar: {str(e)}"}
+
+    def _execute_list_calendars(self, arguments: dict) -> dict:
+        """Execute the list_calendars tool call."""
+        if not self._calendar_enabled():
+            return {"success": False, "message": "Google Calendar not enabled or not connected."}
+
+        try:
+            from signal_bot.google_calendar_client import list_calendars_sync
+
+            result = list_calendars_sync(
+                bot_data=self.bot_data,
+                group_id=self.group_id
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": f"Found {result.get('count', 0)} calendar(s) for this group"
+            }
+
+        except Exception as e:
+            logger.error(f"Error listing calendars: {e}")
+            return {"success": False, "message": f"Error listing calendars: {str(e)}"}
+
+    def _execute_list_events(self, arguments: dict) -> dict:
+        """Execute the list_events tool call."""
+        if not self._calendar_enabled():
+            return {"success": False, "message": "Google Calendar not enabled or not connected."}
+
+        calendar_id = arguments.get("calendar_id", "")
+        time_min = arguments.get("time_min")
+        time_max = arguments.get("time_max")
+        max_results = arguments.get("max_results", 10)
+
+        if not calendar_id:
+            return {"success": False, "message": "calendar_id is required"}
+
+        try:
+            from signal_bot.google_calendar_client import list_events_sync
+
+            result = list_events_sync(
+                bot_data=self.bot_data,
+                calendar_id=calendar_id,
+                time_min=time_min,
+                time_max=time_max,
+                max_results=max_results
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": f"Found {result.get('count', 0)} event(s)"
+            }
+
+        except Exception as e:
+            logger.error(f"Error listing events: {e}")
+            return {"success": False, "message": f"Error listing events: {str(e)}"}
+
+    def _execute_get_event(self, arguments: dict) -> dict:
+        """Execute the get_event tool call."""
+        if not self._calendar_enabled():
+            return {"success": False, "message": "Google Calendar not enabled or not connected."}
+
+        calendar_id = arguments.get("calendar_id", "")
+        event_id = arguments.get("event_id", "")
+
+        if not calendar_id or not event_id:
+            return {"success": False, "message": "calendar_id and event_id are required"}
+
+        try:
+            from signal_bot.google_calendar_client import get_event_sync
+
+            result = get_event_sync(self.bot_data, calendar_id, event_id)
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {"success": True, "data": result}
+
+        except Exception as e:
+            logger.error(f"Error getting event: {e}")
+            return {"success": False, "message": f"Error getting event: {str(e)}"}
+
+    def _execute_create_event(self, arguments: dict) -> dict:
+        """Execute the create_event tool call."""
+        if not self._calendar_enabled():
+            return {"success": False, "message": "Google Calendar not enabled or not connected."}
+
+        calendar_id = arguments.get("calendar_id", "")
+        title = arguments.get("title", "")
+        start_time = arguments.get("start_time", "")
+        end_time = arguments.get("end_time", "")
+        description = arguments.get("description", "")
+        location = arguments.get("location", "")
+        all_day = arguments.get("all_day", False)
+        timezone = arguments.get("timezone", "UTC")
+
+        if not calendar_id:
+            return {"success": False, "message": "calendar_id is required"}
+        if not title:
+            return {"success": False, "message": "title is required"}
+        if not start_time or not end_time:
+            return {"success": False, "message": "start_time and end_time are required"}
+
+        try:
+            from signal_bot.google_calendar_client import create_event_sync
+
+            result = create_event_sync(
+                bot_data=self.bot_data,
+                calendar_id=calendar_id,
+                title=title,
+                start_time=start_time,
+                end_time=end_time,
+                description=description,
+                location=location,
+                all_day=all_day,
+                timezone=timezone
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            event = result.get("event", {})
+            html_link = event.get("html_link", "")
+            link_msg = f" Event link: {html_link}" if html_link else ""
+
+            return {
+                "success": True,
+                "data": result,
+                "message": f"Created event '{title}' on {event.get('start', 'scheduled')}.{link_msg}"
+            }
+
+        except Exception as e:
+            logger.error(f"Error creating event: {e}")
+            return {"success": False, "message": f"Error creating event: {str(e)}"}
+
+    def _execute_update_event(self, arguments: dict) -> dict:
+        """Execute the update_event tool call."""
+        if not self._calendar_enabled():
+            return {"success": False, "message": "Google Calendar not enabled or not connected."}
+
+        calendar_id = arguments.get("calendar_id", "")
+        event_id = arguments.get("event_id", "")
+
+        if not calendar_id or not event_id:
+            return {"success": False, "message": "calendar_id and event_id are required"}
+
+        # Build updates dict from provided arguments
+        updates = {}
+        for field in ["title", "start_time", "end_time", "description", "location", "timezone", "all_day"]:
+            if field in arguments and arguments[field] is not None:
+                updates[field] = arguments[field]
+
+        if not updates:
+            return {"success": False, "message": "No updates provided"}
+
+        try:
+            from signal_bot.google_calendar_client import update_event_sync
+
+            result = update_event_sync(self.bot_data, calendar_id, event_id, updates)
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {
+                "success": True,
+                "data": result,
+                "message": "Event updated successfully"
+            }
+
+        except Exception as e:
+            logger.error(f"Error updating event: {e}")
+            return {"success": False, "message": f"Error updating event: {str(e)}"}
+
+    def _execute_delete_event(self, arguments: dict) -> dict:
+        """Execute the delete_event tool call."""
+        if not self._calendar_enabled():
+            return {"success": False, "message": "Google Calendar not enabled or not connected."}
+
+        calendar_id = arguments.get("calendar_id", "")
+        event_id = arguments.get("event_id", "")
+
+        if not calendar_id or not event_id:
+            return {"success": False, "message": "calendar_id and event_id are required"}
+
+        try:
+            from signal_bot.google_calendar_client import delete_event_sync
+
+            result = delete_event_sync(self.bot_data, calendar_id, event_id)
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            return {"success": True, "message": "Event deleted successfully"}
+
+        except Exception as e:
+            logger.error(f"Error deleting event: {e}")
+            return {"success": False, "message": f"Error deleting event: {str(e)}"}
+
+    def _execute_quick_add_event(self, arguments: dict) -> dict:
+        """Execute the quick_add_event tool call."""
+        if not self._calendar_enabled():
+            return {"success": False, "message": "Google Calendar not enabled or not connected."}
+
+        calendar_id = arguments.get("calendar_id", "")
+        text = arguments.get("text", "")
+
+        if not calendar_id:
+            return {"success": False, "message": "calendar_id is required"}
+        if not text:
+            return {"success": False, "message": "text is required"}
+
+        try:
+            from signal_bot.google_calendar_client import quick_add_event_sync
+
+            result = quick_add_event_sync(self.bot_data, calendar_id, text)
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            event = result.get("event", {})
+            html_link = event.get("html_link", "")
+            link_msg = f" Event link: {html_link}" if html_link else ""
+
+            return {
+                "success": True,
+                "data": result,
+                "message": f"Created event '{event.get('title', text)}'.{link_msg}"
+            }
+
+        except Exception as e:
+            logger.error(f"Error quick adding event: {e}")
+            return {"success": False, "message": f"Error quick adding event: {str(e)}"}
+
+    def _execute_share_calendar(self, arguments: dict) -> dict:
+        """Execute the share_calendar tool call."""
+        if not self._calendar_enabled():
+            return {"success": False, "message": "Google Calendar not enabled or not connected."}
+
+        calendar_id = arguments.get("calendar_id", "")
+        email = arguments.get("email")
+        role = arguments.get("role", "reader")
+        make_public = arguments.get("make_public", False)
+
+        if not calendar_id:
+            return {"success": False, "message": "calendar_id is required"}
+        if not email and not make_public:
+            return {"success": False, "message": "Provide email to share with, or set make_public=true"}
+
+        try:
+            from signal_bot.google_calendar_client import share_calendar_sync
+
+            result = share_calendar_sync(
+                bot_data=self.bot_data,
+                calendar_id=calendar_id,
+                email=email,
+                role=role,
+                make_public=make_public
+            )
+
+            if "error" in result:
+                return {"success": False, "message": result["error"]}
+
+            if make_public:
+                return {
+                    "success": True,
+                    "data": result,
+                    "message": f"Calendar is now public. Share link: {result.get('share_link', '')}"
+                }
+            else:
+                return {
+                    "success": True,
+                    "data": result,
+                    "message": f"Calendar shared with {email} as {role}"
+                }
+
+        except Exception as e:
+            logger.error(f"Error sharing calendar: {e}")
+            return {"success": False, "message": f"Error sharing calendar: {str(e)}"}
 
 
 def create_tool_executor_callback(executor: ToolExecutor) -> Callable[[str, dict], dict]:

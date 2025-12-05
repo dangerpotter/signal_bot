@@ -294,6 +294,37 @@
                     {% endif %}
                 </div>
             </div>
+
+            <!-- Google Calendar Integration -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-calendar-event"></i> Google Calendar Integration
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input type="checkbox" name="google_calendar_enabled" class="form-check-input" id="calendarEnabled" {% if bot.google_calendar_enabled %}checked{% endif %}>
+                            <label class="form-check-label" for="calendarEnabled">Enable Google Calendar tools</label>
+                        </div>
+                        <small class="text-muted">Bot can create calendars, manage events, and share calendar links (requires tool-capable model)</small>
+                    </div>
+
+                    <div class="alert alert-info mb-0">
+                        <i class="bi bi-info-circle"></i>
+                        <small>
+                            Calendar uses the same Google connection as Sheets. If you see permission errors,
+                            <strong>disconnect and reconnect</strong> to grant Calendar access (new OAuth scope).
+                        </small>
+                    </div>
+
+                    {% if not bot.google_connected %}
+                    <div class="alert alert-warning mt-3 mb-0">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        <small>Connect to Google (above) to enable Calendar features.</small>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
         </div>
     </div>
 

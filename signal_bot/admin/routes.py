@@ -136,6 +136,8 @@ def register_routes(app):
 
             # Google Sheets settings
             bot.google_sheets_enabled = request.form.get("google_sheets_enabled") == "on"
+            # Google Calendar settings (shares OAuth with Sheets)
+            bot.google_calendar_enabled = request.form.get("google_calendar_enabled") == "on"
             # Only update credentials if provided (to avoid clearing on each save)
             new_client_id = request.form.get("google_client_id", "").strip()
             new_client_secret = request.form.get("google_client_secret", "").strip()
@@ -293,6 +295,8 @@ def register_routes(app):
     @app.route("/bots/<bot_id>/google/disconnect", methods=["POST"])
     def google_oauth_disconnect(bot_id):
         """Disconnect a bot from Google."""
+        from signal_bot.google_sheets_client import clear_token_cache
+
         bot = Bot.query.get_or_404(bot_id)
 
         bot.google_refresh_token = None
@@ -300,6 +304,9 @@ def register_routes(app):
         bot.google_connected = False
 
         db.session.commit()
+
+        # Clear cached access token so bot picks up new credentials on reconnect
+        clear_token_cache(bot_id)
 
         _log_activity("google_disconnected", bot_id, None, f"Bot '{bot.name}' disconnected from Google Sheets")
         flash(f"Disconnected '{bot.name}' from Google", "success")

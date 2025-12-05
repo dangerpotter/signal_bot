@@ -37,6 +37,9 @@ class Bot(db.Model):
     google_token_expiry = db.Column(db.DateTime, nullable=True)  # When access token expires
     google_connected = db.Column(db.Boolean, default=False)  # Whether OAuth flow is complete
 
+    # Google Calendar integration (shares OAuth credentials with Sheets)
+    google_calendar_enabled = db.Column(db.Boolean, default=False)  # Enable Google Calendar tools
+
     # Idle news settings
     idle_news_enabled = db.Column(db.Boolean, default=False)  # Post news when group is quiet
     idle_threshold_minutes = db.Column(db.Integer, default=15)  # Minutes of silence before idle mode (5-120)
@@ -87,9 +90,10 @@ class Bot(db.Model):
             "wikipedia_enabled": self.wikipedia_enabled,
             "member_memory_tools_enabled": self.member_memory_tools_enabled,
             "google_sheets_enabled": self.google_sheets_enabled,
+            "google_calendar_enabled": self.google_calendar_enabled,
             "google_connected": self.google_connected,
             "google_client_id": self.google_client_id,
-            "google_refresh_token": self.google_refresh_token,  # Needed by sheets client
+            "google_refresh_token": self.google_refresh_token,  # Needed by sheets/calendar client
             "google_token_expiry": self.google_token_expiry.isoformat() if self.google_token_expiry else None,
             "idle_news_enabled": self.idle_news_enabled,
             "idle_threshold_minutes": self.idle_threshold_minutes or 15,
@@ -416,3 +420,60 @@ class SheetsRegistry(db.Model):
             SheetsRegistry.group_id == group_id,
             SheetsRegistry.title.ilike(f"%{query}%")
         ).all()
+
+
+class CalendarRegistry(db.Model):
+    """Registry of calendars created/managed by bots for each group."""
+    __tablename__ = "calendar_registry"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    bot_id = db.Column(db.String(50), db.ForeignKey("bots.id"), nullable=False)
+    group_id = db.Column(db.String(100), db.ForeignKey("groups.id"), nullable=False)
+    calendar_id = db.Column(db.String(200), nullable=False, unique=True)  # Google Calendar ID
+    title = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    timezone = db.Column(db.String(100), default="UTC")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    last_accessed = db.Column(db.DateTime, default=datetime.utcnow)
+    created_by = db.Column(db.String(100), nullable=True)  # Signal user who requested creation
+    share_link = db.Column(db.String(500), nullable=True)  # Public embed link if shared
+    is_public = db.Column(db.Boolean, default=False)
+
+    # Relationships
+    bot = db.relationship("Bot", backref="calendars")
+    group = db.relationship("GroupConnection", backref="calendars")
+
+    __table_args__ = (
+        db.Index('idx_calendar_bot_group', 'bot_id', 'group_id'),
+    )
+
+    def to_dict(self):
+        from urllib.parse import quote
+        return {
+            "id": self.id,
+            "bot_id": self.bot_id,
+            "group_id": self.group_id,
+            "calendar_id": self.calendar_id,
+            "title": self.title,
+            "description": self.description,
+            "timezone": self.timezone,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "last_accessed": self.last_accessed.isoformat() if self.last_accessed else None,
+            "created_by": self.created_by,
+            "share_link": self.share_link,
+            "is_public": self.is_public,
+            "url": f"https://calendar.google.com/calendar/embed?src={quote(self.calendar_id)}",
+        }
+
+    @staticmethod
+    def get_calendars_for_group(bot_id: str, group_id: str) -> list:
+        """Get all calendars for a specific bot+group combination."""
+        return CalendarRegistry.query.filter_by(
+            bot_id=bot_id,
+            group_id=group_id
+        ).order_by(CalendarRegistry.last_accessed.desc()).all()
+
+    @staticmethod
+    def get_by_calendar_id(calendar_id: str):
+        """Get registry entry by Google Calendar ID."""
+        return CalendarRegistry.query.filter_by(calendar_id=calendar_id).first()

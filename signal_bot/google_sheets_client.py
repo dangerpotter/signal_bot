@@ -36,6 +36,7 @@ DRIVE_API_BASE = "https://www.googleapis.com/drive/v3"
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/calendar",  # Google Calendar integration
 ]
 
 
@@ -252,6 +253,26 @@ def exchange_code_for_tokens_sync(
 _token_cache = {}
 
 
+def clear_token_cache(bot_id: str = None):
+    """
+    Clear the token cache for a specific bot or all bots.
+
+    Call this when:
+    - User disconnects/reconnects Google OAuth
+    - A 403 permission error occurs (token may have wrong scopes)
+
+    Args:
+        bot_id: Specific bot to clear, or None to clear all
+    """
+    global _token_cache
+    if bot_id:
+        _token_cache.pop(bot_id, None)
+        logger.info(f"Cleared token cache for bot {bot_id}")
+    else:
+        _token_cache.clear()
+        logger.info("Cleared all token caches")
+
+
 async def get_valid_access_token(bot_data: dict) -> Optional[str]:
     """
     Get a valid access token, refreshing if necessary.
@@ -265,30 +286,29 @@ async def get_valid_access_token(bot_data: dict) -> Optional[str]:
     from signal_bot.models import Bot, db
 
     bot_id = bot_data.get("id")
-    client_id = bot_data.get("google_client_id")
-    refresh_token = bot_data.get("google_refresh_token")
 
-    if not client_id or not refresh_token:
-        logger.warning(f"Bot {bot_id}: Missing Google credentials")
-        return None
-
-    # Check cache first
+    # Check cache first (before database fetch for performance)
     cached = _token_cache.get(bot_id)
     if cached and cached.get("expiry") and cached["expiry"] > datetime.utcnow():
         return cached["access_token"]
 
-    # Need to refresh - get client_secret from database (not in bot_data for security)
+    # Fetch FRESH credentials from database (not bot_data) to pick up reconnections
+    # This allows the bot to use updated OAuth tokens without restart
+    client_id = None
+    client_secret = None
+    refresh_token = None
+
     try:
-        # Get client_secret from database (requires Flask app context)
-        client_secret = None
         if _flask_app:
             with _flask_app.app_context():
                 bot = Bot.query.get(bot_id)
-                if bot and bot.google_client_secret:
+                if bot:
+                    client_id = bot.google_client_id
                     client_secret = bot.google_client_secret
+                    refresh_token = bot.google_refresh_token
 
-        if not client_secret:
-            logger.warning(f"Bot {bot_id}: No client secret found")
+        if not client_id or not client_secret or not refresh_token:
+            logger.warning(f"Bot {bot_id}: Missing Google credentials in database")
             return None
 
         result = await refresh_access_token(client_id, client_secret, refresh_token)

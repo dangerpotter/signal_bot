@@ -78,11 +78,13 @@ def run_bots_in_thread():
     from signal_bot.bot_manager import set_flask_app as set_bot_manager_app
     from signal_bot.message_handler import set_flask_app as set_message_handler_app
     from signal_bot.google_sheets_client import set_flask_app as set_sheets_app
+    from signal_bot.google_calendar_client import set_flask_app as set_calendar_app
 
     # Set the Flask app for database context
     set_bot_manager_app(_flask_app)
     set_message_handler_app(_flask_app)
     set_sheets_app(_flask_app)
+    set_calendar_app(_flask_app)
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -131,9 +133,11 @@ def main():
             from signal_bot.bot_manager import set_flask_app as set_bot_manager_app
             from signal_bot.message_handler import set_flask_app as set_message_handler_app
             from signal_bot.google_sheets_client import set_flask_app as set_sheets_app
+            from signal_bot.google_calendar_client import set_flask_app as set_calendar_app
             set_bot_manager_app(_flask_app)
             set_message_handler_app(_flask_app)
             set_sheets_app(_flask_app)
+            set_calendar_app(_flask_app)
 
             asyncio.run(run_bot_manager())
 

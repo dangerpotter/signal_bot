@@ -345,7 +345,7 @@ class MessageHandler:
             use_tools = None
             tool_executor = None
 
-            # Check if any tools are enabled (image generation, weather, finance, time, wikipedia, reaction, or sheets)
+            # Check if any tools are enabled (image generation, weather, finance, time, wikipedia, reaction, sheets, or calendar)
             image_enabled = bot_data.get('image_generation_enabled', False)
             weather_enabled = bot_data.get('weather_enabled', False)
             finance_enabled = bot_data.get('finance_enabled', False)
@@ -353,10 +353,12 @@ class MessageHandler:
             wikipedia_enabled = bot_data.get('wikipedia_enabled', False)
             # Sheets requires both enabled AND connected to Google
             sheets_enabled = bot_data.get('google_sheets_enabled', False) and bot_data.get('google_connected', False)
+            # Calendar requires both enabled AND connected to Google (shares OAuth with Sheets)
+            calendar_enabled = bot_data.get('google_calendar_enabled', False) and bot_data.get('google_connected', False)
             # Member memory tools
             member_memory_tools_enabled = bot_data.get('member_memory_tools_enabled', False)
             # reaction_enabled already set above for context formatting
-            any_tools_enabled = image_enabled or weather_enabled or finance_enabled or time_enabled or wikipedia_enabled or reaction_enabled or sheets_enabled or member_memory_tools_enabled
+            any_tools_enabled = image_enabled or weather_enabled or finance_enabled or time_enabled or wikipedia_enabled or reaction_enabled or sheets_enabled or calendar_enabled or member_memory_tools_enabled
 
             # Build prompt - include images if present
             if incoming_images:
@@ -394,6 +396,7 @@ class MessageHandler:
                         wikipedia_enabled=wikipedia_enabled,
                         reaction_enabled=reaction_enabled,
                         sheets_enabled=sheets_enabled,
+                        calendar_enabled=calendar_enabled,
                         member_memory_enabled=member_memory_tools_enabled,
                         expanded_categories=expanded_categories
                     )
