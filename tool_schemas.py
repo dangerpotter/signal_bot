@@ -3569,6 +3569,32 @@ TRIGGER_TOOLS = [
     }
 ]
 
+# Dice rolling tools for tabletop games (D&D, etc.)
+DICE_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "roll_dice",
+            "description": "Roll dice using standard tabletop notation. Supports modifiers, advantage/disadvantage, and drop/keep mechanics. Use this for D&D, tabletop games, or any random number needs. Examples: '1d20', '2d6+3', '4d6 drop lowest', '1d20 advantage'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "notation": {
+                        "type": "string",
+                        "description": "Dice notation. Format: NdS+M where N=count, S=sides, M=modifier. Supports: 'd20', '2d6+3', '4d6 drop lowest', '1d20 advantage', '1d20 disadvantage', '2d20 keep highest', '1d%' (percentile). Shorthands: 'adv'/'dis', 'dl'/'dh' (drop), 'kh'/'kl' (keep)."
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "Optional label for the roll (e.g., 'attack roll', 'saving throw', 'damage')"
+                    }
+                },
+                "required": ["notation"],
+                "additionalProperties": False
+            }
+        }
+    }
+]
+
 # =============================================================================
 # TWO-PHASE META-TOOL SYSTEM
 # Categories for tools with >5 items to reduce token overhead
@@ -3789,6 +3815,9 @@ def get_tools_for_context(
         # Trigger tools - simple list (4 tools)
         if triggers_enabled:
             tools.extend(TRIGGER_TOOLS)
+
+        # Dice tools - always available (no toggle needed)
+        tools.extend(DICE_TOOLS)
 
         return tools
     return AGENT_TOOLS

@@ -445,6 +445,10 @@ class SignalToolExecutor:
         if function_name == "update_trigger":
             return self._execute_update_trigger(arguments)
 
+        # Dice rolling tool
+        if function_name == "roll_dice":
+            return self._execute_roll_dice(arguments)
+
         if function_name != "generate_image":
             return {"success": False, "message": f"Unsupported function: {function_name}"}
 
@@ -5297,6 +5301,44 @@ class SignalToolExecutor:
         except Exception as e:
             logger.error(f"Error updating trigger: {e}")
             return {"success": False, "message": f"Error updating trigger: {str(e)}"}
+
+    def _execute_roll_dice(self, arguments: dict) -> dict:
+        """Execute the roll_dice tool call for tabletop gaming."""
+        try:
+            from signal_bot.dice_client import roll_dice
+
+            notation = arguments.get("notation", "1d20")
+            reason = arguments.get("reason")
+
+            result = roll_dice(notation, reason)
+
+            if result.get("success"):
+                return {
+                    "success": True,
+                    "data": {
+                        "notation": result.get("notation"),
+                        "rolls": result.get("rolls"),
+                        "kept": result.get("kept"),
+                        "dropped": result.get("dropped"),
+                        "modifier": result.get("modifier"),
+                        "total": result.get("total"),
+                        "critical": result.get("critical"),
+                        "fumble": result.get("fumble"),
+                        "advantage": result.get("advantage"),
+                        "disadvantage": result.get("disadvantage"),
+                        "reason": result.get("reason"),
+                    },
+                    "message": result.get("formatted")
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": result.get("error", "Unknown dice error")
+                }
+
+        except Exception as e:
+            logger.error(f"Error rolling dice: {e}")
+            return {"success": False, "message": f"Error rolling dice: {str(e)}"}
 
 
 def create_tool_executor_callback(executor: ToolExecutor) -> Callable[[str, dict], dict]:
