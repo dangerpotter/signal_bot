@@ -3448,7 +3448,7 @@ TRIGGER_TOOLS = [
                     },
                     "scheduled_time": {
                         "type": "string",
-                        "description": "For one-time triggers: ISO 8601 datetime when to fire (e.g., '2025-03-05T14:00:00')"
+                        "description": "For one-time triggers: ISO 8601 datetime when to fire (e.g., '2025-03-05T14:00:00'). IMPORTANT: This time is in the timezone specified by the 'timezone' parameter. Always use get_datetime first to get the current time, then calculate the target time in that same timezone."
                     },
                     "recurrence_pattern": {
                         "type": "string",
@@ -3475,7 +3475,7 @@ TRIGGER_TOOLS = [
                     },
                     "timezone": {
                         "type": "string",
-                        "description": "IANA timezone (e.g., 'America/New_York', 'UTC'). Default: 'UTC'",
+                        "description": "IANA timezone for the scheduled_time or recurrence_time (e.g., 'America/New_York', 'America/Chicago', 'UTC'). ALWAYS specify this to match the timezone used in get_datetime. Default: 'UTC'",
                         "default": "UTC"
                     },
                     "end_date": {

@@ -165,20 +165,30 @@ class TriggerScheduler:
     async def _execute_task(self, trigger, bot):
         """Execute an AI task - the AI processes instructions and can use tools."""
         try:
+            # Capture values from SQLAlchemy objects BEFORE any async operations
+            # to avoid DetachedInstanceError when session closes
+            phone_number = bot.phone_number
+            signal_api_port = bot.signal_api_port
+            group_id = trigger.group_id
+            trigger_id = trigger.id
+            trigger_name = trigger.name
+            trigger_content = trigger.content
+
             # Build bot_data dict from bot model
             bot_data = bot.to_dict()
-            bot_data['phone_number'] = bot.phone_number
-            bot_data['signal_api_port'] = bot.signal_api_port
+            bot_data['phone_number'] = phone_number
+            bot_data['signal_api_port'] = signal_api_port
             # Add Google credentials if needed
             bot_data['google_client_secret'] = bot.google_client_secret
 
             # Create callbacks for sending messages/images
+            # Use captured values, not the SQLAlchemy objects
             async def send_text(text, quote_timestamp=None, quote_author=None, mentions=None, text_styles=None):
                 await self.bot_manager.send_message(
-                    phone_number=bot.phone_number,
-                    group_id=trigger.group_id,
+                    phone_number=phone_number,
+                    group_id=group_id,
                     message=text,
-                    port=bot.signal_api_port,
+                    port=signal_api_port,
                     quote_timestamp=quote_timestamp,
                     quote_author=quote_author,
                     mentions=mentions,
@@ -187,28 +197,28 @@ class TriggerScheduler:
 
             async def send_image(path):
                 await self.bot_manager.send_image(
-                    phone_number=bot.phone_number,
-                    group_id=trigger.group_id,
+                    phone_number=phone_number,
+                    group_id=group_id,
                     image_path=path,
-                    port=bot.signal_api_port
+                    port=signal_api_port
                 )
 
             # Call message handler as if this were a @mention
             # The instructions become the "message" that triggers the AI
             await self.bot_manager.message_handler.handle_incoming_message(
-                group_id=trigger.group_id,
-                sender_name=f"[Scheduled: {trigger.name}]",
+                group_id=group_id,
+                sender_name=f"[Scheduled: {trigger_name}]",
                 sender_id="scheduled_trigger",
-                message_text=trigger.content,
+                message_text=trigger_content,
                 bot_data=bot_data,
                 is_mentioned=True,  # Force response
                 send_callback=lambda t, *a, **k: asyncio.create_task(send_text(t, *a, **k)),
                 send_image_callback=lambda p: asyncio.create_task(send_image(p))
             )
 
-            logger.info(f"Task executed for trigger {trigger.id}")
+            logger.info(f"Task executed for trigger {trigger_id}")
         except Exception as e:
-            logger.error(f"Failed to execute task for trigger {trigger.id}: {e}", exc_info=True)
+            logger.error(f"Failed to execute task for trigger {trigger_id}: {e}", exc_info=True)
 
     def _update_trigger_schedule(self, trigger, db):
         """Update trigger's next_fire_time or disable if complete."""

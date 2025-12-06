@@ -37,7 +37,8 @@ async def create_calendar(
     access_token: str,
     title: str,
     description: str = "",
-    timezone: str = "UTC"
+    timezone: str = "UTC",
+    make_public: bool = True
 ) -> dict:
     """
     Create a new secondary calendar.
@@ -47,9 +48,10 @@ async def create_calendar(
         title: Calendar title/summary
         description: Optional description
         timezone: IANA timezone (e.g., "America/New_York")
+        make_public: If True (default), automatically make calendar publicly viewable
 
     Returns:
-        Dict with calendar_id, url, or error
+        Dict with calendar_id, url, is_public, share_link, or error
     """
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -84,13 +86,28 @@ async def create_calendar(
             data = response.json()
             calendar_id = data.get("id")
 
-            return {
+            result = {
                 "calendar_id": calendar_id,
                 "title": data.get("summary"),
                 "description": data.get("description", ""),
                 "timezone": data.get("timeZone"),
                 "url": f"https://calendar.google.com/calendar/embed?src={quote(calendar_id)}",
+                "is_public": False,
             }
+
+            # Auto-make public if requested
+            if make_public:
+                share_result = await share_calendar(access_token, calendar_id, make_public=True)
+                if "error" not in share_result:
+                    result["is_public"] = True
+                    result["share_link"] = share_result.get("share_link")
+                    logger.info(f"Calendar '{title}' created and made public")
+                else:
+                    # Calendar created but sharing failed - log warning but don't fail
+                    logger.warning(f"Calendar created but sharing failed: {share_result.get('error')}")
+                    result["share_warning"] = f"Calendar created but not made public: {share_result.get('error')}"
+
+            return result
 
         except Exception as e:
             logger.error(f"Error creating calendar: {e}")
@@ -220,7 +237,8 @@ async def create_event(
     attendees: Optional[List[str]] = None,
     all_day: bool = False,
     timezone: str = "UTC",
-    reminders: Optional[List[dict]] = None
+    reminders: Optional[List[dict]] = None,
+    send_notifications: bool = True
 ) -> dict:
     """
     Create a new calendar event.
@@ -237,6 +255,7 @@ async def create_event(
         all_day: If True, use date-only format for all-day events
         timezone: IANA timezone for the event
         reminders: Optional list of reminders [{"method": "email/popup", "minutes": 30}]
+        send_notifications: If True (default), send email invitations to attendees
 
     Returns:
         Dict with event details, or error
@@ -272,7 +291,10 @@ async def create_event(
             "overrides": reminders
         }
 
+    # Build URL with query params for notifications
     url = f"{CALENDAR_API_BASE}/calendars/{quote(calendar_id, safe='')}/events"
+    if attendees and send_notifications:
+        url += "?sendUpdates=all"  # Send email invitations to all attendees
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
@@ -284,7 +306,11 @@ async def create_event(
                 logger.error(f"Create event failed: {error_msg}")
                 return {"error": error_msg}
 
-            return {"event": _format_event(response.json())}
+            result = {"event": _format_event(response.json())}
+            if attendees:
+                result["invitations_sent"] = send_notifications
+                result["attendees"] = attendees
+            return result
 
         except Exception as e:
             logger.error(f"Error creating event: {e}")
@@ -559,7 +585,8 @@ def create_calendar_sync(
     title: str,
     description: str = "",
     timezone: str = "UTC",
-    created_by: str = None
+    created_by: str = None,
+    make_public: bool = True
 ) -> dict:
     """Create a new calendar and register it in the database."""
     from signal_bot.google_sheets_client import get_valid_access_token
@@ -569,7 +596,7 @@ def create_calendar_sync(
         if not access_token:
             return {"error": "Not connected to Google. Please reconnect via admin panel (Calendar scope may be needed)."}
 
-        result = await create_calendar(access_token, title, description, timezone)
+        result = await create_calendar(access_token, title, description, timezone, make_public)
         if "error" in result:
             return result
 
@@ -587,6 +614,8 @@ def create_calendar_sync(
                         description=description,
                         timezone=timezone,
                         created_by=created_by,
+                        is_public=result.get("is_public", False),
+                        share_link=result.get("share_link"),
                     )
                     db.session.add(registry)
                     db.session.commit()
@@ -679,9 +708,11 @@ def create_event_sync(
     description: str = "",
     location: str = "",
     all_day: bool = False,
-    timezone: str = "UTC"
+    timezone: str = "UTC",
+    attendees: Optional[List[str]] = None,
+    send_notifications: bool = True
 ) -> dict:
-    """Create a new event."""
+    """Create a new event with optional attendees."""
     from signal_bot.google_sheets_client import get_valid_access_token
 
     async def _create():
@@ -690,7 +721,8 @@ def create_event_sync(
             return {"error": "Not connected to Google."}
         return await create_event(
             access_token, calendar_id, title, start_time, end_time,
-            description, location, None, all_day, timezone
+            description, location, attendees, all_day, timezone,
+            send_notifications=send_notifications
         )
 
     return _run_async(_create())

@@ -5030,7 +5030,27 @@ class SignalToolExecutor:
             if trigger_mode == "once":
                 scheduled_time_str = arguments.get("scheduled_time")
                 if scheduled_time_str:
-                    trigger.scheduled_time = datetime.fromisoformat(scheduled_time_str.replace('Z', '+00:00').replace('+00:00', ''))
+                    # Parse the datetime
+                    naive_dt = datetime.fromisoformat(scheduled_time_str.replace('Z', '+00:00').replace('+00:00', ''))
+
+                    # Convert from specified timezone to UTC
+                    timezone_str = arguments.get("timezone", "UTC")
+                    trigger.timezone = timezone_str
+
+                    if timezone_str and timezone_str != "UTC":
+                        import pytz
+                        try:
+                            local_tz = pytz.timezone(timezone_str)
+                            # Localize the naive datetime to the specified timezone
+                            local_dt = local_tz.localize(naive_dt)
+                            # Convert to UTC
+                            utc_dt = local_dt.astimezone(pytz.UTC).replace(tzinfo=None)
+                            trigger.scheduled_time = utc_dt
+                        except Exception as tz_err:
+                            # Fall back to treating as UTC if timezone invalid
+                            trigger.scheduled_time = naive_dt
+                    else:
+                        trigger.scheduled_time = naive_dt
 
             # Handle recurring scheduling
             else:
