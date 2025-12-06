@@ -1162,6 +1162,7 @@ def read_sheet_sync(
 
         # Update last_accessed if successful
         if "error" not in result:
+            result["success"] = True
             from signal_bot.models import SheetsRegistry, db
             try:
                 if _flask_app:
@@ -1205,6 +1206,7 @@ def write_sheet_sync(
 
         # Update last_accessed if successful
         if "error" not in result:
+            result["success"] = True
             from signal_bot.models import SheetsRegistry, db
             try:
                 if _flask_app:
@@ -1261,6 +1263,7 @@ def append_to_sheet_sync(
 
         # Update last_accessed if successful
         if "error" not in result:
+            result["success"] = True
             from signal_bot.models import SheetsRegistry, db
             try:
                 if _flask_app:
