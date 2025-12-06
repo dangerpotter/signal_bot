@@ -172,11 +172,15 @@ memory/ai-2/*
 logs/*
 !logs/.gitkeep
 videos/*
+!videos/.gitkeep
 
 # Signal bot data (credentials/keys)
 signal-data/
 signal_bot.db
 nul
+
+# Stray exports at root (should use exports/)
+conversation_full.html
 
 # Claude Code instructions (project-specific, not for repo)
 CLAUDE.md

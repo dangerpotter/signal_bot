@@ -31,7 +31,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler('signal_bot.log', encoding='utf-8')
+        logging.FileHandler('logs/signal_bot.log', encoding='utf-8')
     ]
 )
 logger = logging.getLogger(__name__)
