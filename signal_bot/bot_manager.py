@@ -189,6 +189,7 @@ class SignalBotManager:
                 'max_triggers': getattr(bot, 'max_triggers', 10),
                 # D&D Game Master
                 'dnd_enabled': getattr(bot, 'dnd_enabled', False),
+                'dnd_template_spreadsheet_id': getattr(bot, 'dnd_template_spreadsheet_id', None),
             }
 
         # Create task to listen for messages
@@ -830,6 +831,9 @@ class SignalBotManager:
                 bot_data['max_reactions_per_response'] = getattr(bot, 'max_reactions_per_response', 3)
                 bot_data['typing_enabled'] = getattr(bot, 'typing_enabled', True)
                 bot_data['read_receipts_enabled'] = getattr(bot, 'read_receipts_enabled', False)
+                # Refresh D&D settings
+                bot_data['dnd_enabled'] = getattr(bot, 'dnd_enabled', False)
+                bot_data['dnd_template_spreadsheet_id'] = getattr(bot, 'dnd_template_spreadsheet_id', None)
 
             assignment = BotGroupAssignment.query.filter_by(
                 bot_id=bot_data['id'],
