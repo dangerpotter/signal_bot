@@ -7,6 +7,7 @@ and writing to Google Sheets. Each bot can have its own Google account.
 
 import asyncio
 import logging
+import re
 from datetime import datetime, timedelta
 from typing import Optional
 from urllib.parse import urlencode
@@ -38,6 +39,56 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive.file",
     "https://www.googleapis.com/auth/calendar",  # Google Calendar integration
 ]
+
+
+# ============================================================================
+# Spreadsheet ID Extraction Helper
+# ============================================================================
+
+def extract_spreadsheet_id(input_string: str) -> str:
+    """
+    Extract spreadsheet ID from various input formats.
+
+    Handles:
+    - Pure ID: "1A2DKm4FCTLMniMUWerd7_NgGQ8cAO2-7xHQOStYO7T0"
+    - Full URL: "https://docs.google.com/spreadsheets/d/1A2DKm.../edit#gid=0"
+    - Partial URL: "1A2DKm.../edit?gid=..."
+    - URL with path: "1A2DKm.../edit#gid=810346413"
+
+    Args:
+        input_string: Spreadsheet ID or URL containing the ID
+
+    Returns:
+        Clean spreadsheet ID (44-character alphanumeric string with - and _)
+    """
+    if not input_string:
+        return input_string
+
+    input_string = input_string.strip()
+
+    # Pattern 1: Full Google Sheets URL
+    # https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/...
+    url_pattern = r'docs\.google\.com/spreadsheets/d/([a-zA-Z0-9_-]+)'
+    match = re.search(url_pattern, input_string)
+    if match:
+        return match.group(1)
+
+    # Pattern 2: ID followed by /edit or other path
+    # SPREADSHEET_ID/edit?gid=... or SPREADSHEET_ID/edit#gid=...
+    path_pattern = r'^([a-zA-Z0-9_-]+)/(?:edit|view|copy)'
+    match = re.match(path_pattern, input_string)
+    if match:
+        return match.group(1)
+
+    # Pattern 3: Just extract the first valid-looking ID segment
+    # Google Sheets IDs are typically 44 characters, alphanumeric with - and _
+    id_pattern = r'^([a-zA-Z0-9_-]{25,})'
+    match = re.match(id_pattern, input_string)
+    if match:
+        return match.group(1)
+
+    # Fallback: return as-is (let API error if invalid)
+    return input_string
 
 
 # ============================================================================
@@ -434,12 +485,16 @@ async def duplicate_spreadsheet(
 
     Args:
         access_token: Valid Google OAuth access token
-        source_spreadsheet_id: ID of the spreadsheet to duplicate
+        source_spreadsheet_id: ID of the spreadsheet to duplicate (can be URL or ID)
         new_title: Title for the new copy
 
     Returns:
         Dict with spreadsheet_id, spreadsheet_url, or error
     """
+    # Extract clean spreadsheet ID (handles URLs, partial URLs, etc.)
+    clean_id = extract_spreadsheet_id(source_spreadsheet_id)
+    logger.debug(f"Duplicating spreadsheet: input='{source_spreadsheet_id}' -> clean_id='{clean_id}'")
+
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",
@@ -453,7 +508,7 @@ async def duplicate_spreadsheet(
         try:
             # Use Drive API to copy the file
             response = await client.post(
-                f"https://www.googleapis.com/drive/v3/files/{source_spreadsheet_id}/copy",
+                f"https://www.googleapis.com/drive/v3/files/{clean_id}/copy",
                 headers=headers,
                 json=body
             )
