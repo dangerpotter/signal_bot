@@ -541,6 +541,7 @@ async def duplicate_spreadsheet(
                 logger.warning(f"Error sharing duplicated spreadsheet: {share_error}")
 
             return {
+                "success": True,
                 "spreadsheet_id": new_spreadsheet_id,
                 "title": new_title,
                 "url": f"https://docs.google.com/spreadsheets/d/{new_spreadsheet_id}",
