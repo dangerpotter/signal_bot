@@ -69,6 +69,10 @@ class Bot(db.Model):
     triggers_enabled = db.Column(db.Boolean, default=True)  # Enable trigger tools for AI
     max_triggers = db.Column(db.Integer, default=10)  # Max active triggers per bot (1-100)
 
+    # D&D Game Master settings
+    dnd_enabled = db.Column(db.Boolean, default=False)  # Enable D&D GM tools for campaign management
+    dnd_template_spreadsheet_id = db.Column(db.String(100), nullable=True)  # Google Sheets template ID for campaigns
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -111,6 +115,8 @@ class Bot(db.Model):
             "member_memory_model": self.member_memory_model,
             "triggers_enabled": self.triggers_enabled if self.triggers_enabled is not None else True,
             "max_triggers": self.max_triggers or 10,
+            "dnd_enabled": self.dnd_enabled if self.dnd_enabled is not None else False,
+            "dnd_template_spreadsheet_id": self.dnd_template_spreadsheet_id,
         }
 
 
@@ -584,3 +590,74 @@ class ScheduledTrigger(db.Model):
     def count_active_triggers(bot_id: str) -> int:
         """Count active triggers for a bot (for limit checking)."""
         return ScheduledTrigger.query.filter_by(bot_id=bot_id, enabled=True).count()
+
+
+class DndCampaignRegistry(db.Model):
+    """Registry of D&D campaigns managed by bots for each group."""
+    __tablename__ = "dnd_campaigns"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    bot_id = db.Column(db.String(50), db.ForeignKey("bots.id"), nullable=False)
+    group_id = db.Column(db.String(100), db.ForeignKey("groups.id"), nullable=False)
+    spreadsheet_id = db.Column(db.String(100), nullable=False, unique=True)  # Google Sheets ID
+    campaign_name = db.Column(db.String(255), nullable=False)
+    setting = db.Column(db.String(255), nullable=True)  # e.g., "Forgotten Realms", "homebrew"
+    tone = db.Column(db.String(50), nullable=True)  # e.g., "heroic", "gritty", "comedic"
+    starting_level = db.Column(db.Integer, default=1)
+    is_active = db.Column(db.Boolean, default=True)  # Currently active campaign for this group
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    last_played = db.Column(db.DateTime, default=datetime.utcnow)
+    created_by = db.Column(db.String(100), nullable=True)  # Signal user who started the campaign
+
+    # Relationships
+    bot = db.relationship("Bot", backref="dnd_campaigns")
+    group = db.relationship("GroupConnection", backref="dnd_campaigns")
+
+    __table_args__ = (
+        db.Index('idx_dnd_bot_group', 'bot_id', 'group_id'),
+        db.Index('idx_dnd_campaign_name', 'campaign_name'),
+    )
+
+    def to_dict(self):
+        escaped_id = self.spreadsheet_id.replace('_', '\\_') if self.spreadsheet_id else self.spreadsheet_id
+        return {
+            "id": self.id,
+            "bot_id": self.bot_id,
+            "group_id": self.group_id,
+            "spreadsheet_id": self.spreadsheet_id,
+            "campaign_name": self.campaign_name,
+            "setting": self.setting,
+            "tone": self.tone,
+            "starting_level": self.starting_level,
+            "is_active": self.is_active,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "last_played": self.last_played.isoformat() if self.last_played else None,
+            "created_by": self.created_by,
+            "url": f"https://docs.google.com/spreadsheets/d/{escaped_id}",
+        }
+
+    @staticmethod
+    def get_campaigns_for_group(bot_id: str, group_id: str) -> list:
+        """Get all campaigns for a specific bot+group combination."""
+        return DndCampaignRegistry.query.filter_by(
+            bot_id=bot_id,
+            group_id=group_id
+        ).order_by(DndCampaignRegistry.last_played.desc()).all()
+
+    @staticmethod
+    def get_active_campaign(bot_id: str, group_id: str):
+        """Get the currently active campaign for a bot+group."""
+        return DndCampaignRegistry.query.filter_by(
+            bot_id=bot_id,
+            group_id=group_id,
+            is_active=True
+        ).first()
+
+    @staticmethod
+    def find_campaign_by_name(bot_id: str, group_id: str, campaign_name: str):
+        """Find a campaign by name (case-insensitive)."""
+        return DndCampaignRegistry.query.filter(
+            DndCampaignRegistry.bot_id == bot_id,
+            DndCampaignRegistry.group_id == group_id,
+            DndCampaignRegistry.campaign_name.ilike(campaign_name)
+        ).first()

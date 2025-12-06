@@ -4,6 +4,8 @@ Helper functions for tool schemas.
 Contains meta-tool generation, tool selection, and model capability detection.
 """
 
+from typing import Optional
+
 from .constants import TOOL_CAPABLE_MODEL_PATTERNS
 from .agent_tools import AGENT_TOOLS, SIGNAL_TOOLS
 from .basic_tools import WEATHER_TOOL, TIME_TOOLS, WIKIPEDIA_TOOLS, REACTION_TOOL, DICE_TOOLS
@@ -84,7 +86,7 @@ def get_tools_for_context(
     member_memory_enabled: bool = False,
     triggers_enabled: bool = False,
     dnd_enabled: bool = False,
-    expanded_categories: dict = None
+    expanded_categories: Optional[dict] = None
 ) -> list:
     """
     Return appropriate tools based on context and enabled features.

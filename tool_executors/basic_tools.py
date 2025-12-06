@@ -5,12 +5,20 @@ Contains weather, time, Wikipedia, dice, and reaction tool methods.
 """
 
 import logging
+from typing import TYPE_CHECKING, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
 
 class BasicToolsMixin:
     """Mixin providing basic tool execution methods."""
+
+    # Type hints for attributes provided by SignalToolExecutorBase
+    bot_data: dict
+    send_reaction_callback: Optional[Callable[[str, int, str], None]]
+    reaction_metadata: list[dict]
+    max_reactions: int
+    reactions_sent: int
 
     def _execute_weather(self, arguments: dict) -> dict:
         """Execute the get_weather tool call."""

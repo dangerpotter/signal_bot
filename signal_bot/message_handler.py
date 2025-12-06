@@ -359,8 +359,13 @@ class MessageHandler:
             member_memory_tools_enabled = bot_data.get('member_memory_tools_enabled', False)
             # Scheduled triggers
             triggers_enabled = bot_data.get('triggers_enabled', True)  # Default to True for backwards compatibility
+            # D&D Game Master (requires sheets connected)
+            dnd_enabled_setting = bot_data.get('dnd_enabled', False)
+            google_connected = bot_data.get('google_connected', False)
+            dnd_enabled = dnd_enabled_setting and google_connected
+            logger.info(f"[DEBUG] D&D check: dnd_enabled_setting={dnd_enabled_setting}, google_connected={google_connected}, final dnd_enabled={dnd_enabled}")
             # reaction_enabled already set above for context formatting
-            any_tools_enabled = image_enabled or weather_enabled or finance_enabled or time_enabled or wikipedia_enabled or reaction_enabled or sheets_enabled or calendar_enabled or member_memory_tools_enabled or triggers_enabled
+            any_tools_enabled = image_enabled or weather_enabled or finance_enabled or time_enabled or wikipedia_enabled or reaction_enabled or sheets_enabled or calendar_enabled or member_memory_tools_enabled or triggers_enabled or dnd_enabled
 
             # Build prompt - include images if present
             if incoming_images:
@@ -401,6 +406,7 @@ class MessageHandler:
                         calendar_enabled=calendar_enabled,
                         member_memory_enabled=member_memory_tools_enabled,
                         triggers_enabled=triggers_enabled,
+                        dnd_enabled=dnd_enabled,
                         expanded_categories=expanded_categories
                     )
                     signal_executor = SignalToolExecutor(

@@ -30,6 +30,19 @@ DND_TOOLS = [
                     "starting_level": {
                         "type": "integer",
                         "description": "Starting level for characters (1-20, default 1)"
+                    },
+                    "campaign_size": {
+                        "type": "string",
+                        "enum": ["small", "medium", "large", "custom"],
+                        "description": "Campaign size: small (3 locations), medium (6 locations), large (12 locations), or custom"
+                    },
+                    "custom_location_count": {
+                        "type": "integer",
+                        "description": "Number of locations if campaign_size is 'custom' (3-20)"
+                    },
+                    "template_spreadsheet_id": {
+                        "type": "string",
+                        "description": "Google Sheets ID of the campaign template to duplicate (optional, uses default if not provided)"
                     }
                 },
                 "required": ["campaign_name"],
@@ -153,6 +166,10 @@ DND_TOOLS = [
                     "flaw": {
                         "type": "string",
                         "description": "Character's flaw or weakness"
+                    },
+                    "player_number": {
+                        "type": "integer",
+                        "description": "Which player this character belongs to (1, 2, 3, etc.)"
                     }
                 },
                 "required": ["player_name", "character_name", "race", "character_class"],
@@ -378,6 +395,160 @@ DND_TOOLS = [
                 "type": "object",
                 "properties": {},
                 "required": [],
+                "additionalProperties": False
+            }
+        }
+    },
+    # =========================================================================
+    # NEW CAMPAIGN SETUP TOOLS
+    # =========================================================================
+    {
+        "type": "function",
+        "function": {
+            "name": "generate_locations",
+            "description": "Auto-generate locations for a campaign based on setting, tone, and size. Use after start_dnd_campaign to create the world's locations. Presents locations for user approval before saving.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location_count": {
+                        "type": "integer",
+                        "description": "Number of locations to generate (typically 3, 6, or 12)"
+                    },
+                    "setting": {
+                        "type": "string",
+                        "description": "Campaign setting (e.g., 'high fantasy', 'dark fantasy')"
+                    },
+                    "tone": {
+                        "type": "string",
+                        "description": "Campaign tone (e.g., 'heroic', 'exploration', 'horror')"
+                    },
+                    "preferences": {
+                        "type": "string",
+                        "description": "Optional user preferences for location themes or specific locations to include"
+                    }
+                },
+                "required": ["location_count"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "save_locations",
+            "description": "Save generated locations to the campaign spreadsheet. Use after generate_locations when user approves the locations.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "locations": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string"},
+                                "type": {"type": "string"},
+                                "description": {"type": "string"},
+                                "index": {"type": "integer"}
+                            }
+                        },
+                        "description": "Array of location objects to save"
+                    }
+                },
+                "required": ["locations"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "assign_route",
+            "description": "Determine start and end locations via dice rolls and calculate difficulty tiers for all locations. Use after locations are saved.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "manual_start": {
+                        "type": "string",
+                        "description": "Location name to use as starting point (optional - if not provided, rolls dice)"
+                    },
+                    "manual_end": {
+                        "type": "string",
+                        "description": "Location name to use as ending point (optional - if not provided, rolls dice)"
+                    }
+                },
+                "required": [],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "generate_npcs_for_location",
+            "description": "Auto-generate NPCs for a specific location based on its type and difficulty tier. Use during the NPC generation phase, one location at a time.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location_name": {
+                        "type": "string",
+                        "description": "Name of the location to populate with NPCs"
+                    },
+                    "preferences": {
+                        "type": "string",
+                        "description": "Optional user preferences for this location's NPCs (e.g., 'include a grumpy blacksmith', 'the boss should be a werewolf')"
+                    }
+                },
+                "required": ["location_name"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "finalize_starting_items",
+            "description": "Confirm all characters have starting equipment and optionally add special items. Use after character creation is complete.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "special_items": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string", "description": "Item name"},
+                                "type": {"type": "string", "description": "Item type (weapon, armor, potion, misc)"},
+                                "description": {"type": "string", "description": "Item description"},
+                                "owner": {"type": "string", "description": "Character name who owns this item"}
+                            }
+                        },
+                        "description": "Array of special items to add to characters"
+                    },
+                    "confirm_ready": {
+                        "type": "boolean",
+                        "description": "Set to true to confirm setup is complete and move to ready_to_play phase"
+                    }
+                },
+                "required": [],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_campaign_phase",
+            "description": "Update the campaign's current phase. Use to track progress through setup workflow.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "phase": {
+                        "type": "string",
+                        "enum": ["world_building", "location_creation", "route_determination", "npc_generation", "character_creation", "item_setup", "ready_to_play", "in_progress"],
+                        "description": "The new campaign phase"
+                    }
+                },
+                "required": ["phase"],
                 "additionalProperties": False
             }
         }

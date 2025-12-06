@@ -7,14 +7,12 @@ The actual implementations are in tool_executors/*.py
 
 # Re-export everything from the package for backward compatibility
 from tool_executors import (
-    ToolExecutor,
     SignalToolExecutor,
     create_tool_executor_callback,
     process_tool_calls,
 )
 
 __all__ = [
-    'ToolExecutor',
     'SignalToolExecutor',
     'create_tool_executor_callback',
     'process_tool_calls',

@@ -5,6 +5,7 @@ Contains core spreadsheet operations: create, read, write, format, etc.
 """
 
 import logging
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -12,6 +13,10 @@ logger = logging.getLogger(__name__)
 class SheetsCoreMixin:
     """Mixin providing core Google Sheets tool execution methods."""
 
+    # Type hints for attributes provided by SignalToolExecutorBase
+    bot_data: dict
+    group_id: str
+    sender_name: Optional[str]
 
     def _sheets_enabled(self) -> bool:
         """Check if Google Sheets is enabled and connected."""

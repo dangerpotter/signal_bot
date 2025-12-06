@@ -12,6 +12,9 @@ logger = logging.getLogger(__name__)
 class FinanceToolsMixin:
     """Mixin providing finance tool execution methods."""
 
+    # Type hints for attributes provided by SignalToolExecutorBase
+    bot_data: dict
+
     def _execute_stock_quote(self, arguments: dict) -> dict:
         """Execute the get_stock_quote tool call."""
         if not self.bot_data.get('finance_enabled'):

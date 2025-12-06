@@ -12,6 +12,13 @@ logger = logging.getLogger(__name__)
 class SheetsAdvancedMixin:
     """Mixin providing advanced Google Sheets tool execution methods."""
 
+    # Type hints for attributes provided by SignalToolExecutorBase
+    bot_data: dict
+    group_id: str
+
+    # Method provided by SheetsCoreMixin (declared here for type checking)
+    def _sheets_enabled(self) -> bool: ...
+
     def _execute_set_text_format(self, arguments: dict) -> dict:
         """Execute the set_text_format tool call."""
         if not self._sheets_enabled():
@@ -1875,7 +1882,8 @@ class SheetsAdvancedMixin:
         spreadsheet_id = arguments.get("spreadsheet_id", "")
         slicer_id = arguments.get("slicer_id")
         title = arguments.get("title")
-        filter_values = arguments.get("filter_values")
+        column_index = arguments.get("column_index")
+        apply_to_pivot_tables = arguments.get("apply_to_pivot_tables")
 
         if not spreadsheet_id:
             return {"success": False, "message": "spreadsheet_id is required"}
@@ -1890,7 +1898,8 @@ class SheetsAdvancedMixin:
                 spreadsheet_id=spreadsheet_id,
                 slicer_id=slicer_id,
                 title=title,
-                filter_values=filter_values
+                column_index=column_index,
+                apply_to_pivot_tables=apply_to_pivot_tables
             )
 
             if "error" in result:
@@ -2079,7 +2088,7 @@ class SheetsAdvancedMixin:
                 spreadsheet_id=spreadsheet_id,
                 table_id=table_id,
                 column_index=column_index,
-                name=name,
+                column_name=name,
                 column_type=column_type
             )
 

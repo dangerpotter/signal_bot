@@ -424,6 +424,78 @@ async def create_spreadsheet(
             return {"error": str(e)}
 
 
+async def duplicate_spreadsheet(
+    access_token: str,
+    source_spreadsheet_id: str,
+    new_title: str
+) -> dict:
+    """
+    Duplicate an existing spreadsheet using Google Drive API.
+
+    Args:
+        access_token: Valid Google OAuth access token
+        source_spreadsheet_id: ID of the spreadsheet to duplicate
+        new_title: Title for the new copy
+
+    Returns:
+        Dict with spreadsheet_id, spreadsheet_url, or error
+    """
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+
+    body = {
+        "name": new_title,
+    }
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            # Use Drive API to copy the file
+            response = await client.post(
+                f"https://www.googleapis.com/drive/v3/files/{source_spreadsheet_id}/copy",
+                headers=headers,
+                json=body
+            )
+
+            if response.status_code == 404:
+                return {"error": "Source spreadsheet not found. Make sure the template exists and is accessible."}
+
+            if response.status_code != 200:
+                error_data = response.json()
+                error_msg = error_data.get("error", {}).get("message", "Unknown error")
+                logger.error(f"Duplicate spreadsheet failed: {error_msg}")
+                return {"error": error_msg}
+
+            data = response.json()
+            new_spreadsheet_id = data.get("id")
+
+            # Share the new spreadsheet with "anyone with link" for easy access
+            try:
+                share_response = await client.post(
+                    f"https://www.googleapis.com/drive/v3/files/{new_spreadsheet_id}/permissions",
+                    headers=headers,
+                    json={
+                        "role": "writer",
+                        "type": "anyone"
+                    }
+                )
+                if share_response.status_code != 200:
+                    logger.warning(f"Failed to share duplicated spreadsheet: {share_response.text}")
+            except Exception as share_error:
+                logger.warning(f"Error sharing duplicated spreadsheet: {share_error}")
+
+            return {
+                "spreadsheet_id": new_spreadsheet_id,
+                "title": new_title,
+                "url": f"https://docs.google.com/spreadsheets/d/{new_spreadsheet_id}",
+            }
+
+        except Exception as e:
+            logger.error(f"Error duplicating spreadsheet: {e}")
+            return {"error": str(e)}
+
+
 async def read_range(
     access_token: str,
     spreadsheet_id: str,
@@ -863,7 +935,7 @@ def create_spreadsheet_sync(
     group_id: str,
     title: str,
     description: str = "",
-    created_by: str = None
+    created_by: Optional[str] = None
 ) -> dict:
     """
     Create a new spreadsheet and register it in the database.
@@ -917,6 +989,69 @@ def create_spreadsheet_sync(
         return result
 
     return _run_async(_create())
+
+
+def duplicate_spreadsheet_sync(
+    bot_data: dict,
+    group_id: str,
+    source_spreadsheet_id: str,
+    new_title: str,
+    description: str = "",
+    created_by: Optional[str] = None
+) -> dict:
+    """
+    Duplicate an existing spreadsheet and register it in the database.
+
+    Args:
+        bot_data: Bot configuration dict
+        group_id: Signal group ID
+        source_spreadsheet_id: ID of the spreadsheet to duplicate (template)
+        new_title: Title for the new copy
+        description: What this sheet is for
+        created_by: Name of user who requested creation
+
+    Returns:
+        Dict with spreadsheet info or error
+    """
+    async def _duplicate():
+        access_token = await get_valid_access_token(bot_data)
+        if not access_token:
+            return {"error": "Not connected to Google. Please connect via admin panel."}
+
+        result = await duplicate_spreadsheet(access_token, source_spreadsheet_id, new_title)
+        if "error" in result:
+            return result
+
+        # Register in database
+        from signal_bot.models import SheetsRegistry, db
+
+        try:
+            if _flask_app:
+                with _flask_app.app_context():
+                    registry = SheetsRegistry(
+                        bot_id=bot_data["id"],
+                        group_id=group_id,
+                        spreadsheet_id=result["spreadsheet_id"],
+                        title=new_title,
+                        description=description,
+                        created_by=created_by,
+                    )
+                    db.session.add(registry)
+                    db.session.commit()
+
+            result["description"] = description
+            result["created_by"] = created_by
+            result["registered"] = True
+
+        except Exception as e:
+            logger.error(f"Error registering duplicated spreadsheet: {e}")
+            # Still return success - sheet was created, just not registered
+            result["registered"] = False
+            result["registration_error"] = str(e)
+
+        return result
+
+    return _run_async(_duplicate())
 
 
 def list_spreadsheets_sync(bot_data: dict, group_id: str) -> dict:
@@ -1034,8 +1169,9 @@ def append_to_sheet_sync(
     bot_data: dict,
     spreadsheet_id: str,
     values: list,
-    added_by: str = None,
-    include_metadata: bool = True
+    added_by: Optional[str] = None,
+    include_metadata: bool = True,
+    sheet_name: str = "Sheet1"
 ) -> dict:
     """
     Append a row to a spreadsheet.
@@ -1047,6 +1183,7 @@ def append_to_sheet_sync(
         added_by: Name of person who added this data
         include_metadata: If True (default), prepends timestamp and attribution columns.
                          If False, appends values directly without metadata.
+        sheet_name: Name of the sheet/tab to append to (default: "Sheet1")
 
     Returns:
         Dict with update info or error
@@ -1063,8 +1200,8 @@ def append_to_sheet_sync(
         else:
             row_data = list(values)
 
-        # Append to Sheet1 by default (covers full range to find last row)
-        result = await append_rows(access_token, spreadsheet_id, "Sheet1!A:Z", [row_data])
+        # Append to specified sheet (covers full range to find last row)
+        result = await append_rows(access_token, spreadsheet_id, f"'{sheet_name}'!A:Z", [row_data])
 
         # Update last_accessed if successful
         if "error" not in result:
@@ -1151,7 +1288,7 @@ def format_columns_sync(
     spreadsheet_id: str,
     columns: str,
     format_type: str,
-    pattern: str = None
+    pattern: Optional[str] = None
 ) -> dict:
     """
     Format columns with a specified number format (currency, percent, etc).
@@ -1265,7 +1402,7 @@ def delete_rows_sync(
     bot_data: dict,
     spreadsheet_id: str,
     start_row: int,
-    end_row: int = None
+    end_row: Optional[int] = None
 ) -> dict:
     """
     Delete rows from a spreadsheet.
@@ -1700,7 +1837,7 @@ def freeze_rows_sync(
     bot_data: dict,
     spreadsheet_id: str,
     num_rows: int,
-    sheet_name: str = None
+    sheet_name: Optional[str] = None
 ) -> dict:
     """
     Freeze rows at the top of a sheet.
@@ -1773,7 +1910,7 @@ def freeze_columns_sync(
     bot_data: dict,
     spreadsheet_id: str,
     num_columns: int,
-    sheet_name: str = None
+    sheet_name: Optional[str] = None
 ) -> dict:
     """
     Freeze columns at the left of a sheet.
@@ -1938,7 +2075,7 @@ def sort_range_sync(
 def auto_resize_columns_sync(
     bot_data: dict,
     spreadsheet_id: str,
-    columns: str = None
+    columns: Optional[str] = None
 ) -> dict:
     """
     Auto-resize columns to fit content.
@@ -2185,7 +2322,7 @@ def conditional_format_sync(
     spreadsheet_id: str,
     range_notation: str,
     rule_type: str,
-    condition_value: str = None,
+    condition_value: Optional[str] = None,
     format_type: str = "background",
     color: str = "red"
 ) -> dict:
@@ -2316,9 +2453,9 @@ def data_validation_sync(
     spreadsheet_id: str,
     range_notation: str,
     validation_type: str,
-    values: list = None,
-    min_value: float = None,
-    max_value: float = None,
+    values: Optional[list] = None,
+    min_value: Optional[float] = None,
+    max_value: Optional[float] = None,
     strict: bool = True
 ) -> dict:
     """
@@ -2760,9 +2897,9 @@ def set_alignment_sync(
     bot_data: dict,
     spreadsheet_id: str,
     range_notation: str,
-    horizontal: str = None,
-    vertical: str = None,
-    wrap: str = None
+    horizontal: Optional[str] = None,
+    vertical: Optional[str] = None,
+    wrap: Optional[str] = None
 ) -> dict:
     """
     Set text alignment and wrapping for a range of cells.
@@ -2992,8 +3129,8 @@ def set_text_rotation_sync(
     bot_data: dict,
     spreadsheet_id: str,
     range_notation: str,
-    angle: int = None,
-    vertical: bool = None
+    angle: Optional[int] = None,
+    vertical: Optional[bool] = None
 ) -> dict:
     """
     Set text rotation for cells.
@@ -3094,10 +3231,10 @@ def set_cell_padding_sync(
     bot_data: dict,
     spreadsheet_id: str,
     range_notation: str,
-    top: int = None,
-    right: int = None,
-    bottom: int = None,
-    left: int = None
+    top: Optional[int] = None,
+    right: Optional[int] = None,
+    bottom: Optional[int] = None,
+    left: Optional[int] = None
 ) -> dict:
     """
     Set inner padding for cells.
@@ -3611,8 +3748,8 @@ def update_chart_sync(
     bot_data: dict,
     spreadsheet_id: str,
     chart_id: int,
-    title: str = None,
-    chart_type: str = None
+    title: Optional[str] = None,
+    chart_type: Optional[str] = None
 ) -> dict:
     """
     Update an existing chart's properties.
@@ -3694,11 +3831,11 @@ def create_pivot_table_sync(
     row_groups: list,
     values: list,
     anchor_cell: str = "F1",
-    column_groups: list = None,
+    column_groups: Optional[list] = None,
     show_totals: bool = True,
     sort_order: str = "ASCENDING",
     value_layout: str = "HORIZONTAL",
-    filter_specs: list = None
+    filter_specs: Optional[list] = None
 ) -> dict:
     """
     Create a pivot table from spreadsheet data with multi-dimensional support.
@@ -4350,12 +4487,12 @@ def set_text_format_sync(
     bot_data: dict,
     spreadsheet_id: str,
     range_notation: str,
-    bold: bool = None,
-    italic: bool = None,
-    underline: bool = None,
-    strikethrough: bool = None,
-    font_family: str = None,
-    font_size: int = None
+    bold: Optional[bool] = None,
+    italic: Optional[bool] = None,
+    underline: Optional[bool] = None,
+    strikethrough: Optional[bool] = None,
+    font_family: Optional[str] = None,
+    font_size: Optional[int] = None
 ) -> dict:
     """
     Apply rich text formatting to a range of cells.
@@ -4656,7 +4793,7 @@ def add_hyperlink_sync(
     spreadsheet_id: str,
     cell: str,
     url: str,
-    display_text: str = None
+    display_text: Optional[str] = None
 ) -> dict:
     """
     Add a clickable hyperlink to a cell.
@@ -4819,7 +4956,7 @@ def set_basic_filter_sync(
 def clear_basic_filter_sync(
     bot_data: dict,
     spreadsheet_id: str,
-    sheet_name: str = None
+    sheet_name: Optional[str] = None
 ) -> dict:
     """
     Remove the basic filter from a sheet.
@@ -5212,7 +5349,7 @@ def protect_range_sync(
     bot_data: dict,
     spreadsheet_id: str,
     range_notation: str,
-    description: str = None,
+    description: Optional[str] = None,
     warning_only: bool = False
 ) -> dict:
     """
@@ -5313,7 +5450,7 @@ def find_replace_sync(
     spreadsheet_id: str,
     find: str,
     replacement: str,
-    range_notation: str = None,
+    range_notation: Optional[str] = None,
     match_case: bool = False,
     match_entire_cell: bool = False,
     search_formulas: bool = False
@@ -6128,16 +6265,16 @@ def get_spreadsheet_properties_sync(
 def set_spreadsheet_theme_sync(
     bot_data: dict,
     spreadsheet_id: str,
-    primary_font: str = None,
-    text_color: str = None,
-    background_color: str = None,
-    accent1: str = None,
-    accent2: str = None,
-    accent3: str = None,
-    accent4: str = None,
-    accent5: str = None,
-    accent6: str = None,
-    link_color: str = None
+    primary_font: Optional[str] = None,
+    text_color: Optional[str] = None,
+    background_color: Optional[str] = None,
+    accent1: Optional[str] = None,
+    accent2: Optional[str] = None,
+    accent3: Optional[str] = None,
+    accent4: Optional[str] = None,
+    accent5: Optional[str] = None,
+    accent6: Optional[str] = None,
+    link_color: Optional[str] = None
 ) -> dict:
     """Sync wrapper for set_spreadsheet_theme."""
     async def _set_theme():
@@ -6172,9 +6309,9 @@ def set_developer_metadata_sync(
     key: str,
     value: str,
     location: str = "spreadsheet",
-    sheet_name: str = None,
-    start_index: int = None,
-    end_index: int = None
+    sheet_name: Optional[str] = None,
+    start_index: Optional[int] = None,
+    end_index: Optional[int] = None
 ) -> dict:
     """Sync wrapper for set_developer_metadata."""
     async def _set_metadata():
@@ -6215,7 +6352,7 @@ def set_developer_metadata_sync(
 def get_developer_metadata_sync(
     bot_data: dict,
     spreadsheet_id: str,
-    key: str = None
+    key: Optional[str] = None
 ) -> dict:
     """Sync wrapper for get_developer_metadata."""
     async def _get_metadata():
@@ -6498,7 +6635,7 @@ def set_right_to_left_sync(
 def get_sheet_properties_sync(
     bot_data: dict,
     spreadsheet_id: str,
-    sheet_name: str = None
+    sheet_name: Optional[str] = None
 ) -> dict:
     """
     Get properties of a specific sheet or all sheets.
@@ -6562,7 +6699,7 @@ def get_sheet_properties_sync(
 def list_protected_ranges_sync(
     bot_data: dict,
     spreadsheet_id: str,
-    sheet_name: str = None
+    sheet_name: Optional[str] = None
 ) -> dict:
     """
     List all protected ranges in a spreadsheet or specific sheet.
@@ -6651,9 +6788,9 @@ def update_protected_range_sync(
     bot_data: dict,
     spreadsheet_id: str,
     protected_range_id: int,
-    description: str = None,
-    warning_only: bool = None,
-    editors: list = None
+    description: Optional[str] = None,
+    warning_only: Optional[bool] = None,
+    editors: Optional[list] = None
 ) -> dict:
     """
     Update a protected range's settings.
@@ -6754,10 +6891,10 @@ def protect_sheet_sync(
     bot_data: dict,
     spreadsheet_id: str,
     sheet_name: str,
-    description: str = None,
+    description: Optional[str] = None,
     warning_only: bool = False,
-    editors: list = None,
-    unprotected_ranges: list = None
+    editors: Optional[list] = None,
+    unprotected_ranges: Optional[list] = None
 ) -> dict:
     """
     Protect an entire sheet with optional unprotected ranges.
@@ -6876,7 +7013,7 @@ def protect_sheet_sync(
 def list_filter_views_sync(
     bot_data: dict,
     spreadsheet_id: str,
-    sheet_name: str = None
+    sheet_name: Optional[str] = None
 ) -> dict:
     """
     List all filter views in a spreadsheet.
@@ -7293,8 +7430,8 @@ def set_group_control_position_sync(
     bot_data: dict,
     spreadsheet_id: str,
     sheet_name: str,
-    row_control_after: bool = None,
-    column_control_after: bool = None
+    row_control_after: Optional[bool] = None,
+    column_control_after: Optional[bool] = None
 ) -> dict:
     """
     Set whether group +/- controls appear before or after the grouped rows/columns.
@@ -7368,7 +7505,7 @@ def set_group_control_position_sync(
 def list_slicers_sync(
     bot_data: dict,
     spreadsheet_id: str,
-    sheet_name: str = None
+    sheet_name: Optional[str] = None
 ) -> dict:
     """
     List all slicers in a spreadsheet.
@@ -7435,7 +7572,7 @@ def create_slicer_sync(
     sheet_name: str,
     data_range: str,
     column_index: int,
-    title: str = None,
+    title: Optional[str] = None,
     anchor_row: int = 0,
     anchor_col: int = 0,
     apply_to_pivot_tables: bool = True
@@ -7552,9 +7689,9 @@ def update_slicer_sync(
     bot_data: dict,
     spreadsheet_id: str,
     slicer_id: int,
-    title: str = None,
-    column_index: int = None,
-    apply_to_pivot_tables: bool = None
+    title: Optional[str] = None,
+    column_index: Optional[int] = None,
+    apply_to_pivot_tables: Optional[bool] = None
 ) -> dict:
     """
     Update a slicer's settings.
@@ -7919,9 +8056,9 @@ def update_table_column_sync(
     spreadsheet_id: str,
     table_id: str,
     column_index: int,
-    column_name: str = None,
-    column_type: str = None,
-    dropdown_values: list = None
+    column_name: Optional[str] = None,
+    column_type: Optional[str] = None,
+    dropdown_values: Optional[list] = None
 ) -> dict:
     """
     Update a table column's properties.

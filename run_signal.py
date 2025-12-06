@@ -22,8 +22,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Configure stdout for UTF-8 with error replacement (fixes Windows Unicode issues)
-if sys.stdout:
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')  # type: ignore[attr-defined]
 
 # Configure logging
 logging.basicConfig(

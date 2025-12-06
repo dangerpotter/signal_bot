@@ -356,6 +356,40 @@
                 </div>
             </div>
         </div>
+
+        <!-- D&D Game Master -->
+        <div class="col-md-6">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-dice-6"></i> D&D Game Master
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input type="checkbox" name="dnd_enabled" class="form-check-input" id="dndEnabled" {% if bot.dnd_enabled %}checked{% endif %}>
+                            <label class="form-check-label" for="dndEnabled">Enable D&D GM tools</label>
+                        </div>
+                        <small class="text-muted">Run D&D 5e campaigns with character sheets, combat tracking, and campaign management</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="dndTemplateId" class="form-label">Campaign Template Spreadsheet ID</label>
+                        <input type="text" class="form-control" id="dndTemplateId" name="dnd_template_spreadsheet_id"
+                               value="{{ bot.dnd_template_spreadsheet_id or '' }}"
+                               placeholder="e.g., 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms">
+                        <small class="text-muted">Google Sheets ID of your campaign template. New campaigns will be created by copying this template.</small>
+                    </div>
+
+                    <hr>
+
+                    <p class="text-muted small mb-0">
+                        <i class="bi bi-info-circle"></i>
+                        <strong>Requirements:</strong> Google Sheets must be connected (campaigns stored in spreadsheets).
+                        <br>Use a GM-focused system prompt for best results. Dice rolling is always enabled.
+                    </p>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div class="row">

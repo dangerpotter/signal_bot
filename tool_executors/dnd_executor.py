@@ -12,6 +12,10 @@ logger = logging.getLogger(__name__)
 class DndToolsMixin:
     """Mixin providing D&D Game Master tool execution methods."""
 
+    # Type hints for attributes provided by SignalToolExecutorBase
+    bot_data: dict
+    group_id: str
+
     # =========================================================================
     # D&D GAME MASTER TOOL HANDLERS
     # =========================================================================
@@ -27,10 +31,13 @@ class DndToolsMixin:
 
             from signal_bot.google_sheets_client import (
                 create_spreadsheet_sync, add_sheet_sync, write_sheet_sync,
-                freeze_rows_sync, format_columns_sync
+                freeze_rows_sync, format_columns_sync, duplicate_spreadsheet_sync,
+                _flask_app
             )
             from signal_bot.dnd_client import (
-                get_campaign_sheet_headers, get_overview_initial_data
+                get_campaign_sheet_headers, get_campaign_sheet_headers_v2,
+                get_overview_initial_data, get_overview_initial_data_v2,
+                CAMPAIGN_SIZES
             )
             from signal_bot.models import DndCampaignRegistry, db
             from datetime import datetime
@@ -39,9 +46,17 @@ class DndToolsMixin:
             setting = arguments.get("setting", "Fantasy")
             tone = arguments.get("tone", "heroic")
             starting_level = arguments.get("starting_level", 1)
+            campaign_size = arguments.get("campaign_size", "medium")
+            custom_location_count = arguments.get("custom_location_count")
+            # Use bot's configured template if none provided in arguments
+            template_spreadsheet_id = arguments.get("template_spreadsheet_id") or self.bot_data.get("dnd_template_spreadsheet_id")
 
-            # Import Flask app for database context
-            from signal_bot.google_sheets_client import _flask_app
+            # Calculate location count
+            if campaign_size == "custom" and custom_location_count:
+                location_count = min(max(custom_location_count, 3), 20)
+            else:
+                location_count = CAMPAIGN_SIZES.get(campaign_size, 6)
+
             if not _flask_app:
                 return {"success": False, "message": "Flask app not initialized for database access"}
 
@@ -56,48 +71,76 @@ class DndToolsMixin:
                     "message": f"A campaign named '{campaign_name}' already exists. Choose a different name or continue the existing campaign."
                 }
 
-            # Create the spreadsheet
             title = f"[D&D] {campaign_name}"
-            result = create_spreadsheet_sync(
-                self.bot_data, self.group_id, title,
-                description=f"D&D 5e Campaign: {campaign_name}",
-                created_by="D&D GM"
-            )
 
-            if "error" in result:
-                return {"success": False, "message": f"Failed to create spreadsheet: {result['error']}"}
-
-            spreadsheet_id = result["spreadsheet_id"]
-            headers = get_campaign_sheet_headers()
-
-            # Add additional sheets (first sheet "Sheet1" already exists)
-            sheet_names = ["Overview", "Characters", "NPCs", "Locations", "Items", "Combat Log", "Session History"]
-
-            # Rename Sheet1 to Overview and add others
-            for i, sheet_name in enumerate(sheet_names[1:], start=1):  # Skip Overview, it's created first
-                add_result = add_sheet_sync(self.bot_data, spreadsheet_id, sheet_name)
-                if not add_result.get("success"):
-                    logger.warning(f"Failed to add sheet {sheet_name}: {add_result.get('message')}")
-
-            # Write headers to each sheet
-            for sheet_name in sheet_names:
-                if sheet_name in headers:
-                    header_row = headers[sheet_name]
+            # Try template duplication first if template ID provided
+            if template_spreadsheet_id:
+                result = duplicate_spreadsheet_sync(
+                    self.bot_data, self.group_id, template_spreadsheet_id, title,
+                    description=f"D&D 5e Campaign: {campaign_name}",
+                    created_by="D&D GM"
+                )
+                if result.get("success"):
+                    spreadsheet_id = result["spreadsheet_id"]
+                    # Update the Overview sheet with campaign-specific data
+                    overview_data = get_overview_initial_data_v2(
+                        campaign_name, setting, tone, starting_level,
+                        campaign_size, location_count
+                    )
                     write_sheet_sync(
                         self.bot_data, spreadsheet_id,
-                        f"'{sheet_name}'!A1",
-                        [header_row]
+                        "'Overview'!A2",
+                        overview_data
                     )
-                    # Freeze header row
-                    freeze_rows_sync(self.bot_data, spreadsheet_id, 1, sheet_name)
+                else:
+                    logger.warning(f"Template duplication failed, falling back to manual creation: {result.get('message')}")
+                    template_spreadsheet_id = None  # Fall through to manual creation
 
-            # Write initial overview data
-            overview_data = get_overview_initial_data(campaign_name, setting, tone, starting_level)
-            write_sheet_sync(
-                self.bot_data, spreadsheet_id,
-                "'Overview'!A2",
-                overview_data
-            )
+            # Manual creation (no template or template failed)
+            if not template_spreadsheet_id:
+                result = create_spreadsheet_sync(
+                    self.bot_data, self.group_id, title,
+                    description=f"D&D 5e Campaign: {campaign_name}",
+                    created_by="D&D GM"
+                )
+
+                if "error" in result:
+                    return {"success": False, "message": f"Failed to create spreadsheet: {result['error']}"}
+
+                spreadsheet_id = result["spreadsheet_id"]
+                headers = get_campaign_sheet_headers_v2()
+
+                # Add additional sheets (first sheet "Sheet1" already exists)
+                sheet_names = ["Quick Reference", "Overview", "Characters", "NPCs", "Locations", "Items", "Combat Log", "Session History"]
+
+                # Add sheets
+                for sheet_name in sheet_names:
+                    add_result = add_sheet_sync(self.bot_data, spreadsheet_id, sheet_name)
+                    if not add_result.get("success"):
+                        logger.warning(f"Failed to add sheet {sheet_name}: {add_result.get('message')}")
+
+                # Write headers to each sheet
+                for sheet_name in sheet_names:
+                    if sheet_name in headers:
+                        header_row = headers[sheet_name]
+                        write_sheet_sync(
+                            self.bot_data, spreadsheet_id,
+                            f"'{sheet_name}'!A1",
+                            [header_row]
+                        )
+                        # Freeze header row
+                        freeze_rows_sync(self.bot_data, spreadsheet_id, 1, sheet_name)
+
+                # Write initial overview data with new v2 format
+                overview_data = get_overview_initial_data_v2(
+                    campaign_name, setting, tone, starting_level,
+                    campaign_size, location_count
+                )
+                write_sheet_sync(
+                    self.bot_data, spreadsheet_id,
+                    "'Overview'!A2",
+                    overview_data
+                )
 
             # Register the campaign (needs Flask app context for database)
             with _flask_app.app_context():
@@ -126,6 +169,7 @@ class DndToolsMixin:
                 db.session.commit()
 
             url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}"
+            size_text = f"{campaign_size} ({location_count} locations)" if campaign_size != "custom" else f"custom ({location_count} locations)"
             return {
                 "success": True,
                 "data": {
@@ -134,9 +178,12 @@ class DndToolsMixin:
                     "url": url,
                     "setting": setting,
                     "tone": tone,
-                    "starting_level": starting_level
+                    "starting_level": starting_level,
+                    "campaign_size": campaign_size,
+                    "location_count": location_count,
+                    "campaign_phase": "world_building"
                 },
-                "message": f"Campaign '{campaign_name}' created! Spreadsheet: {url}\n\nThe campaign is set in {setting} with a {tone} tone. Characters will start at level {starting_level}.\n\nNext: Guide the players through world-building and character creation!"
+                "message": f"Campaign '{campaign_name}' created! Spreadsheet: {url}\n\nThe campaign is set in {setting} with a {tone} tone. Characters will start at level {starting_level}. Campaign size: {size_text}.\n\n**Next Steps:**\n1. Generate locations for the world\n2. Roll dice to determine the route (start/end points)\n3. Populate each location with NPCs\n4. Create characters for the players\n5. Finalize starting equipment\n\nShall I generate the locations for your {setting} world?"
             }
 
         except Exception as e:
@@ -150,8 +197,8 @@ class DndToolsMixin:
                 return {"success": False, "message": "D&D tools are not enabled for this bot"}
 
             from signal_bot.google_sheets_client import read_sheet_sync, _flask_app
-            from signal_bot.dnd_client import row_to_character
-            from signal_bot.models import DndCampaignRegistry
+            from signal_bot.dnd_client import row_to_character, CAMPAIGN_PHASES
+            from signal_bot.models import DndCampaignRegistry, db
             from datetime import datetime
             import json
 
@@ -202,21 +249,33 @@ class DndToolsMixin:
                     if len(row) >= 2:
                         overview[row[0]] = row[1]
 
+            # Get campaign phase
+            campaign_phase = overview.get("Campaign Phase", "in_progress")
+
+            # During setup phases, always include locations for context
+            if campaign_phase not in ["ready_to_play", "in_progress"]:
+                include_locations = True
+
             state = {
                 "campaign_name": campaign_data["campaign_name"],
                 "setting": campaign_data["setting"],
                 "tone": campaign_data["tone"],
+                "campaign_phase": campaign_phase,
                 "current_location": overview.get("Current Location", "Unknown"),
+                "starting_location": overview.get("Starting Location", ""),
+                "ending_location": overview.get("Ending Location", ""),
                 "party_gold": overview.get("Party Gold", "0"),
                 "story_flags": overview.get("Story Flags", ""),
                 "session_count": overview.get("Session Count", "0"),
                 "active_combat": overview.get("Active Combat", "No"),
                 "combat_initiative": overview.get("Combat Initiative Order", ""),
+                "total_locations": overview.get("Total Locations", "0"),
+                "campaign_size": overview.get("Campaign Size", "medium"),
             }
 
             # Read Characters
             if include_characters:
-                chars_result = read_sheet_sync(self.bot_data, spreadsheet_id, "'Characters'!A2:AE100")
+                chars_result = read_sheet_sync(self.bot_data, spreadsheet_id, "'Characters'!A2:AF100")
                 characters = []
                 if chars_result.get("success") and chars_result.get("data", {}).get("values"):
                     for row in chars_result["data"]["values"]:
@@ -232,12 +291,13 @@ class DndToolsMixin:
                                 "max_hp": char.get("max_hp"),
                                 "ac": char.get("ac"),
                                 "conditions": char.get("conditions", []),
+                                "player_number": char.get("player_number", 0),
                             })
                 state["characters"] = characters
 
             # Read NPCs
             if include_npcs:
-                npcs_result = read_sheet_sync(self.bot_data, spreadsheet_id, "'NPCs'!A2:H100")
+                npcs_result = read_sheet_sync(self.bot_data, spreadsheet_id, "'NPCs'!A2:K100")
                 npcs = []
                 if npcs_result.get("success") and npcs_result.get("data", {}).get("values"):
                     for row in npcs_result["data"]["values"]:
@@ -247,12 +307,15 @@ class DndToolsMixin:
                                 "role": row[1] if len(row) > 1 else "",
                                 "location": row[2] if len(row) > 2 else "",
                                 "relationship": row[4] if len(row) > 4 else "unknown",
+                                "npc_type": row[5] if len(row) > 5 else "",
+                                "difficulty_tier": row[6] if len(row) > 6 else "",
+                                "status": row[10] if len(row) > 10 else "alive",
                             })
                 state["npcs"] = npcs
 
             # Read Locations
             if include_locations:
-                locs_result = read_sheet_sync(self.bot_data, spreadsheet_id, "'Locations'!A2:H100")
+                locs_result = read_sheet_sync(self.bot_data, spreadsheet_id, "'Locations'!A2:L100")
                 locations = []
                 if locs_result.get("success") and locs_result.get("data", {}).get("values"):
                     for row in locs_result["data"]["values"]:
@@ -260,14 +323,23 @@ class DndToolsMixin:
                             locations.append({
                                 "name": row[0] if len(row) > 0 else "",
                                 "type": row[1] if len(row) > 1 else "",
-                                "discovered": row[5] if len(row) > 5 else "Yes",
+                                "description": row[2] if len(row) > 2 else "",
+                                "location_index": row[5] if len(row) > 5 else "",
+                                "difficulty_tier": row[6] if len(row) > 6 else "",
+                                "is_starting": row[7] if len(row) > 7 else "No",
+                                "is_ending": row[8] if len(row) > 8 else "No",
+                                "discovered": row[9] if len(row) > 9 else "Yes",
                             })
                 state["locations"] = locations
 
             # Update last_played
-            campaign.last_played = datetime.utcnow()
-            from signal_bot.models import db
-            db.session.commit()
+            with _flask_app.app_context():
+                campaign_obj = DndCampaignRegistry.get_active_campaign(
+                    self.bot_data['id'], self.group_id
+                )
+                if campaign_obj:
+                    campaign_obj.last_played = datetime.utcnow()
+                    db.session.commit()
 
             # Build summary message
             char_summary = ""
@@ -278,13 +350,40 @@ class DndToolsMixin:
                     char_lines.append(f"  - {c['character_name']} ({c['race']} {c['class']} L{c['level']}): {c['current_hp']}/{c['max_hp']} HP, AC {c['ac']}{conditions}")
                 char_summary = "\n**Characters:**\n" + "\n".join(char_lines)
 
-            message = f"**Campaign: {campaign.campaign_name}**\n"
-            message += f"Setting: {campaign.setting} | Tone: {campaign.tone}\n"
-            message += f"Current Location: {state['current_location']}\n"
-            message += f"Session #{state['session_count']} | Party Gold: {state['party_gold']} gp"
-            if state['active_combat'] == "Yes":
-                message += "\n**COMBAT ACTIVE**"
+            message = f"**Campaign: {campaign_data['campaign_name']}**\n"
+            message += f"Setting: {campaign_data['setting']} | Tone: {campaign_data['tone']}\n"
+            message += f"Phase: **{campaign_phase}**\n"
+
+            # Add phase-specific guidance
+            if campaign_phase not in ["ready_to_play", "in_progress"]:
+                phase_guidance = {
+                    "world_building": "Setup in progress. Next: Generate locations for the world.",
+                    "location_creation": "Locations created. Next: Roll dice to assign the route (start/end points).",
+                    "route_determination": "Route assigned. Next: Populate locations with NPCs.",
+                    "npc_generation": "Populating NPCs. Continue with remaining locations.",
+                    "character_creation": "Creating player characters. Guide each player through character creation.",
+                    "item_setup": "Finalizing equipment. Add any special starting items.",
+                }
+                message += f"\n**⚠️ {phase_guidance.get(campaign_phase, 'Continue setup...')}**\n"
+            else:
+                message += f"Current Location: {state['current_location']}\n"
+                message += f"Session #{state['session_count']} | Party Gold: {state['party_gold']} gp"
+                if state['active_combat'] == "Yes":
+                    message += "\n**COMBAT ACTIVE**"
+
             message += char_summary
+
+            # Add location summary during setup
+            if include_locations and state.get("locations"):
+                loc_count = len(state["locations"])
+                message += f"\n\n**Locations ({loc_count}):**"
+                for loc in state["locations"][:5]:  # Show first 5
+                    tier = f" [Tier {loc['difficulty_tier']}]" if loc.get('difficulty_tier') else ""
+                    start = " ★START" if loc.get('is_starting') == "Yes" else ""
+                    end = " ★END" if loc.get('is_ending') == "Yes" else ""
+                    message += f"\n  - {loc['name']} ({loc['type']}){tier}{start}{end}"
+                if loc_count > 5:
+                    message += f"\n  ... and {loc_count - 5} more"
 
             return {
                 "success": True,
@@ -388,7 +487,8 @@ class DndToolsMixin:
                 ]
                 append_to_sheet_sync(
                     self.bot_data, spreadsheet_id, history_row,
-                    added_by="D&D GM", include_metadata=False
+                    added_by="D&D GM", include_metadata=False,
+                    sheet_name="Session History"
                 )
                 updates.append(f"Session {session_num} logged")
 
@@ -446,6 +546,7 @@ class DndToolsMixin:
             ideal = arguments.get("ideal", "")
             bond = arguments.get("bond", "")
             flaw = arguments.get("flaw", "")
+            player_number = arguments.get("player_number", 1)
 
             # Build character stats
             level = starting_level
@@ -458,6 +559,7 @@ class DndToolsMixin:
             stats["flaw"] = flaw
             stats["player_name"] = player_name
             stats["character_name"] = character_name
+            stats["player_number"] = player_number
 
             # Get spell slots if spellcaster
             spell_slots = get_spell_slots(character_class, level)
@@ -468,7 +570,8 @@ class DndToolsMixin:
             row = character_to_row(stats)
             result = append_to_sheet_sync(
                 self.bot_data, spreadsheet_id, row,
-                added_by=player_name, include_metadata=False
+                added_by=player_name, include_metadata=False,
+                sheet_name="Characters"
             )
 
             if not result.get("success"):
@@ -803,7 +906,8 @@ class DndToolsMixin:
             ]
             append_to_sheet_sync(
                 self.bot_data, campaign.spreadsheet_id, combat_log_row,
-                added_by="D&D GM", include_metadata=False
+                added_by="D&D GM", include_metadata=False,
+                sheet_name="Combat Log"
             )
 
             # Build message
@@ -879,7 +983,8 @@ class DndToolsMixin:
 
             result = append_to_sheet_sync(
                 self.bot_data, campaign.spreadsheet_id, npc_row,
-                added_by="D&D GM", include_metadata=False
+                added_by="D&D GM", include_metadata=False,
+                sheet_name="NPCs"
             )
 
             if not result.get("success"):
@@ -946,7 +1051,8 @@ class DndToolsMixin:
 
             result = append_to_sheet_sync(
                 self.bot_data, campaign.spreadsheet_id, location_row,
-                added_by="D&D GM", include_metadata=False
+                added_by="D&D GM", include_metadata=False,
+                sheet_name="Locations"
             )
 
             if not result.get("success"):
@@ -1015,4 +1121,537 @@ class DndToolsMixin:
         except Exception as e:
             logger.error(f"Error listing campaigns: {e}")
             return {"success": False, "message": f"Error listing campaigns: {str(e)}"}
+
+    # =========================================================================
+    # NEW CAMPAIGN SETUP TOOL HANDLERS
+    # =========================================================================
+
+    def _execute_generate_locations(self, arguments: dict) -> dict:
+        """Generate locations for a campaign based on setting and size."""
+        try:
+            if not self.bot_data.get('dnd_enabled'):
+                return {"success": False, "message": "D&D tools are not enabled for this bot"}
+
+            from signal_bot.dnd_client import generate_location_list
+
+            location_count = arguments.get("location_count", 6)
+            setting = arguments.get("setting", "high fantasy")
+            tone = arguments.get("tone", "heroic")
+            preferences = arguments.get("preferences", "")
+
+            # Generate locations
+            locations = generate_location_list(location_count, setting, tone)
+
+            # Build preview message
+            location_lines = []
+            for loc in locations:
+                location_lines.append(f"  {loc['index']}. **{loc['name']}** ({loc['type']})")
+                location_lines.append(f"     {loc['description']}")
+
+            message = f"**Generated {len(locations)} locations for your campaign:**\n\n"
+            message += "\n".join(location_lines)
+            message += "\n\n*Review these locations. If you approve, I'll save them and we'll roll dice to determine your start and end points.*"
+
+            return {
+                "success": True,
+                "data": {"locations": locations, "count": len(locations)},
+                "message": message
+            }
+
+        except Exception as e:
+            logger.error(f"Error generating locations: {e}")
+            return {"success": False, "message": f"Error generating locations: {str(e)}"}
+
+    def _execute_save_locations(self, arguments: dict) -> dict:
+        """Save generated locations to the campaign spreadsheet."""
+        try:
+            if not self.bot_data.get('dnd_enabled'):
+                return {"success": False, "message": "D&D tools are not enabled for this bot"}
+
+            from signal_bot.google_sheets_client import append_to_sheet_sync, write_sheet_sync, read_sheet_sync, _flask_app
+            from signal_bot.dnd_client import location_to_row
+            from signal_bot.models import DndCampaignRegistry
+
+            if not _flask_app:
+                return {"success": False, "message": "Flask app not initialized for database access"}
+
+            locations = arguments.get("locations", [])
+            if not locations:
+                return {"success": False, "message": "No locations provided to save"}
+
+            # Get active campaign
+            with _flask_app.app_context():
+                campaign = DndCampaignRegistry.get_active_campaign(
+                    self.bot_data['id'], self.group_id
+                )
+                if not campaign:
+                    return {"success": False, "message": "No active campaign. Start a campaign first."}
+                spreadsheet_id = campaign.spreadsheet_id
+
+            # Save each location
+            saved_count = 0
+            for loc in locations:
+                row = location_to_row(loc, "0")
+                result = append_to_sheet_sync(
+                    self.bot_data, spreadsheet_id, row,
+                    added_by="D&D GM", include_metadata=False,
+                    sheet_name="Locations"
+                )
+                if result.get("success"):
+                    saved_count += 1
+
+            # Update campaign phase
+            self._update_overview_field(spreadsheet_id, "Campaign Phase", "location_creation")
+            self._update_overview_field(spreadsheet_id, "Total Locations", str(len(locations)))
+
+            return {
+                "success": True,
+                "data": {"saved_count": saved_count, "total": len(locations)},
+                "message": f"Saved {saved_count} locations to campaign. Ready to roll for start/end points!"
+            }
+
+        except Exception as e:
+            logger.error(f"Error saving locations: {e}")
+            return {"success": False, "message": f"Error saving locations: {str(e)}"}
+
+    def _execute_assign_route(self, arguments: dict) -> dict:
+        """Determine start and end locations via dice rolls."""
+        try:
+            if not self.bot_data.get('dnd_enabled'):
+                return {"success": False, "message": "D&D tools are not enabled for this bot"}
+
+            from signal_bot.google_sheets_client import read_sheet_sync, write_sheet_sync, _flask_app
+            from signal_bot.dnd_client import calculate_difficulty_tiers
+            from signal_bot.dice_client import roll_dice
+            from signal_bot.models import DndCampaignRegistry
+
+            if not _flask_app:
+                return {"success": False, "message": "Flask app not initialized for database access"}
+
+            # Get active campaign
+            with _flask_app.app_context():
+                campaign = DndCampaignRegistry.get_active_campaign(
+                    self.bot_data['id'], self.group_id
+                )
+                if not campaign:
+                    return {"success": False, "message": "No active campaign."}
+                spreadsheet_id = campaign.spreadsheet_id
+
+            # Read locations
+            locs_result = read_sheet_sync(self.bot_data, spreadsheet_id, "'Locations'!A2:L100")
+            if not locs_result.get("success"):
+                return {"success": False, "message": "Failed to read locations"}
+
+            rows = locs_result.get("data", {}).get("values", [])
+            if not rows:
+                return {"success": False, "message": "No locations found. Generate locations first."}
+
+            # Parse locations
+            locations = []
+            for row in rows:
+                if row and row[0]:
+                    locations.append({
+                        "name": row[0],
+                        "type": row[1] if len(row) > 1 else "",
+                        "description": row[2] if len(row) > 2 else "",
+                        "index": int(row[5]) if len(row) > 5 and row[5] else len(locations) + 1,
+                        "difficulty_tier": 1,
+                        "is_starting": False,
+                        "is_ending": False,
+                    })
+
+            total_locations = len(locations)
+            manual_start = arguments.get("manual_start")
+            manual_end = arguments.get("manual_end")
+
+            # Roll for starting location
+            start_index = None
+            start_name = None
+            if manual_start:
+                for loc in locations:
+                    if loc["name"].lower() == manual_start.lower():
+                        start_index = loc["index"]
+                        start_name = loc["name"]
+                        break
+
+            if start_index is None:
+                roll_result = roll_dice(f"1d{total_locations}", "Starting location roll")
+                start_index = roll_result.get("total", 1)
+                for loc in locations:
+                    if loc["index"] == start_index:
+                        start_name = loc["name"]
+                        break
+
+            # Roll for ending location
+            end_index = None
+            end_name = None
+            if manual_end:
+                for loc in locations:
+                    if loc["name"].lower() == manual_end.lower():
+                        end_index = loc["index"]
+                        end_name = loc["name"]
+                        break
+
+            if end_index is None:
+                # Keep rolling until we get something different from start
+                attempts = 0
+                while end_index is None or end_index == start_index:
+                    roll_result = roll_dice(f"1d{total_locations}", "Ending location roll")
+                    end_index = roll_result.get("total", total_locations)
+                    attempts += 1
+                    if attempts > 10:  # Safety valve
+                        end_index = (start_index % total_locations) + 1
+                        break
+                for loc in locations:
+                    if loc["index"] == end_index:
+                        end_name = loc["name"]
+                        break
+
+            # Calculate difficulty tiers
+            locations = calculate_difficulty_tiers(locations, start_index, end_index)
+
+            # Update locations in spreadsheet
+            for i, loc in enumerate(locations):
+                row_num = i + 2  # +2 for header and 1-indexing
+                # Update Difficulty Tier, Is Starting, Is Ending columns (G, H, I)
+                update_range = f"'Locations'!G{row_num}:I{row_num}"
+                write_sheet_sync(
+                    self.bot_data, spreadsheet_id, update_range,
+                    [[str(loc["difficulty_tier"]), "Yes" if loc["is_starting"] else "No", "Yes" if loc["is_ending"] else "No"]]
+                )
+
+            # Update Overview
+            self._update_overview_field(spreadsheet_id, "Starting Location", start_name)
+            self._update_overview_field(spreadsheet_id, "Ending Location", end_name)
+            self._update_overview_field(spreadsheet_id, "Campaign Phase", "npc_generation")
+
+            # Build message
+            tier_summary = []
+            for tier in range(1, 6):
+                tier_locs = [loc["name"] for loc in locations if loc["difficulty_tier"] == tier]
+                if tier_locs:
+                    tier_summary.append(f"Tier {tier}: {', '.join(tier_locs)}")
+
+            message = f"**Route Determined!**\n\n"
+            message += f"**Starting Point:** {start_name} (rolled {start_index})\n"
+            message += f"**Final Destination:** {end_name} (rolled {end_index})\n\n"
+            message += "**Difficulty Scaling:**\n" + "\n".join(tier_summary)
+            message += f"\n\n*The starting location has easier enemies (Tier 1), while the final location has the toughest challenges (Tier 5).*"
+            message += "\n\n*Ready to populate each location with NPCs!*"
+
+            return {
+                "success": True,
+                "data": {
+                    "start_location": start_name,
+                    "end_location": end_name,
+                    "start_index": start_index,
+                    "end_index": end_index,
+                    "locations": locations
+                },
+                "message": message
+            }
+
+        except Exception as e:
+            logger.error(f"Error assigning route: {e}")
+            return {"success": False, "message": f"Error assigning route: {str(e)}"}
+
+    def _execute_generate_npcs_for_location(self, arguments: dict) -> dict:
+        """Auto-generate NPCs for a specific location."""
+        try:
+            if not self.bot_data.get('dnd_enabled'):
+                return {"success": False, "message": "D&D tools are not enabled for this bot"}
+
+            from signal_bot.google_sheets_client import read_sheet_sync, append_to_sheet_sync, _flask_app
+            from signal_bot.dnd_client import generate_npcs_for_location, npc_to_row
+            from signal_bot.models import DndCampaignRegistry
+
+            if not _flask_app:
+                return {"success": False, "message": "Flask app not initialized for database access"}
+
+            location_name = arguments.get("location_name")
+            if not location_name:
+                return {"success": False, "message": "Location name is required"}
+
+            # Get active campaign
+            with _flask_app.app_context():
+                campaign = DndCampaignRegistry.get_active_campaign(
+                    self.bot_data['id'], self.group_id
+                )
+                if not campaign:
+                    return {"success": False, "message": "No active campaign."}
+                spreadsheet_id = campaign.spreadsheet_id
+
+            # Find the location
+            locs_result = read_sheet_sync(self.bot_data, spreadsheet_id, "'Locations'!A2:L100")
+            if not locs_result.get("success"):
+                return {"success": False, "message": "Failed to read locations"}
+
+            location = None
+            for row in locs_result.get("data", {}).get("values", []):
+                if row and row[0].lower() == location_name.lower():
+                    location = {
+                        "name": row[0],
+                        "type": row[1] if len(row) > 1 else "default",
+                        "description": row[2] if len(row) > 2 else "",
+                        "difficulty_tier": int(row[6]) if len(row) > 6 and row[6] else 1,
+                    }
+                    break
+
+            if not location:
+                return {"success": False, "message": f"Location '{location_name}' not found"}
+
+            # Generate NPCs
+            npcs = generate_npcs_for_location(location, location["difficulty_tier"])
+
+            # Save NPCs
+            saved_count = 0
+            for npc in npcs:
+                row = npc_to_row(npc, "0")
+                result = append_to_sheet_sync(
+                    self.bot_data, spreadsheet_id, row,
+                    added_by="D&D GM", include_metadata=False,
+                    sheet_name="NPCs"
+                )
+                if result.get("success"):
+                    saved_count += 1
+
+            # Build message
+            npc_by_type = {"friendly": [], "neutral": [], "hostile": [], "quest_giver": [], "boss": [], "general": []}
+            for npc in npcs:
+                rel = npc.get("relationship", "neutral")
+                if rel in npc_by_type:
+                    combat_info = ""
+                    if npc.get("combat_stats"):
+                        stats = npc["combat_stats"]
+                        combat_info = f" (HP: {stats['hp']}, AC: {stats['ac']}, +{stats['attack_bonus']} to hit)"
+                    npc_by_type[rel].append(f"{npc['name']} - {npc['role']}{combat_info}")
+                else:
+                    npc_by_type["neutral"].append(f"{npc['name']} - {npc['role']}")
+
+            message = f"**NPCs Generated for {location_name}:**\n\n"
+            if npc_by_type["friendly"]:
+                message += "**Friendly:**\n" + "\n".join([f"  - {n}" for n in npc_by_type["friendly"]]) + "\n\n"
+            if npc_by_type["quest_giver"]:
+                message += "**Quest Givers:**\n" + "\n".join([f"  - {n}" for n in npc_by_type["quest_giver"]]) + "\n\n"
+            if npc_by_type["neutral"]:
+                message += "**Neutral:**\n" + "\n".join([f"  - {n}" for n in npc_by_type["neutral"]]) + "\n\n"
+            if npc_by_type["hostile"]:
+                message += "**Hostile (Combat Stats):**\n" + "\n".join([f"  - {n}" for n in npc_by_type["hostile"]]) + "\n\n"
+            if npc_by_type["boss"]:
+                message += "**Boss:**\n" + "\n".join([f"  - {n}" for n in npc_by_type["boss"]]) + "\n\n"
+            if npc_by_type["general"]:
+                message += "**Background:**\n" + "\n".join([f"  - {n}" for n in npc_by_type["general"]]) + "\n"
+
+            message += f"\n*{saved_count} NPCs saved to campaign.*"
+
+            return {
+                "success": True,
+                "data": {"npcs": npcs, "saved_count": saved_count, "location": location_name},
+                "message": message
+            }
+
+        except Exception as e:
+            logger.error(f"Error generating NPCs: {e}")
+            return {"success": False, "message": f"Error generating NPCs: {str(e)}"}
+
+    def _execute_finalize_starting_items(self, arguments: dict) -> dict:
+        """Confirm starting equipment and add special items."""
+        try:
+            if not self.bot_data.get('dnd_enabled'):
+                return {"success": False, "message": "D&D tools are not enabled for this bot"}
+
+            from signal_bot.google_sheets_client import read_sheet_sync, append_to_sheet_sync, _flask_app
+            from signal_bot.models import DndCampaignRegistry
+
+            if not _flask_app:
+                return {"success": False, "message": "Flask app not initialized for database access"}
+
+            special_items = arguments.get("special_items", [])
+            confirm_ready = arguments.get("confirm_ready", False)
+
+            # Get active campaign
+            with _flask_app.app_context():
+                campaign = DndCampaignRegistry.get_active_campaign(
+                    self.bot_data['id'], self.group_id
+                )
+                if not campaign:
+                    return {"success": False, "message": "No active campaign."}
+                spreadsheet_id = campaign.spreadsheet_id
+
+            # Read characters to get their equipment
+            chars_result = read_sheet_sync(self.bot_data, spreadsheet_id, "'Characters'!A2:AE100")
+            characters = []
+            if chars_result.get("success") and chars_result.get("data", {}).get("values"):
+                for row in chars_result["data"]["values"]:
+                    if row and row[0]:
+                        import json
+                        try:
+                            equipment = json.loads(row[21]) if len(row) > 21 and row[21] else []
+                        except:
+                            equipment = []
+                        characters.append({
+                            "player_name": row[0],
+                            "character_name": row[1] if len(row) > 1 else "",
+                            "equipment": equipment
+                        })
+
+            # Add character equipment to Items sheet if not already there
+            items_result = read_sheet_sync(self.bot_data, spreadsheet_id, "'Items'!A2:G100")
+            existing_items = set()
+            if items_result.get("success") and items_result.get("data", {}).get("values"):
+                for row in items_result["data"]["values"]:
+                    if row and row[0]:
+                        owner = row[3] if len(row) > 3 else ""
+                        existing_items.add(f"{row[0]}|{owner}")
+
+            items_added = 0
+            for char in characters:
+                for item in char.get("equipment", []):
+                    item_key = f"{item}|{char['character_name']}"
+                    if item_key not in existing_items:
+                        item_row = [
+                            item,  # Name
+                            "Equipment",  # Type
+                            "",  # Description
+                            char["character_name"],  # Owner
+                            "Yes",  # Is Starting Gear
+                            "0",  # Acquired (Session)
+                            ""  # Notes
+                        ]
+                        append_to_sheet_sync(
+                            self.bot_data, spreadsheet_id, item_row,
+                            added_by="D&D GM", include_metadata=False,
+                            sheet_name="Items"
+                        )
+                        items_added += 1
+
+            # Add special items
+            special_added = 0
+            for item in special_items:
+                item_row = [
+                    item.get("name", "Unknown Item"),
+                    item.get("type", "Special"),
+                    item.get("description", ""),
+                    item.get("owner", "Party"),
+                    "Yes",
+                    "0",
+                    "Special starting item"
+                ]
+                append_to_sheet_sync(
+                    self.bot_data, spreadsheet_id, item_row,
+                    added_by="D&D GM", include_metadata=False,
+                    sheet_name="Items"
+                )
+                special_added += 1
+
+            # Update phase if confirmed ready
+            if confirm_ready:
+                self._update_overview_field(spreadsheet_id, "Campaign Phase", "ready_to_play")
+
+            message = f"**Starting Items Finalized!**\n\n"
+            message += f"- Added {items_added} equipment items from characters\n"
+            if special_added > 0:
+                message += f"- Added {special_added} special items\n"
+            message += f"\n**Party Members:**\n"
+            for char in characters:
+                message += f"  - {char['character_name']} ({char['player_name']})\n"
+
+            if confirm_ready:
+                message += "\n**Campaign setup complete! Ready to begin the adventure!**"
+            else:
+                message += "\n*Add any special items or confirm ready to begin.*"
+
+            return {
+                "success": True,
+                "data": {
+                    "items_added": items_added,
+                    "special_added": special_added,
+                    "ready": confirm_ready
+                },
+                "message": message
+            }
+
+        except Exception as e:
+            logger.error(f"Error finalizing items: {e}")
+            return {"success": False, "message": f"Error finalizing items: {str(e)}"}
+
+    def _execute_update_campaign_phase(self, arguments: dict) -> dict:
+        """Update the campaign's current phase."""
+        try:
+            if not self.bot_data.get('dnd_enabled'):
+                return {"success": False, "message": "D&D tools are not enabled for this bot"}
+
+            from signal_bot.google_sheets_client import _flask_app
+            from signal_bot.models import DndCampaignRegistry
+            from signal_bot.dnd_client import CAMPAIGN_PHASES
+
+            if not _flask_app:
+                return {"success": False, "message": "Flask app not initialized for database access"}
+
+            phase = arguments.get("phase")
+            if not phase or phase not in CAMPAIGN_PHASES:
+                return {"success": False, "message": f"Invalid phase. Must be one of: {', '.join(CAMPAIGN_PHASES)}"}
+
+            # Get active campaign
+            with _flask_app.app_context():
+                campaign = DndCampaignRegistry.get_active_campaign(
+                    self.bot_data['id'], self.group_id
+                )
+                if not campaign:
+                    return {"success": False, "message": "No active campaign."}
+                spreadsheet_id = campaign.spreadsheet_id
+
+            # Update phase
+            self._update_overview_field(spreadsheet_id, "Campaign Phase", phase)
+
+            phase_messages = {
+                "world_building": "Setting up campaign world...",
+                "location_creation": "Creating locations for the campaign...",
+                "route_determination": "Determining adventure route...",
+                "npc_generation": "Populating locations with NPCs...",
+                "character_creation": "Creating player characters...",
+                "item_setup": "Finalizing starting equipment...",
+                "ready_to_play": "Campaign setup complete! Ready to begin!",
+                "in_progress": "Adventure in progress!",
+            }
+
+            return {
+                "success": True,
+                "data": {"phase": phase},
+                "message": f"Campaign phase updated to: **{phase}**\n{phase_messages.get(phase, '')}"
+            }
+
+        except Exception as e:
+            logger.error(f"Error updating phase: {e}")
+            return {"success": False, "message": f"Error updating phase: {str(e)}"}
+
+    def _update_overview_field(self, spreadsheet_id: str, field: str, value: str) -> bool:
+        """Helper to update a single field in the Overview sheet."""
+        try:
+            from signal_bot.google_sheets_client import read_sheet_sync, write_sheet_sync
+
+            # Read current overview
+            result = read_sheet_sync(self.bot_data, spreadsheet_id, "'Overview'!A2:B20")
+            if not result.get("success"):
+                return False
+
+            rows = result.get("data", {}).get("values", [])
+            row_index = None
+            for i, row in enumerate(rows):
+                if row and row[0] == field:
+                    row_index = i + 2  # +2 for header and 1-indexing
+                    break
+
+            if row_index:
+                write_sheet_sync(
+                    self.bot_data, spreadsheet_id,
+                    f"'Overview'!B{row_index}",
+                    [[value]]
+                )
+                return True
+            return False
+
+        except Exception as e:
+            logger.error(f"Error updating overview field: {e}")
+            return False
 

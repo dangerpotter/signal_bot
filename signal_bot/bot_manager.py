@@ -184,6 +184,11 @@ class SignalBotManager:
                 'member_memory_tools_enabled': getattr(bot, 'member_memory_tools_enabled', False),
                 'member_memory_model': getattr(bot, 'member_memory_model', None),
                 'context_window': getattr(bot, 'context_window', 25),
+                # Scheduled triggers
+                'triggers_enabled': getattr(bot, 'triggers_enabled', True),
+                'max_triggers': getattr(bot, 'max_triggers', 10),
+                # D&D Game Master
+                'dnd_enabled': getattr(bot, 'dnd_enabled', False),
             }
 
         # Create task to listen for messages

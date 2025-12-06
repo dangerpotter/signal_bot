@@ -7,6 +7,7 @@ Combines all tool execution mixins into a single class.
 import logging
 from typing import Callable, Optional
 
+from tool_schemas import ALL_META_CATEGORIES, FINANCE_CATEGORIES, SHEETS_CATEGORIES
 from .base import SignalToolExecutorBase
 from .basic_tools import BasicToolsMixin
 from .finance_executor import FinanceToolsMixin
@@ -383,6 +384,18 @@ class SignalToolExecutor(
             return self._execute_add_location(arguments)
         if function_name == "list_campaigns":
             return self._execute_list_campaigns(arguments)
+        if function_name == "generate_locations":
+            return self._execute_generate_locations(arguments)
+        if function_name == "save_locations":
+            return self._execute_save_locations(arguments)
+        if function_name == "assign_route":
+            return self._execute_assign_route(arguments)
+        if function_name == "generate_npcs_for_location":
+            return self._execute_generate_npcs_for_location(arguments)
+        if function_name == "finalize_starting_items":
+            return self._execute_finalize_starting_items(arguments)
+        if function_name == "update_campaign_phase":
+            return self._execute_update_campaign_phase(arguments)
 
         if function_name != "generate_image":
             return {"success": False, "message": f"Unsupported function: {function_name}"}

@@ -5,12 +5,18 @@ Contains Google Calendar and scheduled trigger tool methods.
 """
 
 import logging
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 
 class CalendarTriggersMixin:
     """Mixin providing Google Calendar and trigger tool execution methods."""
+
+    # Type hints for attributes provided by SignalToolExecutorBase
+    bot_data: dict
+    group_id: str
+    sender_name: Optional[str]
 
     def _calendar_enabled(self) -> bool:
         """Check if Google Calendar is enabled and connected."""
@@ -481,7 +487,8 @@ class CalendarTriggersMixin:
 
             # Format schedule description
             if trigger_mode == "once":
-                schedule_desc = f"at {trigger.next_fire_time.strftime('%Y-%m-%d %H:%M')} UTC"
+                fire_time_str = trigger.next_fire_time.strftime('%Y-%m-%d %H:%M') if trigger.next_fire_time else 'unknown'
+                schedule_desc = f"at {fire_time_str} UTC"
             else:
                 pattern = trigger.recurrence_pattern
                 interval = trigger.recurrence_interval

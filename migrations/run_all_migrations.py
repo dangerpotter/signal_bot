@@ -30,6 +30,8 @@ from migrations import migrate_member_memory_model
 from migrations import migrate_member_memory_tools
 from migrations import migrate_google_calendar
 from migrations import migrate_triggers
+from migrations import migrate_dnd_support
+from migrations import migrate_dnd_template
 
 
 MIGRATIONS = [
@@ -46,6 +48,8 @@ MIGRATIONS = [
     ("member_memory_tools", migrate_member_memory_tools),
     ("google_calendar", migrate_google_calendar),
     ("triggers", migrate_triggers),
+    ("dnd_support", migrate_dnd_support),
+    ("dnd_template", migrate_dnd_template),
 ]
 
 

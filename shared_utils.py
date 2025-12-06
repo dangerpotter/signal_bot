@@ -2,17 +2,16 @@
 
 import requests
 import logging
-import replicate
 import openai
 import time
 import json
 import os
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
+from urllib.parse import quote as url_quote
 from dotenv import load_dotenv
-from anthropic import Anthropic
 import base64
-from together import Together
 from openai import OpenAI
 import re
 try:
@@ -22,9 +21,6 @@ except ImportError:
 
 # Load environment variables
 load_dotenv()
-
-# Initialize Anthropic client with API key
-anthropic = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 
 # Initialize OpenAI client
 openai_client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
@@ -52,7 +48,7 @@ def call_openrouter_api_structured(
     system_prompt: str,
     json_schema: dict,
     schema_name: str = "response",
-    conversation_history: list = None
+    conversation_history: Optional[list] = None
 ) -> dict | None:
     """Call OpenRouter API with guaranteed JSON schema response.
 
@@ -273,46 +269,6 @@ def call_claude_api(prompt, messages, model_id, system_prompt=None, stream_callb
     except Exception as e:
         return f"Error calling Claude API: {str(e)}"
 
-def call_llama_api(prompt, conversation_history, model, system_prompt):
-    # Only use the last 3 exchanges to prevent context length issues
-    recent_history = conversation_history[-10:] if len(conversation_history) > 10 else conversation_history
-    
-    # Format the conversation history for LLaMA
-    formatted_history = ""
-    for message in recent_history:
-        if message["role"] == "user":
-            formatted_history += f"Human: {message['content']}\n"
-        else:
-            formatted_history += f"Assistant: {message['content']}\n"
-    formatted_history += f"Human: {prompt}\nAssistant:"
-
-    try:
-        # Stream the output and collect it piece by piece
-        response_chunks = []
-        for chunk in replicate.run(
-            model,
-            input={
-                "prompt": formatted_history,
-                "system_prompt": system_prompt,
-                "max_tokens": 3000,
-                "temperature": 1.1,
-                "top_p": 0.99,
-                "repetition_penalty": 1.0
-            },
-            stream=True  # Enable streaming
-        ):
-            if chunk is not None:
-                response_chunks.append(chunk)
-                # Print each chunk as it arrives
-                # print(chunk, end='', flush=True)
-        
-        # Join all chunks for the final response
-        response = ''.join(response_chunks)
-        return response
-    except Exception as e:
-        print(f"Error calling LLaMA API: {e}")
-        return None
-
 def call_openai_api(prompt, conversation_history, model, system_prompt):
     try:
         messages = []
@@ -498,7 +454,7 @@ def call_openrouter_responses_api(
         })
 
         # Build tools array - always include web_search, add function tools if provided
-        api_tools = [{"type": "web_search"}]
+        api_tools: list[dict] = [{"type": "web_search"}]
         if tools:
             # Convert OpenAI-style tools to Responses API format
             for tool in tools:
@@ -1335,12 +1291,17 @@ def call_openrouter_api(
             return result
         
         # Check if error is due to model not supporting images
+        # result is a tuple (status_code, error_text) when success is False
+        if not isinstance(result, tuple):
+            return f"Error: Unexpected result type"
         status_code, error_text = result
         if status_code == 404 and "support image" in error_text.lower():
             print(f"[OpenRouter] Model {model} doesn't support images, retrying without images...")
             success, result = make_api_call(include_images=False)
             if success:
                 return result
+            if not isinstance(result, tuple):
+                return f"Error: Unexpected result type"
             status_code, error_text = result
 
         # Handle 429 rate limit with exponential backoff retry
@@ -1386,52 +1347,6 @@ def call_openrouter_api(
         print(f"Error calling OpenRouter API: {e}")
         print(f"Error type: {type(e)}")
         return f"Error: {str(e)}"
-
-def call_replicate_api(prompt, conversation_history, model, gui=None):
-    try:
-        # Only use the prompt, ignore conversation history
-        input_params = {
-            "width": 1024,
-            "height": 1024,
-            "prompt": prompt
-        }
-        
-        output = replicate.run(
-            "black-forest-labs/flux-1.1-pro",
-            input=input_params
-        )
-        
-        image_url = str(output)
-        
-        # Save the image locally (include microseconds to avoid collisions)
-        image_dir = Path("images")
-        image_dir.mkdir(exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        image_path = image_dir / f"generated_{timestamp}.jpg"
-        
-        response = requests.get(image_url)
-        with open(image_path, "wb") as f:
-            f.write(response.content)
-        
-        if gui:
-            gui.display_image(image_url)
-        
-        return {
-            "role": "assistant",
-            "content": [
-                {
-                    "type": "text",
-                    "text": "I have generated an image based on your prompt."
-                }
-            ],
-            "prompt": prompt,
-            "image_url": image_url,
-            "image_path": str(image_path)
-        }
-        
-    except Exception as e:
-        print(f"Error calling Flux API: {e}")
-        return None
 
 def call_deepseek_api(prompt, conversation_history, model, system_prompt, stream_callback=None):
     """Call the DeepSeek model through OpenRouter API."""
@@ -1622,34 +1537,6 @@ def print_conversation_state(conversation):
             preview = f"[structured content with {len(content)} parts]"
         print(f"{message['role']}: {preview}")
 
-def call_claude_vision_api(image_url):
-    """Have Claude analyze the generated image"""
-    try:
-        response = anthropic.messages.create(
-            model="claude-3-opus-20240229",
-            max_tokens=1000,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": "Describe this image in detail. What works well and what could be improved?"
-                    },
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "url",
-                            "url": image_url
-                        }
-                    }
-                ]
-            }]
-        )
-        return response.content[0].text
-    except Exception as e:
-        print(f"Error in vision analysis: {e}")
-        return None
-
 def list_together_models():
     try:
         headers = {
@@ -1681,7 +1568,7 @@ def start_together_model(model_id):
         }
         
         # URL encode the model ID
-        encoded_model = requests.utils.quote(model_id, safe='')
+        encoded_model = url_quote(model_id, safe='')
         start_url = f"https://api.together.xyz/v1/models/{encoded_model}/start"
         
         print(f"\nAttempting to start model: {model_id}")

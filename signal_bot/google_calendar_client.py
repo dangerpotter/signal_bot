@@ -585,7 +585,7 @@ def create_calendar_sync(
     title: str,
     description: str = "",
     timezone: str = "UTC",
-    created_by: str = None,
+    created_by: Optional[str] = None,
     make_public: bool = True
 ) -> dict:
     """Create a new calendar and register it in the database."""

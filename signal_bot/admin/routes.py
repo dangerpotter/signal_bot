@@ -162,6 +162,10 @@ def register_routes(app):
             bot.triggers_enabled = request.form.get("triggers_enabled") == "on"
             bot.max_triggers = int(request.form.get("max_triggers", 10))
 
+            # D&D Game Master settings
+            bot.dnd_enabled = request.form.get("dnd_enabled") == "on"
+            bot.dnd_template_spreadsheet_id = request.form.get("dnd_template_spreadsheet_id", "").strip() or None
+
             db.session.commit()
             _log_activity("bot_updated", bot_id, None, f"Bot '{bot.name}' settings updated")
             flash(f"Bot '{bot.name}' updated successfully", "success")

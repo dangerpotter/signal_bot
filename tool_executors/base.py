@@ -53,13 +53,13 @@ class SignalToolExecutorBase:
 
     def _sheets_enabled(self) -> bool:
         """Check if Google Sheets is enabled for this bot."""
-        return bool(self.bot_data.get('sheets_enabled') and self.bot_data.get('google_access_token'))
+        return bool(self.bot_data.get('google_sheets_enabled') and self.bot_data.get('google_connected'))
 
     def _calendar_enabled(self) -> bool:
         """Check if Google Calendar is enabled for this bot."""
-        return bool(self.bot_data.get('calendar_enabled') and self.bot_data.get('google_access_token'))
+        return bool(self.bot_data.get('google_calendar_enabled') and self.bot_data.get('google_connected'))
 
-    def _handle_meta_tool(self, function_name: str, arguments: dict) -> dict:
+    def _handle_meta_tool(self, function_name: str, arguments: dict) -> Optional[dict]:
         """
         Handle two-phase meta-tool expansion.
 
