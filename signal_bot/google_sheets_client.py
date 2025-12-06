@@ -33,10 +33,10 @@ GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 SHEETS_API_BASE = "https://sheets.googleapis.com/v4/spreadsheets"
 DRIVE_API_BASE = "https://www.googleapis.com/drive/v3"
 
-# OAuth scopes - limited access (only files created by app)
+# OAuth scopes - drive scope required to copy templates not created by app
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/drive",  # Full drive access (needed to copy user's template)
     "https://www.googleapis.com/auth/calendar",  # Google Calendar integration
 ]
 
