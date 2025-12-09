@@ -248,7 +248,7 @@ class MessageHandler:
             # Import shared_utils for API calls
             from shared_utils import call_openrouter_api
             from config import AI_MODELS, OPENROUTER_TOOL_CALLING_ENABLED
-            from tool_schemas import get_tools_for_context, model_supports_tools
+            from tool_schemas import get_tools_for_context, model_supports_tools, route_tools_for_message
             from tool_executor import SignalToolExecutor
         except ImportError as e:
             logger.error(f"Failed to import shared_utils: {e}")
@@ -384,31 +384,45 @@ class MessageHandler:
             else:
                 prompt_content = trigger_message
 
-            # Two-phase meta-tool expansion loop
+            # Two-phase meta-tool expansion loop with fast-path routing
             expanded_categories = {}  # Track expanded categories: {"finance": {"finance_quotes"}, "sheets": {"sheets_core"}}
             expansion_intents = []  # Track intents from meta-tool calls for context in retry
             max_expansions = 5  # Allow multiple sheet categories + finance + retries
+            fast_path_used = False
+            fast_path_domain = None
 
             for expansion_iteration in range(max_expansions + 1):
                 if (OPENROUTER_TOOL_CALLING_ENABLED and
                     any_tools_enabled and
                     model_supports_tools(model_id)):
 
-                    use_tools = get_tools_for_context(
-                        context="signal",
-                        image_enabled=image_enabled,
-                        weather_enabled=weather_enabled,
-                        finance_enabled=finance_enabled,
-                        time_enabled=time_enabled,
-                        wikipedia_enabled=wikipedia_enabled,
-                        reaction_enabled=reaction_enabled,
-                        sheets_enabled=sheets_enabled,
-                        calendar_enabled=calendar_enabled,
-                        member_memory_enabled=member_memory_tools_enabled,
-                        triggers_enabled=triggers_enabled,
-                        dnd_enabled=dnd_enabled,
-                        expanded_categories=expanded_categories
-                    )
+                    # First iteration: try fast-path routing based on message content
+                    if expansion_iteration == 0:
+                        use_tools, fast_path_used, fast_path_domain = route_tools_for_message(
+                            message=trigger_message,
+                            bot_data=bot_data,
+                            expanded_categories=expanded_categories
+                        )
+                        if fast_path_used:
+                            logger.info(f"Fast-path routed to '{fast_path_domain}' for {bot_data.get('name')}")
+                    else:
+                        # Subsequent iterations: use standard expansion (fast-path wasn't used or meta-tool expansion triggered)
+                        use_tools = get_tools_for_context(
+                            context="signal",
+                            image_enabled=image_enabled,
+                            weather_enabled=weather_enabled,
+                            finance_enabled=finance_enabled,
+                            time_enabled=time_enabled,
+                            wikipedia_enabled=wikipedia_enabled,
+                            reaction_enabled=reaction_enabled,
+                            sheets_enabled=sheets_enabled,
+                            calendar_enabled=calendar_enabled,
+                            member_memory_enabled=member_memory_tools_enabled,
+                            triggers_enabled=triggers_enabled,
+                            dnd_enabled=dnd_enabled,
+                            expanded_categories=expanded_categories
+                        )
+
                     signal_executor = SignalToolExecutor(
                         bot_data=bot_data,
                         group_id=group_id,

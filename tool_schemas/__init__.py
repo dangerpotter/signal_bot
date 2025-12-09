@@ -60,6 +60,13 @@ from .helpers import (
     model_supports_tools,
 )
 
+# Fast-path routing
+from .routing import (
+    route_tools_for_message,
+    detect_tool_domains,
+    get_fast_path_tools,
+)
+
 __all__ = [
     # Constants
     'AVAILABLE_MODELS',
@@ -91,4 +98,8 @@ __all__ = [
     'get_sheets_tools_for_category',
     'get_tools_for_context',
     'model_supports_tools',
+    # Routing
+    'route_tools_for_message',
+    'detect_tool_domains',
+    'get_fast_path_tools',
 ]
