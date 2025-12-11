@@ -14,6 +14,7 @@ HIGH_CONFIDENCE_KEYWORDS = {
     "time": {"timezone", "unix timestamp"},
     "wikipedia": {"wikipedia", "wiki article"},
     "dice": {"roll dice", "d20", "d6", "d4", "d8", "d10", "d12", "advantage", "disadvantage"},
+    "chat_log": {"chat log", "chat history", "conversation history", "search history"},
 }
 
 # MEDIUM-CONFIDENCE: Only fast-path if no competing context
@@ -79,11 +80,13 @@ def get_fast_path_tools(domain: str, bot_data: dict) -> Optional[list]:
 
     Returns None if the domain is not enabled in bot_data.
     Always includes DICE_TOOLS (always-on).
+    Includes REACTION_TOOL if enabled (cross-cutting feature).
     """
-    from .basic_tools import WEATHER_TOOL, TIME_TOOLS, WIKIPEDIA_TOOLS, DICE_TOOLS
+    from .basic_tools import WEATHER_TOOL, TIME_TOOLS, WIKIPEDIA_TOOLS, DICE_TOOLS, REACTION_TOOL
     from .calendar_tools import CALENDAR_TOOLS
     from .trigger_tools import TRIGGER_TOOLS
     from .finance_tools import FINANCE_TOOLS
+    from .chat_log_tools import CHAT_LOG_TOOLS
 
     # Check if domain is enabled
     enabled_map = {
@@ -95,6 +98,7 @@ def get_fast_path_tools(domain: str, bot_data: dict) -> Optional[list]:
         "finance": bot_data.get("finance_enabled"),
         "sheets": bot_data.get("google_sheets_enabled") and bot_data.get("google_connected"),
         "triggers": bot_data.get("triggers_enabled"),
+        "chat_log": bot_data.get("chat_log_enabled"),
     }
 
     if not enabled_map.get(domain, False):
@@ -109,6 +113,7 @@ def get_fast_path_tools(domain: str, bot_data: dict) -> Optional[list]:
         "dice": list(DICE_TOOLS),
         "triggers": list(TRIGGER_TOOLS),
         "finance": list(FINANCE_TOOLS),  # All 11 tools - skip meta expansion!
+        "chat_log": list(CHAT_LOG_TOOLS),
     }
 
     # Sheets: conservative fast-path - pre-expand sheets_core only
@@ -116,7 +121,10 @@ def get_fast_path_tools(domain: str, bot_data: dict) -> Optional[list]:
         from .helpers import get_sheets_tools_for_category, get_sheets_meta_tools
         core_tools = get_sheets_tools_for_category("sheets_core")
         other_metas = [m for m in get_sheets_meta_tools() if m["function"]["name"] != "sheets_core"]
-        return core_tools + other_metas + list(DICE_TOOLS)
+        tools = core_tools + other_metas + list(DICE_TOOLS)
+        if bot_data.get("reaction_tool_enabled"):
+            tools.append(REACTION_TOOL)
+        return tools
 
     # Get base tools for domain
     base_tools = tool_map.get(domain, [])
@@ -124,6 +132,10 @@ def get_fast_path_tools(domain: str, bot_data: dict) -> Optional[list]:
     # Always include dice (unless domain IS dice)
     if domain != "dice":
         base_tools = base_tools + list(DICE_TOOLS)
+
+    # Include reaction tool if enabled (cross-cutting feature)
+    if bot_data.get("reaction_tool_enabled"):
+        base_tools = base_tools + [REACTION_TOOL]
 
     return base_tools
 
@@ -176,6 +188,7 @@ def route_tools_for_message(
         member_memory_enabled=bot_data.get("member_memory_tools_enabled", False),
         triggers_enabled=bot_data.get("triggers_enabled", True),
         dnd_enabled=dnd_enabled,
+        chat_log_enabled=bot_data.get("chat_log_enabled", False),
         expanded_categories=expanded_categories
     )
     return tools, False, None
