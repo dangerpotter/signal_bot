@@ -11,8 +11,6 @@ DB_PATH = BASE_DIR / "signal_bot.db"
 # Default settings
 DEFAULT_ROLLING_WINDOW = 25  # Messages to keep in context
 DEFAULT_RANDOM_CHANCE = 15   # % chance to respond randomly
-LONG_TERM_SAVE_CHANCE = 10   # % chance to save a memorable snippet
-LONG_TERM_RECALL_CHANCE = 5  # % chance to reference old memory
 
 # Real-time memory settings
 REALTIME_MEMORY_ENABLED = True  # Enable instant memory saves when user says "remember..."
@@ -37,3 +35,10 @@ FLASK_HOST = "0.0.0.0"
 FLASK_PORT = 5000
 FLASK_DEBUG = os.getenv("FLASK_DEBUG", "false").lower() == "true"
 SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "change-me-in-production")
+
+# WebSocket configuration for json-rpc mode
+WEBSOCKET_ENABLED = True  # Master toggle for WebSocket support
+WEBSOCKET_RECONNECT_DELAY = 1.0  # Initial reconnect delay in seconds
+WEBSOCKET_MAX_RECONNECT_DELAY = 60.0  # Max reconnect delay (exponential backoff cap)
+WEBSOCKET_PING_INTERVAL = 20.0  # Send ping every N seconds to keep connection alive
+WEBSOCKET_PING_TIMEOUT = 10.0  # Consider connection dead if no pong in N seconds

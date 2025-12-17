@@ -15,6 +15,7 @@ from .sheets_core import SheetsCoreMixin
 from .sheets_advanced import SheetsAdvancedMixin
 from .calendar_executor import CalendarTriggersMixin
 from .dnd_executor import DndToolsMixin
+from .chat_log_executor import ChatLogToolsMixin
 
 logger = logging.getLogger(__name__)
 
@@ -26,13 +27,14 @@ class SignalToolExecutor(
     SheetsCoreMixin,
     SheetsAdvancedMixin,
     CalendarTriggersMixin,
-    DndToolsMixin
+    DndToolsMixin,
+    ChatLogToolsMixin
 ):
     """
     Executes tool calls for the Signal bot.
     Supports image generation, weather, time, wikipedia, finance, emoji reactions, Google Sheets,
-    Google Calendar, scheduled triggers, and D&D game master tools.
-    
+    Google Calendar, scheduled triggers, D&D game master, and chat log search tools.
+
     Inherits implementation methods from mixins:
     - BasicToolsMixin: Weather, time, Wikipedia, dice, reactions
     - FinanceToolsMixin: Stock quotes, news, financials
@@ -40,6 +42,7 @@ class SignalToolExecutor(
     - SheetsAdvancedMixin: Charts, pivots, protection, groups
     - CalendarTriggersMixin: Calendar and scheduled triggers
     - DndToolsMixin: D&D campaign management
+    - ChatLogToolsMixin: Chat log search and summaries
     """
 
     def execute(self, function_name: str, arguments: dict) -> dict:
@@ -348,6 +351,8 @@ class SignalToolExecutor(
             return self._execute_get_member_memories(arguments)
         if function_name == "list_group_members":
             return self._execute_list_group_members(arguments)
+        if function_name == "delete_member_memory":
+            return self._execute_delete_member_memory(arguments)
 
         # Trigger tools
         if function_name == "create_trigger":
@@ -396,6 +401,16 @@ class SignalToolExecutor(
             return self._execute_finalize_starting_items(arguments)
         if function_name == "update_campaign_phase":
             return self._execute_update_campaign_phase(arguments)
+        if function_name == "complete_turn":
+            return self._execute_complete_turn(arguments)
+        if function_name == "log_event":
+            return self._execute_log_event(arguments)
+
+        # Chat log search tools
+        if function_name == "search_chat_log":
+            return self._execute_search_chat_log(arguments)
+        if function_name == "get_chat_log_summary":
+            return self._execute_get_chat_log_summary(arguments)
 
         if function_name != "generate_image":
             return {"success": False, "message": f"Unsupported function: {function_name}"}
@@ -410,7 +425,9 @@ class SignalToolExecutor(
         try:
             from shared_utils import generate_image_from_text
 
-            result = generate_image_from_text(prompt)
+            # Get image model from bot settings, fall back to default
+            image_model = self.bot_data.get('image_model') or "google/gemini-3-pro-image-preview"
+            result = generate_image_from_text(prompt, model=image_model)
 
             if result and result.get("success"):
                 image_path = result.get("image_path")

@@ -14,6 +14,7 @@ class Bot(db.Model):
     name = db.Column(db.String(100), nullable=False)
     model = db.Column(db.String(100), nullable=False)  # AI model name from config.AI_MODELS
     phone_number = db.Column(db.String(20), unique=True, nullable=True)
+    signal_uuid = db.Column(db.String(64), nullable=True)  # Signal UUID for mention matching
     signal_api_port = db.Column(db.Integer, default=8080)  # Which Docker container
     enabled = db.Column(db.Boolean, default=False)
 
@@ -22,6 +23,7 @@ class Bot(db.Model):
     respond_on_mention = db.Column(db.Boolean, default=True)
     random_chance_percent = db.Column(db.Integer, default=15)  # 0-100
     image_generation_enabled = db.Column(db.Boolean, default=True)
+    image_model = db.Column(db.String(255), nullable=True)  # OpenRouter image model ID
     web_search_enabled = db.Column(db.Boolean, default=False)  # Enable OpenRouter web search
     weather_enabled = db.Column(db.Boolean, default=False)  # Enable weather tool (WeatherAPI.com)
     finance_enabled = db.Column(db.Boolean, default=False)  # Enable finance tools (Yahoo Finance)
@@ -73,6 +75,10 @@ class Bot(db.Model):
     dnd_enabled = db.Column(db.Boolean, default=False)  # Enable D&D GM tools for campaign management
     dnd_template_spreadsheet_id = db.Column(db.String(100), nullable=True)  # Google Sheets template ID for campaigns
 
+    # Chat Log settings
+    chat_log_enabled = db.Column(db.Boolean, default=False)  # Enable chat log search tool
+    chat_log_retention = db.Column(db.String(20), default='forever')  # '6h', '12h', '24h', '1w', '1m', '1y', 'forever'
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -85,12 +91,14 @@ class Bot(db.Model):
             "name": self.name,
             "model": self.model,
             "phone_number": self.phone_number,
+            "signal_uuid": self.signal_uuid,
             "signal_api_port": self.signal_api_port,
             "enabled": self.enabled,
             "system_prompt": self.system_prompt,
             "respond_on_mention": self.respond_on_mention,
             "random_chance_percent": self.random_chance_percent,
             "image_generation_enabled": self.image_generation_enabled,
+            "image_model": self.image_model,
             "web_search_enabled": self.web_search_enabled,
             "weather_enabled": self.weather_enabled,
             "finance_enabled": self.finance_enabled,
@@ -117,6 +125,8 @@ class Bot(db.Model):
             "max_triggers": self.max_triggers or 10,
             "dnd_enabled": self.dnd_enabled if self.dnd_enabled is not None else False,
             "dnd_template_spreadsheet_id": self.dnd_template_spreadsheet_id,
+            "chat_log_enabled": self.chat_log_enabled if self.chat_log_enabled is not None else False,
+            "chat_log_retention": self.chat_log_retention or 'forever',
         }
 
 
@@ -132,7 +142,6 @@ class GroupConnection(db.Model):
     # Relationships
     bot_assignments = db.relationship("BotGroupAssignment", back_populates="group", cascade="all, delete-orphan")
     messages = db.relationship("MessageLog", back_populates="group", cascade="all, delete-orphan")
-    memories = db.relationship("MemorySnippet", back_populates="group", cascade="all, delete-orphan")
 
     def to_dict(self):
         return {
@@ -232,31 +241,6 @@ class GroupMemberMemory(db.Model):
         return result
 
 
-class MemorySnippet(db.Model):
-    """Long-term memorable moments for 'remember when...' callbacks."""
-    __tablename__ = "memory_snippets"
-
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    group_id = db.Column(db.String(100), db.ForeignKey("groups.id"), nullable=False)
-    content = db.Column(db.Text, nullable=False)  # The memorable exchange
-    context = db.Column(db.Text, nullable=True)   # Who said what
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-    times_referenced = db.Column(db.Integer, default=0)
-
-    # Relationships
-    group = db.relationship("GroupConnection", back_populates="memories")
-
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "group_id": self.group_id,
-            "content": self.content,
-            "context": self.context,
-            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
-            "times_referenced": self.times_referenced,
-        }
-
-
 class MessageLog(db.Model):
     """Rolling message log for conversation context."""
     __tablename__ = "message_logs"
@@ -269,6 +253,8 @@ class MessageLog(db.Model):
     is_bot = db.Column(db.Boolean, default=False)
     bot_id = db.Column(db.String(50), nullable=True)  # If sent by a bot
     has_image = db.Column(db.Boolean, default=False)
+    image_data = db.Column(db.Text, nullable=True)  # Base64 encoded image (fallback storage when chat_log disabled)
+    image_media_type = db.Column(db.String(50), nullable=True)  # e.g., "image/jpeg"
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     signal_timestamp = db.Column(db.BigInteger, nullable=True)  # Signal's message timestamp (ms) for deduplication
 
@@ -287,6 +273,132 @@ class MessageLog(db.Model):
             "timestamp": self.timestamp.isoformat() if self.timestamp else None,
             "signal_timestamp": self.signal_timestamp,
         }
+
+
+class ChatLog(db.Model):
+    """
+    Permanent chat log for searchable message history.
+
+    Unlike MessageLog (rolling 25-message context window), this stores
+    all messages permanently (subject to retention settings) for searching.
+    """
+    __tablename__ = "chat_logs"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    group_id = db.Column(db.String(100), db.ForeignKey("groups.id"), nullable=False)
+    sender_id = db.Column(db.String(100), nullable=True)  # Signal UUID
+    sender_name = db.Column(db.String(100), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    is_bot = db.Column(db.Boolean, default=False)
+    bot_id = db.Column(db.String(50), nullable=True)  # If sent by a bot
+    image_data = db.Column(db.Text, nullable=True)  # Base64 encoded image (primary storage when chat_log enabled)
+    image_media_type = db.Column(db.String(50), nullable=True)  # e.g., "image/jpeg"
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    signal_timestamp = db.Column(db.BigInteger, nullable=True, unique=True)  # For deduplication
+
+    # Relationships
+    group = db.relationship("GroupConnection", backref="chat_logs")
+
+    __table_args__ = (
+        db.Index('idx_chat_logs_group_time', 'group_id', 'timestamp'),
+        db.Index('idx_chat_logs_sender', 'group_id', 'sender_name'),
+    )
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "group_id": self.group_id,
+            "sender_id": self.sender_id,
+            "sender_name": self.sender_name,
+            "content": self.content,
+            "is_bot": self.is_bot,
+            "bot_id": self.bot_id,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+            "signal_timestamp": self.signal_timestamp,
+        }
+
+    @staticmethod
+    def search(group_id: str, keyword: str = None, member_name: str = None,
+               start_date: datetime = None, end_date: datetime = None,
+               limit: int = 50, offset: int = 0) -> list:
+        """Search chat logs with various filters."""
+        query = ChatLog.query.filter_by(group_id=group_id)
+
+        if keyword:
+            query = query.filter(ChatLog.content.ilike(f"%{keyword}%"))
+        if member_name:
+            query = query.filter(ChatLog.sender_name.ilike(f"%{member_name}%"))
+        if start_date:
+            query = query.filter(ChatLog.timestamp >= start_date)
+        if end_date:
+            query = query.filter(ChatLog.timestamp <= end_date)
+
+        return query.order_by(ChatLog.timestamp.desc()).offset(offset).limit(limit).all()
+
+    @staticmethod
+    def get_summary(group_id: str, start_date: datetime, end_date: datetime,
+                    member_name: str = None) -> dict:
+        """Get activity summary for a time period."""
+        from sqlalchemy import func
+
+        query = ChatLog.query.filter(
+            ChatLog.group_id == group_id,
+            ChatLog.timestamp >= start_date,
+            ChatLog.timestamp <= end_date
+        )
+
+        if member_name:
+            query = query.filter(ChatLog.sender_name.ilike(f"%{member_name}%"))
+
+        total_messages = query.count()
+
+        # Get message counts by sender
+        sender_counts = db.session.query(
+            ChatLog.sender_name,
+            func.count(ChatLog.id).label('count')
+        ).filter(
+            ChatLog.group_id == group_id,
+            ChatLog.timestamp >= start_date,
+            ChatLog.timestamp <= end_date
+        ).group_by(ChatLog.sender_name).all()
+
+        return {
+            "total_messages": total_messages,
+            "period_start": start_date.isoformat(),
+            "period_end": end_date.isoformat(),
+            "messages_by_sender": {name: count for name, count in sender_counts}
+        }
+
+    @staticmethod
+    def cleanup_old_logs(group_id: str, retention: str) -> int:
+        """Delete logs older than retention period. Returns count deleted."""
+        from datetime import timedelta
+
+        if retention == 'forever':
+            return 0
+
+        # Map retention codes to timedeltas
+        retention_map = {
+            '6h': timedelta(hours=6),
+            '12h': timedelta(hours=12),
+            '24h': timedelta(hours=24),
+            '1w': timedelta(weeks=1),
+            '1m': timedelta(days=30),
+            '1y': timedelta(days=365),
+        }
+
+        delta = retention_map.get(retention)
+        if not delta:
+            return 0
+
+        cutoff = datetime.utcnow() - delta
+        deleted = ChatLog.query.filter(
+            ChatLog.group_id == group_id,
+            ChatLog.timestamp < cutoff
+        ).delete()
+
+        db.session.commit()
+        return deleted
 
 
 class SystemPromptTemplate(db.Model):
@@ -375,6 +487,31 @@ class CustomModel(db.Model):
     def get_all_enabled():
         """Get all enabled custom models as a dict for merging with config.AI_MODELS."""
         models = CustomModel.query.filter_by(enabled=True).all()
+        return {m.display_name: m.id for m in models}
+
+
+class ImageModel(db.Model):
+    """Image generation models available on OpenRouter."""
+    __tablename__ = "image_models"
+
+    id = db.Column(db.String(255), primary_key=True)  # OpenRouter model ID
+    display_name = db.Column(db.String(255), nullable=False)  # Friendly name for UI
+    description = db.Column(db.Text, nullable=True)  # Optional description
+    enabled = db.Column(db.Boolean, default=True)  # Show in dropdowns
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "display_name": self.display_name,
+            "description": self.description,
+            "enabled": self.enabled,
+        }
+
+    @staticmethod
+    def get_all_enabled():
+        """Get all enabled image models as a dict for dropdowns."""
+        models = ImageModel.query.filter_by(enabled=True).all()
         return {m.display_name: m.id for m in models}
 
 

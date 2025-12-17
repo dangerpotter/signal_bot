@@ -131,6 +131,16 @@ def call_openrouter_api_structured(
                     except json.JSONDecodeError as e:
                         print(f"[OpenRouter Structured] JSON parse error (shouldn't happen): {e}")
                         print(f"[OpenRouter Structured] Content: {content[:500]}")
+                        # Fallback: Try to extract JSON from response if model returned markdown/text
+                        import re
+                        json_match = re.search(r'\{[^{}]*\}', content)
+                        if json_match:
+                            try:
+                                extracted = json.loads(json_match.group())
+                                print(f"[OpenRouter Structured] Fallback JSON extraction succeeded")
+                                return extracted
+                            except json.JSONDecodeError:
+                                pass
                         return None
             print("[OpenRouter Structured] No content in response")
             return None
@@ -884,13 +894,28 @@ def call_openrouter_api(
         tools: Optional list of tool schemas for function calling
         tool_executor: Optional callback function(name, args) -> dict to execute tool calls
     """
-    # Check if prompt contains images (structured content with image parts)
+    # Check if prompt OR conversation history contains images (structured content with image parts)
+    # If any images exist, we must skip Responses API which strips image data from history
     has_images = False
+
+    # Check current prompt
     if isinstance(prompt, list):
         for part in prompt:
             if part.get('type') == 'image':
                 has_images = True
                 break
+
+    # Also check conversation history for images
+    if not has_images and conversation_history:
+        for msg in conversation_history:
+            content = msg.get('content')
+            if isinstance(content, list):
+                for part in content:
+                    if part.get('type') == 'image':
+                        has_images = True
+                        break
+                if has_images:
+                    break
 
     # Route web search requests to Responses API for citation support
     # BUT: Responses API doesn't support images, so skip it when images are present

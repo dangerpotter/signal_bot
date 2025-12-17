@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+
+{% block title %}Chat Logs - Signal Bot Admin{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h1><i class="bi bi-journal-text"></i> Chat Logs</h1>
+        <p class="text-muted">Searchable history of all group chat messages</p>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-3">
+                <label for="group_id" class="form-label">Group</label>
+                <select name="group_id" id="group_id" class="form-select" onchange="this.form.submit()">
+                    <option value="">All Groups</option>
+                    {% for group in groups %}
+                    <option value="{{ group.id }}" {% if group_filter == group.id %}selected{% endif %}>
+                        {{ group.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label for="member" class="form-label">Member</label>
+                <input type="text" name="member" id="member" class="form-control"
+                       value="{{ member_filter }}" placeholder="Filter by name..." list="member-list">
+                <datalist id="member-list">
+                    {% for m in members %}
+                    <option value="{{ m }}">
+                    {% endfor %}
+                </datalist>
+            </div>
+            <div class="col-md-2">
+                <label for="date_from" class="form-label">From Date</label>
+                <input type="date" name="date_from" id="date_from" class="form-control" value="{{ date_from }}">
+            </div>
+            <div class="col-md-2">
+                <label for="date_to" class="form-label">To Date</label>
+                <input type="date" name="date_to" id="date_to" class="form-control" value="{{ date_to }}">
+            </div>
+            <div class="col-md-3">
+                <label for="keyword" class="form-label">Search</label>
+                <div class="input-group">
+                    <input type="text" name="keyword" id="keyword" class="form-control"
+                           value="{{ keyword }}" placeholder="Search messages...">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-search"></i>
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Results summary and export -->
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <span class="text-muted">
+            Showing {{ logs|length }} of {{ total }} messages
+            {% if total_pages > 1 %}(Page {{ page }} of {{ total_pages }}){% endif %}
+        </span>
+    </div>
+    <div>
+        {% set export_params = "group_id=" ~ group_filter ~ "&keyword=" ~ keyword ~ "&member=" ~ member_filter ~ "&date_from=" ~ date_from ~ "&date_to=" ~ date_to %}
+        <a href="{{ url_for('export_chat_logs') }}?{{ export_params }}&format=json" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-filetype-json"></i> Export JSON
+        </a>
+        <a href="{{ url_for('export_chat_logs') }}?{{ export_params }}&format=csv" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-filetype-csv"></i> Export CSV
+        </a>
+    </div>
+</div>
+
+<!-- Chat log list -->
+<div class="card">
+    <div class="list-group list-group-flush">
+        {% for log in logs %}
+        <div class="list-group-item">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <strong class="{% if log.is_bot %}text-primary{% endif %}">
+                        {{ log.sender_name }}
+                        {% if log.is_bot %}<span class="badge bg-primary ms-1">bot</span>{% endif %}
+                    </strong>
+                    <small class="text-muted ms-2">
+                        <i class="bi bi-clock"></i>
+                        {{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') if log.timestamp else 'Unknown' }}
+                    </small>
+                </div>
+            </div>
+            <p class="mb-0 mt-1" style="white-space: pre-wrap;">{{ log.content }}</p>
+        </div>
+        {% else %}
+        <div class="list-group-item text-center text-muted py-5">
+            <i class="bi bi-inbox fs-1"></i>
+            <p class="mt-2">No messages found matching your filters.</p>
+            {% if not group_filter %}
+            <p class="small">Select a group to view its chat history.</p>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Pagination -->
+{% if total_pages > 1 %}
+<nav class="mt-4" aria-label="Chat log pagination">
+    <ul class="pagination justify-content-center">
+        {% if page > 1 %}
+        <li class="page-item">
+            <a class="page-link" href="?group_id={{ group_filter }}&keyword={{ keyword }}&member={{ member_filter }}&date_from={{ date_from }}&date_to={{ date_to }}&page={{ page - 1 }}">
+                <i class="bi bi-chevron-left"></i> Previous
+            </a>
+        </li>
+        {% endif %}
+
+        {% for p in range(1, total_pages + 1) %}
+            {% if p == page %}
+            <li class="page-item active"><span class="page-link">{{ p }}</span></li>
+            {% elif p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
+            <li class="page-item">
+                <a class="page-link" href="?group_id={{ group_filter }}&keyword={{ keyword }}&member={{ member_filter }}&date_from={{ date_from }}&date_to={{ date_to }}&page={{ p }}">{{ p }}</a>
+            </li>
+            {% elif p == page - 3 or p == page + 3 %}
+            <li class="page-item disabled"><span class="page-link">...</span></li>
+            {% endif %}
+        {% endfor %}
+
+        {% if page < total_pages %}
+        <li class="page-item">
+            <a class="page-link" href="?group_id={{ group_filter }}&keyword={{ keyword }}&member={{ member_filter }}&date_from={{ date_from }}&date_to={{ date_to }}&page={{ page + 1 }}">
+                Next <i class="bi bi-chevron-right"></i>
+            </a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}

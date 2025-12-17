@@ -72,9 +72,16 @@ class TriggerScheduler:
 
     async def _scheduler_loop(self):
         """Main scheduler loop - runs every 60 seconds."""
+        cleanup_counter = 0  # Track iterations for hourly cleanup
         while self.running:
             try:
                 await self._check_and_execute_triggers()
+
+                # Run chat log cleanup every hour (60 iterations * 60 seconds = 1 hour)
+                cleanup_counter += 1
+                if cleanup_counter >= 60:
+                    cleanup_counter = 0
+                    await self._cleanup_chat_logs()
             except Exception as e:
                 logger.error(f"Error in trigger scheduler: {e}", exc_info=True)
 
@@ -316,6 +323,36 @@ class TriggerScheduler:
             return last_fire + timedelta(minutes=interval_minutes)
 
         return None
+
+    async def _cleanup_chat_logs(self):
+        """Clean up old chat logs based on retention settings."""
+        if not _flask_app:
+            return
+
+        try:
+            with _flask_app.app_context():
+                from signal_bot.models import Bot, BotGroupAssignment, ChatLog, db
+
+                # Get all bots with chat_log_enabled
+                bots = Bot.query.filter_by(chat_log_enabled=True).all()
+
+                total_deleted = 0
+                for bot in bots:
+                    retention = bot.chat_log_retention or 'forever'
+                    if retention == 'forever':
+                        continue
+
+                    # Get all groups this bot is assigned to
+                    assignments = BotGroupAssignment.query.filter_by(bot_id=bot.id).all()
+                    for assignment in assignments:
+                        deleted = ChatLog.cleanup_old_logs(assignment.group_id, retention)
+                        total_deleted += deleted
+
+                if total_deleted > 0:
+                    logger.info(f"Chat log cleanup: deleted {total_deleted} old log entries")
+
+        except Exception as e:
+            logger.error(f"Error during chat log cleanup: {e}", exc_info=True)
 
     @staticmethod
     def compute_initial_fire_time(trigger) -> Optional[datetime]:

@@ -63,5 +63,28 @@ MEMBER_MEMORY_TOOLS = [
                 "additionalProperties": False
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_member_memory",
+            "description": "Delete a specific memory about a group member. Use when someone asks to forget, remove, or delete information about them. Can delete a specific category (slot_type) or all memories for the member.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "member_name": {
+                        "type": "string",
+                        "description": "Name of the group member (as they appear in chat)"
+                    },
+                    "slot_type": {
+                        "type": "string",
+                        "enum": ["home_location", "work_info", "interests", "media_prefs", "life_events", "response_prefs", "social_notes", "all"],
+                        "description": "Category to delete, or 'all' to delete everything about this member"
+                    }
+                },
+                "required": ["member_name", "slot_type"],
+                "additionalProperties": False
+            }
+        }
     }
 ]

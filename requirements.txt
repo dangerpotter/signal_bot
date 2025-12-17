@@ -9,3 +9,4 @@ openai>=2.8.1
 anthropic>=0.75.0
 together>=1.5.31
 yfinance>=0.2.66
+websockets>=12.0

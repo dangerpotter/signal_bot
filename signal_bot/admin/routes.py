@@ -5,8 +5,8 @@ from flask import render_template, request, jsonify, redirect, url_for, flash
 
 from signal_bot.models import (
     db, Bot, GroupConnection, BotGroupAssignment,
-    SystemPromptTemplate, ActivityLog, MemorySnippet, GroupMemberMemory, MessageLog,
-    CustomModel, ScheduledTrigger
+    SystemPromptTemplate, ActivityLog, GroupMemberMemory, MessageLog,
+    CustomModel, ScheduledTrigger, ChatLog, ImageModel
 )
 
 
@@ -21,6 +21,12 @@ def _get_all_models():
         models[m.display_name] = m.id
 
     return models
+
+
+def _get_image_models():
+    """Get all enabled image models for dropdowns."""
+    models = ImageModel.query.filter_by(enabled=True).all()
+    return {m.display_name: m.id for m in models}
 
 
 def register_routes(app):
@@ -127,6 +133,7 @@ def register_routes(app):
             bot.random_chance_percent = int(request.form.get("random_chance_percent", 15))
             bot.context_window = int(request.form.get("context_window", 25))
             bot.image_generation_enabled = request.form.get("image_generation_enabled") == "on"
+            bot.image_model = request.form.get("image_model", "").strip() or None
             bot.web_search_enabled = request.form.get("web_search_enabled") == "on"
             bot.weather_enabled = request.form.get("weather_enabled") == "on"
             bot.finance_enabled = request.form.get("finance_enabled") == "on"
@@ -166,6 +173,10 @@ def register_routes(app):
             bot.dnd_enabled = request.form.get("dnd_enabled") == "on"
             bot.dnd_template_spreadsheet_id = request.form.get("dnd_template_spreadsheet_id", "").strip() or None
 
+            # Chat log settings
+            bot.chat_log_enabled = request.form.get("chat_log_enabled") == "on"
+            bot.chat_log_retention = request.form.get("chat_log_retention", "forever").strip()
+
             db.session.commit()
             _log_activity("bot_updated", bot_id, None, f"Bot '{bot.name}' settings updated")
             flash(f"Bot '{bot.name}' updated successfully", "success")
@@ -173,8 +184,9 @@ def register_routes(app):
 
         prompts = SystemPromptTemplate.query.all()
         all_models = _get_all_models()
+        image_models = _get_image_models()
 
-        return render_template("edit_bot.html", bot=bot, prompts=prompts, all_models=all_models)
+        return render_template("edit_bot.html", bot=bot, prompts=prompts, all_models=all_models, image_models=image_models)
 
     @app.route("/bots/<bot_id>/delete", methods=["POST"])
     def delete_bot(bot_id):
@@ -684,6 +696,63 @@ def register_routes(app):
         flash(f"Model '{name}' deleted", "success")
         return redirect(url_for("models_list"))
 
+    # Image Models CRUD
+    @app.route("/image-models")
+    def image_models_list():
+        """Image models management page."""
+        image_models = ImageModel.query.all()
+        return render_template("image_models.html", image_models=image_models)
+
+    @app.route("/image-models/add", methods=["POST"])
+    def add_image_model():
+        """Add a new image model."""
+        model_id = request.form.get("model_id", "").strip()
+        display_name = request.form.get("display_name", "").strip()
+        description = request.form.get("description", "").strip() or None
+
+        if not model_id or not display_name:
+            flash("Model ID and display name are required", "error")
+            return redirect(url_for("image_models_list"))
+
+        existing = ImageModel.query.get(model_id)
+        if existing:
+            flash(f"Image model '{model_id}' already exists", "error")
+            return redirect(url_for("image_models_list"))
+
+        model = ImageModel(
+            id=model_id,
+            display_name=display_name,
+            description=description,
+            enabled=True
+        )
+        db.session.add(model)
+        db.session.commit()
+
+        _log_activity("image_model_added", None, None, f"Image model '{display_name}' added")
+        flash(f"Image model '{display_name}' added successfully", "success")
+        return redirect(url_for("image_models_list"))
+
+    @app.route("/image-models/<path:model_id>/toggle", methods=["POST"])
+    def toggle_image_model(model_id):
+        """Toggle image model enabled/disabled."""
+        model = ImageModel.query.get_or_404(model_id)
+        model.enabled = not model.enabled
+        db.session.commit()
+        status = "enabled" if model.enabled else "disabled"
+        flash(f"Image model '{model.display_name}' {status}", "success")
+        return redirect(url_for("image_models_list"))
+
+    @app.route("/image-models/<path:model_id>/delete", methods=["POST"])
+    def delete_image_model(model_id):
+        """Delete an image model."""
+        model = ImageModel.query.get_or_404(model_id)
+        name = model.display_name
+        db.session.delete(model)
+        db.session.commit()
+        _log_activity("image_model_deleted", None, None, f"Image model '{name}' deleted")
+        flash(f"Image model '{name}' deleted", "success")
+        return redirect(url_for("image_models_list"))
+
     @app.route("/models/fetch-info", methods=["POST"])
     def fetch_model_info():
         """Fetch model info from OpenRouter API."""
@@ -767,23 +836,6 @@ def register_routes(app):
 
         except Exception as e:
             return jsonify({"error": str(e)}), 500
-
-    @app.route("/memories")
-    def memories_list():
-        """View long-term memory snippets."""
-        memories = MemorySnippet.query.order_by(
-            MemorySnippet.timestamp.desc()
-        ).limit(50).all()
-        return render_template("memories.html", memories=memories)
-
-    @app.route("/memories/<int:memory_id>/delete", methods=["POST"])
-    def delete_memory(memory_id):
-        """Delete a memory snippet."""
-        memory = MemorySnippet.query.get_or_404(memory_id)
-        db.session.delete(memory)
-        db.session.commit()
-        flash("Memory deleted", "success")
-        return redirect(url_for("memories_list"))
 
     # Member Memories (location-aware personal info)
     @app.route("/member-memories")
@@ -959,8 +1011,9 @@ def register_routes(app):
 
     @app.route("/api/groups/<path:group_id>/members")
     def api_group_members(group_id):
-        """Get members for a specific group from message logs."""
-        members = db.session.query(
+        """Get members for a specific group from message logs and existing memories."""
+        # Get members from message logs
+        message_members = db.session.query(
             MessageLog.sender_name,
             MessageLog.sender_id
         ).filter(
@@ -968,10 +1021,25 @@ def register_routes(app):
             MessageLog.is_bot == False
         ).distinct().all()
 
-        return jsonify([
-            {"name": m.sender_name, "id": m.sender_id}
-            for m in members if m.sender_name
-        ])
+        # Get members from existing memories
+        memory_members = db.session.query(
+            GroupMemberMemory.member_name,
+            GroupMemberMemory.member_id
+        ).filter(
+            GroupMemberMemory.group_id == group_id
+        ).distinct().all()
+
+        # Combine and deduplicate by name
+        members_dict = {}
+        for m in message_members:
+            if m.sender_name:
+                members_dict[m.sender_name] = {"name": m.sender_name, "id": m.sender_id}
+        for m in memory_members:
+            if m.member_name and m.member_name not in members_dict:
+                members_dict[m.member_name] = {"name": m.member_name, "id": m.member_id}
+
+        # Return sorted by name
+        return jsonify(sorted(members_dict.values(), key=lambda x: x["name"].lower()))
 
     # ===== Scheduled Triggers =====
 
@@ -1222,6 +1290,150 @@ def register_routes(app):
             flash(f"Failed to fire trigger: {e}", "error")
 
         return redirect(url_for("triggers_list"))
+
+    # ===== Chat Logs =====
+
+    @app.route("/chat-logs")
+    def chat_logs_list():
+        """View searchable chat log history."""
+        from datetime import datetime, timedelta
+
+        # Get filter parameters
+        group_filter = request.args.get("group_id", "")
+        keyword = request.args.get("keyword", "")
+        member_filter = request.args.get("member", "")
+        date_from = request.args.get("date_from", "")
+        date_to = request.args.get("date_to", "")
+        page = int(request.args.get("page", 1))
+        per_page = 50
+
+        # Build query
+        query = ChatLog.query
+
+        if group_filter:
+            query = query.filter(ChatLog.group_id == group_filter)
+        if keyword:
+            query = query.filter(ChatLog.content.ilike(f"%{keyword}%"))
+        if member_filter:
+            query = query.filter(ChatLog.sender_name.ilike(f"%{member_filter}%"))
+        if date_from:
+            try:
+                from_dt = datetime.fromisoformat(date_from)
+                query = query.filter(ChatLog.timestamp >= from_dt)
+            except ValueError:
+                pass
+        if date_to:
+            try:
+                to_dt = datetime.fromisoformat(date_to)
+                # Add a day to include the entire end date
+                to_dt = to_dt + timedelta(days=1)
+                query = query.filter(ChatLog.timestamp < to_dt)
+            except ValueError:
+                pass
+
+        # Get total count before pagination
+        total = query.count()
+
+        # Paginate and order
+        logs = query.order_by(ChatLog.timestamp.desc()).offset((page - 1) * per_page).limit(per_page).all()
+
+        # Calculate pagination
+        total_pages = (total + per_page - 1) // per_page
+
+        # Get groups for filter dropdown
+        groups = GroupConnection.query.all()
+
+        # Get distinct members for current group
+        members = []
+        if group_filter:
+            member_query = db.session.query(ChatLog.sender_name).filter(
+                ChatLog.group_id == group_filter
+            ).distinct().all()
+            members = [m[0] for m in member_query if m[0]]
+
+        return render_template("chat_logs.html",
+                               logs=logs,
+                               groups=groups,
+                               members=members,
+                               group_filter=group_filter,
+                               keyword=keyword,
+                               member_filter=member_filter,
+                               date_from=date_from,
+                               date_to=date_to,
+                               page=page,
+                               total_pages=total_pages,
+                               total=total)
+
+    @app.route("/chat-logs/export")
+    def export_chat_logs():
+        """Export chat logs as JSON or CSV."""
+        from datetime import datetime
+        import json
+        from flask import Response
+
+        # Get filter parameters (same as list view)
+        group_filter = request.args.get("group_id", "")
+        keyword = request.args.get("keyword", "")
+        member_filter = request.args.get("member", "")
+        date_from = request.args.get("date_from", "")
+        date_to = request.args.get("date_to", "")
+        export_format = request.args.get("format", "json")
+
+        # Build query
+        query = ChatLog.query
+
+        if group_filter:
+            query = query.filter(ChatLog.group_id == group_filter)
+        if keyword:
+            query = query.filter(ChatLog.content.ilike(f"%{keyword}%"))
+        if member_filter:
+            query = query.filter(ChatLog.sender_name.ilike(f"%{member_filter}%"))
+        if date_from:
+            try:
+                from_dt = datetime.fromisoformat(date_from)
+                query = query.filter(ChatLog.timestamp >= from_dt)
+            except ValueError:
+                pass
+        if date_to:
+            try:
+                to_dt = datetime.fromisoformat(date_to)
+                from datetime import timedelta
+                to_dt = to_dt + timedelta(days=1)
+                query = query.filter(ChatLog.timestamp < to_dt)
+            except ValueError:
+                pass
+
+        # Limit export to prevent massive downloads
+        logs = query.order_by(ChatLog.timestamp.desc()).limit(5000).all()
+
+        if export_format == "csv":
+            # Build CSV
+            import csv
+            import io
+            output = io.StringIO()
+            writer = csv.writer(output)
+            writer.writerow(["Timestamp", "Sender", "Is Bot", "Content"])
+            for log in logs:
+                writer.writerow([
+                    log.timestamp.isoformat() if log.timestamp else "",
+                    log.sender_name,
+                    "Yes" if log.is_bot else "No",
+                    log.content
+                ])
+            csv_data = output.getvalue()
+            return Response(
+                csv_data,
+                mimetype="text/csv",
+                headers={"Content-Disposition": f"attachment;filename=chat_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"}
+            )
+        else:
+            # JSON export
+            data = [log.to_dict() for log in logs]
+            return Response(
+                json.dumps(data, indent=2),
+                mimetype="application/json",
+                headers={"Content-Disposition": f"attachment;filename=chat_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"}
+            )
 
 
 def _log_activity(event_type: str, bot_id: str | None, group_id: str | None, description: str):

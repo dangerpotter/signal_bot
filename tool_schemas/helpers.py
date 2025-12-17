@@ -15,6 +15,7 @@ from .calendar_tools import CALENDAR_TOOLS
 from .memory_tools import MEMBER_MEMORY_TOOLS
 from .trigger_tools import TRIGGER_TOOLS
 from .dnd_tools import DND_TOOLS
+from .chat_log_tools import CHAT_LOG_TOOLS
 
 # Combined lookup for all meta-tool categories
 ALL_META_CATEGORIES = {**FINANCE_CATEGORIES, **SHEETS_CATEGORIES}
@@ -86,6 +87,7 @@ def get_tools_for_context(
     member_memory_enabled: bool = False,
     triggers_enabled: bool = False,
     dnd_enabled: bool = False,
+    chat_log_enabled: bool = False,
     expanded_categories: Optional[dict] = None
 ) -> list:
     """
@@ -109,6 +111,7 @@ def get_tools_for_context(
         member_memory_enabled: Include member memory tools (Signal bot only)
         triggers_enabled: Include scheduled trigger tools (Signal bot only)
         dnd_enabled: Include D&D Game Master tools (Signal bot only)
+        chat_log_enabled: Include chat log search tools (Signal bot only)
         expanded_categories: Dict mapping tool group to expanded category name
                             e.g. {"finance": "finance_quotes", "sheets": "sheets_core"}
 
@@ -171,6 +174,10 @@ def get_tools_for_context(
         # D&D Game Master tools - for running campaigns (10 tools)
         if dnd_enabled:
             tools.extend(DND_TOOLS)
+
+        # Chat log search tools (2 tools)
+        if chat_log_enabled:
+            tools.extend(CHAT_LOG_TOOLS)
 
         # Dice tools - always available (no toggle needed)
         tools.extend(DICE_TOOLS)

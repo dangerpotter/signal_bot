@@ -11,7 +11,7 @@ from flask import Flask
 # Add parent path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from signal_bot.models import db, Bot, MessageLog, ActivityLog
+from signal_bot.models import db, Bot, MessageLog, ActivityLog, ChatLog
 from signal_bot.memory_manager import MemoryManager, get_memory_manager
 from signal_bot.trigger_logic import should_bot_respond, get_response_delay
 from signal_bot.member_memory_scanner import (
@@ -62,6 +62,7 @@ class MessageHandler:
         send_callback: Callable,
         send_image_callback: Optional[Callable[[str], None]] = None,
         is_mentioned: bool = False,
+        is_reply_to_bot: bool = False,
         message_timestamp: Optional[int] = None,
         send_typing_callback: Optional[Callable] = None,
         stop_typing_callback: Optional[Callable] = None,
@@ -80,6 +81,7 @@ class MessageHandler:
             send_callback: Function to send text response (text, quote_timestamp, quote_author, mentions, text_styles)
             send_image_callback: Function to call to send image
             is_mentioned: Whether the bot was @mentioned (Signal native mention)
+            is_reply_to_bot: Whether this message is a reply to one of the bot's messages
             message_timestamp: Signal timestamp of the triggering message (for quotes/replies)
             send_typing_callback: Function to start typing indicator
             stop_typing_callback: Function to stop typing indicator
@@ -91,15 +93,42 @@ class MessageHandler:
         """
         memory = self.get_memory_manager(group_id)
 
+        # Extract first image for storage (limit to one image per message for DB size)
+        image_data = None
+        image_media_type = None
+        if incoming_images and len(incoming_images) > 0:
+            image_data = incoming_images[0].get("data")
+            image_media_type = incoming_images[0].get("media_type")
+
+        # Decide where to store image data based on chat_log setting
+        chat_log_enabled = bot_data.get('chat_log_enabled', False)
+
         # Log incoming message (with Signal timestamp for deduplication)
+        # Only include image data in MessageLog if chat_log is DISABLED (fallback storage)
         memory.add_message(
             sender_name=sender_name,
             content=message_text or "[Image]",
             is_bot=False,
             sender_id=sender_id,
             has_image=bool(incoming_images),
-            signal_timestamp=message_timestamp
+            signal_timestamp=message_timestamp,
+            image_data=image_data if not chat_log_enabled else None,
+            image_media_type=image_media_type if not chat_log_enabled else None
         )
+
+        # Also save to permanent chat log for search (if enabled for this bot)
+        # This is primary image storage when chat_log is enabled
+        if chat_log_enabled:
+            self._save_to_chat_log(
+                group_id=group_id,
+                sender_name=sender_name,
+                content=message_text or "[Image]",
+                sender_id=sender_id,
+                is_bot=False,
+                signal_timestamp=message_timestamp,
+                image_data=image_data,
+                image_media_type=image_media_type
+            )
 
         # Check for real-time memory save (e.g., "remember I prefer...")
         memory_result = await check_and_save_realtime_memory(
@@ -122,6 +151,10 @@ class MessageHandler:
         if is_mentioned:
             should_respond = True
             reason = "native_mention"
+        # If someone replied to one of the bot's messages, respond
+        elif is_reply_to_bot:
+            should_respond = True
+            reason = "reply_to_bot"
         else:
             should_respond, reason = should_bot_respond(
                 bot_data=bot_data,
@@ -155,7 +188,8 @@ class MessageHandler:
             memory_confirmation=memory_confirmation,
             send_image_callback=send_image_callback,
             incoming_images=incoming_images,
-            send_reaction_callback=send_reaction_callback
+            send_reaction_callback=send_reaction_callback,
+            message_timestamp=message_timestamp
         )
 
         # Stop typing indicator
@@ -177,11 +211,11 @@ class MessageHandler:
                 styled_text = styled_text[len(f"{bot_name}:"):]
 
             # Determine if we should quote/reply to the original message
-            # - Always quote if triggered by mention or direct command
+            # - Always quote if triggered by mention, reply, or direct command
             # - For random responses, use the random_chance_percent
             should_quote = False
             if message_timestamp and sender_id:
-                if is_mentioned or reason in ("native_mention", "mention", "command"):
+                if is_mentioned or is_reply_to_bot or reason in ("native_mention", "reply_to_bot", "mention", "command"):
                     should_quote = True
                 elif reason == "random":
                     import random
@@ -207,6 +241,16 @@ class MessageHandler:
                     bot_id=bot_data['id']
                 )
 
+                # Also save bot response to permanent chat log
+                if bot_data.get('chat_log_enabled', False):
+                    self._save_to_chat_log(
+                        group_id=group_id,
+                        sender_name=bot_data['name'],
+                        content=styled_text,
+                        is_bot=True,
+                        bot_id=bot_data['id']
+                    )
+
                 # Log activity
                 self._log_activity(
                     "message_sent",
@@ -220,11 +264,6 @@ class MessageHandler:
                 await self._execute_commands(
                     commands, bot_data, group_id, send_image_callback
                 )
-
-            # Maybe save memorable moment
-            if styled_text:
-                recent_exchange = f"{sender_name}: {message_text}\n{bot_data['name']}: {styled_text}"
-                memory.maybe_save_memorable_moment(recent_exchange)
 
             return styled_text
 
@@ -241,7 +280,8 @@ class MessageHandler:
         memory_confirmation: Optional[str] = None,
         send_image_callback: Optional[Callable[[str], None]] = None,
         incoming_images: Optional[list[dict]] = None,
-        send_reaction_callback: Optional[Callable[[str, int, str], None]] = None
+        send_reaction_callback: Optional[Callable[[str, int, str], None]] = None,
+        message_timestamp: Optional[int] = None
     ) -> Optional[str]:
         """Generate an AI response using the configured model."""
         try:
@@ -274,14 +314,8 @@ class MessageHandler:
         # DEBUG: Log final context
         logger.info(f"[DEBUG] Final context: {len(context_messages)} messages")
 
-        # Maybe inject a memory callback
-        memory_callback = memory.maybe_get_memory_callback()
-
         # Build system prompt
         system_prompt = bot_data.get('system_prompt') or self._get_default_system_prompt(bot_data['name'])
-
-        if memory_callback:
-            system_prompt += f"\n\n{memory_callback}"
 
         # Inject member memories (locations, personal info) - now prioritized by speaker
         member_memories = format_member_memories_for_context(
@@ -311,19 +345,41 @@ class MessageHandler:
 
         for idx, msg in enumerate(context_messages):
             role = msg["role"]
-            # Format with index prefix when reaction tool is enabled
-            if reaction_enabled:
-                if role == "user" and msg.get("name"):
-                    content = f"[{idx}] {msg['name']}: {msg['content']}"
-                else:
-                    content = f"[{idx}] {msg['content']}"
+            raw_content = msg["content"]
+
+            # Handle structured content (list with text + image) vs plain text
+            if isinstance(raw_content, list):
+                # Structured content with image - modify text portion, keep image as-is
+                formatted_content = []
+                for item in raw_content:
+                    if item.get("type") == "text":
+                        # Add name/index prefix to text portion
+                        text = item["text"]
+                        if reaction_enabled:
+                            prefix = f"[{idx}] "
+                            name_prefix = f"{msg['name']}: " if role == "user" and msg.get("name") else ""
+                            text = f"{prefix}{name_prefix}{text}"
+                        else:
+                            if role == "user" and msg.get("name"):
+                                text = f"{msg['name']}: {text}"
+                        formatted_content.append({"type": "text", "text": text})
+                    else:
+                        # Keep image or other content types as-is
+                        formatted_content.append(item)
+                formatted_messages.append({"role": role, "content": formatted_content})
             else:
-                # Original formatting without indices
-                if role == "user" and msg.get("name"):
-                    content = f"{msg['name']}: {msg['content']}"
+                # Plain text content - existing logic
+                if reaction_enabled:
+                    if role == "user" and msg.get("name"):
+                        content = f"[{idx}] {msg['name']}: {raw_content}"
+                    else:
+                        content = f"[{idx}] {raw_content}"
                 else:
-                    content = msg["content"]
-            formatted_messages.append({"role": role, "content": content})
+                    if role == "user" and msg.get("name"):
+                        content = f"{msg['name']}: {raw_content}"
+                    else:
+                        content = raw_content
+                formatted_messages.append({"role": role, "content": content})
 
             # Build reaction metadata for user messages with valid Signal metadata
             if role == "user" and msg.get("signal_timestamp") and msg.get("sender_id"):
@@ -336,9 +392,16 @@ class MessageHandler:
         # DEBUG: Log ALL messages being sent to API
         logger.info(f"[DEBUG] ===== CONTEXT DUMP ({len(formatted_messages)} messages) =====")
         for i, msg in enumerate(formatted_messages):
-            content_preview = msg['content'][:60].replace('\n', ' ') if msg.get('content') else 'None'
+            content = msg.get('content')
+            if isinstance(content, list):
+                # Extract text preview from structured content
+                text_parts = [item.get('text', '')[:40] for item in content if item.get('type') == 'text']
+                has_image = any(item.get('type') == 'image' for item in content)
+                content_preview = f"{' '.join(text_parts)}{'[+IMG]' if has_image else ''}"
+            else:
+                content_preview = content[:60].replace('\n', ' ') if content else 'None'
             logger.info(f"[DEBUG] [{i}] {msg['role']}: {content_preview}...")
-        logger.info(f"[DEBUG] ===== PROMPT: {trigger_message[:60] if trigger_message else 'None'}... =====")
+        logger.info(f"[DEBUG] ===== RAW TRIGGER: {trigger_message[:60] if trigger_message else 'None'}... =====")
 
         try:
             # Determine if we should use native tool calling
@@ -364,13 +427,31 @@ class MessageHandler:
             google_connected = bot_data.get('google_connected', False)
             dnd_enabled = dnd_enabled_setting and google_connected
             logger.info(f"[DEBUG] D&D check: dnd_enabled_setting={dnd_enabled_setting}, google_connected={google_connected}, final dnd_enabled={dnd_enabled}")
+            # Chat log search tools
+            chat_log_enabled = bot_data.get('chat_log_enabled', False)
             # reaction_enabled already set above for context formatting
-            any_tools_enabled = image_enabled or weather_enabled or finance_enabled or time_enabled or wikipedia_enabled or reaction_enabled or sheets_enabled or calendar_enabled or member_memory_tools_enabled or triggers_enabled or dnd_enabled
+            any_tools_enabled = image_enabled or weather_enabled or finance_enabled or time_enabled or wikipedia_enabled or reaction_enabled or sheets_enabled or calendar_enabled or member_memory_tools_enabled or triggers_enabled or dnd_enabled or chat_log_enabled
 
             # Build prompt - include images if present
+            # Format trigger message with sender name to match context format
+            # This ensures the AI knows who is asking (fixes member identity confusion)
+            next_idx = len(formatted_messages)
+            if reaction_enabled:
+                formatted_trigger = f"[{next_idx}] {sender_name}: {trigger_message}" if trigger_message else None
+                # Add trigger message to reaction metadata so AI can react to it
+                if message_timestamp and sender_id:
+                    reaction_metadata.append({
+                        "index": next_idx,
+                        "sender_id": sender_id,
+                        "signal_timestamp": message_timestamp
+                    })
+            else:
+                formatted_trigger = f"{sender_name}: {trigger_message}" if trigger_message else None
+
             if incoming_images:
                 # Create structured content with text and images
-                prompt_content = [{"type": "text", "text": trigger_message or "What do you see in this image?"}]
+                prompt_text = formatted_trigger or f"{sender_name}: What do you see in this image?"
+                prompt_content = [{"type": "text", "text": prompt_text}]
                 for img in incoming_images:
                     prompt_content.append({
                         "type": "image",
@@ -382,7 +463,9 @@ class MessageHandler:
                     })
                 logger.info(f"Built structured prompt with {len(incoming_images)} image(s)")
             else:
-                prompt_content = trigger_message
+                prompt_content = formatted_trigger
+
+            logger.info(f"[DEBUG] ===== FORMATTED PROMPT: {formatted_trigger[:80] if formatted_trigger else 'None'}... =====")
 
             # Two-phase meta-tool expansion loop with fast-path routing
             expanded_categories = {}  # Track expanded categories: {"finance": {"finance_quotes"}, "sheets": {"sheets_core"}}
@@ -420,6 +503,7 @@ class MessageHandler:
                             member_memory_enabled=member_memory_tools_enabled,
                             triggers_enabled=triggers_enabled,
                             dnd_enabled=dnd_enabled,
+                            chat_log_enabled=chat_log_enabled,
                             expanded_categories=expanded_categories
                         )
 
@@ -666,7 +750,9 @@ class MessageHandler:
         logger.info(f"Bot {bot_data['name']} generating image: {prompt[:50]}...")
 
         try:
-            result = generate_image_from_text(prompt)
+            # Get image model from bot settings, fall back to default
+            image_model = bot_data.get('image_model') or "google/gemini-3-pro-image-preview"
+            result = generate_image_from_text(prompt, model=image_model)
 
             if result and result.get("success"):
                 image_path = result.get("image_path")
@@ -713,6 +799,57 @@ Guidelines:
                 db.session.commit()
         except Exception as e:
             logger.error(f"Failed to log activity: {e}")
+
+    def _save_to_chat_log(
+        self,
+        group_id: str,
+        sender_name: str,
+        content: str,
+        sender_id: str = None,
+        is_bot: bool = False,
+        bot_id: str = None,
+        signal_timestamp: int = None,
+        image_data: str = None,
+        image_media_type: str = None
+    ):
+        """
+        Save a message to the permanent chat log for search.
+
+        This is separate from MessageLog (rolling context window).
+        Uses signal_timestamp for deduplication.
+
+        Args:
+            image_data: Base64 encoded image data (primary storage when chat_log enabled)
+            image_media_type: MIME type of the image, e.g., "image/jpeg"
+        """
+        if not content or not content.strip():
+            return
+
+        try:
+            with _flask_app.app_context():
+                # Check for duplicate using signal_timestamp
+                if signal_timestamp:
+                    existing = ChatLog.query.filter_by(signal_timestamp=signal_timestamp).first()
+                    if existing:
+                        logger.debug(f"Chat log entry already exists for timestamp {signal_timestamp}")
+                        return
+
+                log_entry = ChatLog(
+                    group_id=group_id,
+                    sender_id=sender_id,
+                    sender_name=sender_name,
+                    content=content,
+                    is_bot=is_bot,
+                    bot_id=bot_id,
+                    signal_timestamp=signal_timestamp,
+                    image_data=image_data,
+                    image_media_type=image_media_type
+                )
+                db.session.add(log_entry)
+                db.session.commit()
+                logger.debug(f"Saved chat log entry from {sender_name}")
+        except Exception as e:
+            logger.error(f"Failed to save chat log: {e}")
 
 
 # Global handler instance

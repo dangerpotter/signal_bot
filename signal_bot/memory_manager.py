@@ -1,19 +1,17 @@
 """Memory management for Signal bot conversations."""
 
-import random
+import logging
 from datetime import datetime
 from typing import Optional
 
-from signal_bot.models import db, MessageLog, MemorySnippet, GroupConnection
-from signal_bot.config_signal import (
-    DEFAULT_ROLLING_WINDOW,
-    LONG_TERM_SAVE_CHANCE,
-    LONG_TERM_RECALL_CHANCE
-)
+from signal_bot.models import db, MessageLog
+from signal_bot.config_signal import DEFAULT_ROLLING_WINDOW
+
+logger = logging.getLogger(__name__)
 
 
 class MemoryManager:
-    """Manages conversation context and long-term memories."""
+    """Manages conversation context (rolling message window)."""
 
     def __init__(self, group_id: str, rolling_window: int = DEFAULT_ROLLING_WINDOW):
         self.group_id = group_id
@@ -27,7 +25,9 @@ class MemoryManager:
         bot_id: Optional[str] = None,
         sender_id: Optional[str] = None,
         has_image: bool = False,
-        signal_timestamp: Optional[int] = None
+        signal_timestamp: Optional[int] = None,
+        image_data: Optional[str] = None,
+        image_media_type: Optional[str] = None
     ) -> Optional[MessageLog]:
         """Add a message to the rolling log.
 
@@ -35,6 +35,8 @@ class MemoryManager:
             signal_timestamp: Signal's unique message timestamp (milliseconds) for deduplication.
                             If provided and a message with this timestamp already exists,
                             the existing message is returned instead of creating a duplicate.
+            image_data: Base64 encoded image data (used when chat_log is disabled as fallback)
+            image_media_type: MIME type of the image, e.g., "image/jpeg"
         """
         # Deduplication: skip if this exact message already exists (by Signal timestamp)
         if signal_timestamp:
@@ -53,6 +55,8 @@ class MemoryManager:
             is_bot=is_bot,
             bot_id=bot_id,
             has_image=has_image,
+            image_data=image_data,
+            image_media_type=image_media_type,
             timestamp=datetime.utcnow(),
             signal_timestamp=signal_timestamp
         )
@@ -64,13 +68,25 @@ class MemoryManager:
 
         return message
 
-    def get_context_messages(self, limit: Optional[int] = None) -> list[dict]:
+    def get_context_messages(self, limit: Optional[int] = None, include_images: bool = True, max_image_messages: int = 3) -> list[dict]:
         """
         Get recent messages for context.
 
         Returns list of dicts with 'role', 'content', 'name' keys
         suitable for passing to AI APIs.
+
+        Args:
+            limit: Maximum number of messages to return
+            include_images: If True, include image data in structured content format
+                           when available (from MessageLog or ChatLog)
+            max_image_messages: Maximum number of recent messages to include images for.
+                               Older messages with images will have text only (to reduce tokens).
+
+        Note: Content can be either a string (text only) or a list (structured content
+        with text and images) when include_images=True and image data is available.
         """
+        from signal_bot.models import ChatLog  # Import here to avoid circular
+
         limit = limit or self.rolling_window
 
         messages = MessageLog.query.filter_by(
@@ -82,11 +98,74 @@ class MemoryManager:
         # Reverse to get chronological order
         messages = list(reversed(messages))
 
+        # First pass: identify which messages should include images (only last N with images)
+        # Process from newest to oldest to find which indices should include images
+        image_message_indices = set()
+        if include_images:
+            images_included = 0
+            for i in range(len(messages) - 1, -1, -1):  # Iterate newest to oldest
+                if messages[i].has_image and images_included < max_image_messages:
+                    image_message_indices.add(i)
+                    images_included += 1
+
         context = []
-        for msg in messages:
+        for i, msg in enumerate(messages):
+            content = msg.content
+            image_found = False
+
+            # Only include image if this message is in the allowed set
+            should_include_image = i in image_message_indices
+
+            # Check for image data if message has_image flag and images requested for this message
+            if msg.has_image and should_include_image:
+                # Lazy import to avoid circular dependency
+                from signal_bot.bot_manager import compress_image_for_api
+
+                # Priority 1: Check MessageLog directly (fallback storage when chat_log disabled)
+                if msg.image_data and msg.image_media_type:
+                    # Compress if needed to stay under API limits
+                    compressed_data, final_media_type = compress_image_for_api(
+                        msg.image_data, msg.image_media_type
+                    )
+                    content = [
+                        {"type": "text", "text": msg.content},
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": final_media_type,
+                                "data": compressed_data
+                            }
+                        }
+                    ]
+                    image_found = True
+
+                # Priority 2: Look up from ChatLog (primary storage when chat_log enabled)
+                if not image_found and msg.signal_timestamp:
+                    chat_log = ChatLog.query.filter_by(
+                        signal_timestamp=msg.signal_timestamp
+                    ).first()
+                    if chat_log and chat_log.image_data and chat_log.image_media_type:
+                        # Compress if needed to stay under API limits
+                        compressed_data, final_media_type = compress_image_for_api(
+                            chat_log.image_data, chat_log.image_media_type
+                        )
+                        content = [
+                            {"type": "text", "text": msg.content},
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": final_media_type,
+                                    "data": compressed_data
+                                }
+                            }
+                        ]
+                # If neither has image data, content stays as text (graceful degradation)
+
             context.append({
                 "role": "assistant" if msg.is_bot else "user",
-                "content": msg.content,
+                "content": content,
                 "name": msg.sender_name,
                 "timestamp": msg.timestamp.isoformat() if msg.timestamp else None,
                 "sender_id": msg.sender_id,
@@ -104,75 +183,6 @@ class MemoryManager:
             lines.append(f"{msg['name']}: {msg['content']}")
 
         return "\n".join(lines)
-
-    def maybe_save_memorable_moment(
-        self,
-        recent_exchange: str,
-        context: Optional[str] = None
-    ) -> Optional[MemorySnippet]:
-        """
-        Possibly save a memorable moment to long-term memory.
-
-        Called after AI responses to potentially capture funny/interesting moments.
-        """
-        # Roll for chance to save
-        if random.randint(1, 100) > LONG_TERM_SAVE_CHANCE:
-            return None
-
-        # Don't save if exchange is too short
-        if len(recent_exchange) < 50:
-            return None
-
-        snippet = MemorySnippet(
-            group_id=self.group_id,
-            content=recent_exchange,
-            context=context,
-            timestamp=datetime.utcnow()
-        )
-        db.session.add(snippet)
-        db.session.commit()
-
-        return snippet
-
-    def maybe_get_memory_callback(self) -> Optional[str]:
-        """
-        Maybe return an old memory to inject into context.
-
-        Returns a formatted string like "Earlier in this chat, someone said..."
-        """
-        # Roll for chance to recall
-        if random.randint(1, 100) > LONG_TERM_RECALL_CHANCE:
-            return None
-
-        # Get a random memory, preferring less-referenced ones
-        memories = MemorySnippet.query.filter_by(
-            group_id=self.group_id
-        ).order_by(
-            MemorySnippet.times_referenced.asc()
-        ).limit(10).all()
-
-        if not memories:
-            return None
-
-        # Pick a random one from the least-referenced
-        memory = random.choice(memories)
-
-        # Update reference count
-        memory.times_referenced += 1
-        db.session.commit()
-
-        # Format the callback
-        callback_intros = [
-            "Remember when",
-            "Earlier in this chat",
-            "This reminds me of when",
-            "Throwback to when",
-            "Speaking of which, remember",
-            "Wait this is giving me flashbacks to",
-        ]
-
-        intro = random.choice(callback_intros)
-        return f"[{intro}: {memory.content}]"
 
     def _prune_old_messages(self):
         """Remove messages beyond the rolling window."""
@@ -198,14 +208,8 @@ class MemoryManager:
             db.session.commit()
 
     def clear_context(self):
-        """Clear all messages for this group (but keep long-term memories)."""
+        """Clear all messages for this group."""
         MessageLog.query.filter_by(group_id=self.group_id).delete()
-        db.session.commit()
-
-    def clear_all_memories(self):
-        """Clear everything including long-term memories."""
-        MessageLog.query.filter_by(group_id=self.group_id).delete()
-        MemorySnippet.query.filter_by(group_id=self.group_id).delete()
         db.session.commit()
 
 

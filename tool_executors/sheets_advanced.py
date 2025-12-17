@@ -968,16 +968,30 @@ class SheetsAdvancedMixin:
             canonical_name = msg.sender_name  # Use the name as it appears in logs
 
             # Check if memory already exists for this slot
-            existing = GroupMemberMemory.query.filter_by(
-                group_id=self.group_id,
-                member_id=member_id,
-                slot_type=slot_type
-            ).first()
+            # First try by member_id (most accurate)
+            existing = None
+            if member_id:
+                existing = GroupMemberMemory.query.filter_by(
+                    group_id=self.group_id,
+                    member_id=member_id,
+                    slot_type=slot_type
+                ).first()
+
+            # Also check by member_name to prevent duplicates from different member_ids
+            if not existing:
+                existing = GroupMemberMemory.query.filter_by(
+                    group_id=self.group_id,
+                    member_name=canonical_name,
+                    slot_type=slot_type
+                ).first()
 
             if existing:
                 # Update existing
                 existing.content = content
                 existing.member_name = canonical_name
+                # Also update member_id if we have a better one
+                if member_id and (not existing.member_id or existing.member_id != member_id):
+                    existing.member_id = member_id
                 existing.updated_at = datetime.utcnow()
                 action = "Updated"
             else:
@@ -1039,20 +1053,51 @@ class SheetsAdvancedMixin:
                     MessageLog.is_bot == False
                 ).order_by(MessageLog.timestamp.desc()).first()
 
-            if not msg:
-                return {
-                    "success": False,
-                    "message": f"No known member '{member_name}' found in this group's chat history"
-                }
+            # If member found in MessageLog, use their member_id and canonical name
+            if msg:
+                member_id = msg.sender_id
+                canonical_name = msg.sender_name
 
-            member_id = msg.sender_id
-            canonical_name = msg.sender_name
+                # Get memories from BOTH member_id AND member_name (some may be stored differently)
+                # Use a dict to deduplicate by slot_type (later entries overwrite earlier)
+                memories_by_slot = {}
 
-            # Get all memories for this member
-            memories = GroupMemberMemory.query.filter_by(
-                group_id=self.group_id,
-                member_id=member_id
-            ).all()
+                # First, get by member_id
+                if member_id:
+                    for mem in GroupMemberMemory.query.filter_by(
+                        group_id=self.group_id,
+                        member_id=member_id
+                    ).all():
+                        memories_by_slot[mem.slot_type] = mem
+
+                # Also get by member_name (may have additional memories stored without member_id)
+                for mem in GroupMemberMemory.query.filter_by(
+                    group_id=self.group_id,
+                    member_name=canonical_name
+                ).all():
+                    # Only add if not already found by member_id (avoid duplicates)
+                    if mem.slot_type not in memories_by_slot:
+                        memories_by_slot[mem.slot_type] = mem
+
+                memories = list(memories_by_slot.values())
+            else:
+                # Member not in MessageLog - search GroupMemberMemory directly by name
+                # This handles members who have memories but no recent messages in context
+                canonical_name = member_name
+                memories = GroupMemberMemory.query.filter_by(
+                    group_id=self.group_id,
+                    member_name=member_name
+                ).all()
+
+                # Try case-insensitive search if exact match fails
+                if not memories:
+                    memories = GroupMemberMemory.query.filter(
+                        GroupMemberMemory.group_id == self.group_id,
+                        GroupMemberMemory.member_name.ilike(member_name)
+                    ).all()
+                    # Update canonical_name if we found memories
+                    if memories:
+                        canonical_name = memories[0].member_name
 
             if not memories:
                 return {
@@ -1086,6 +1131,154 @@ class SheetsAdvancedMixin:
             logger.error(f"Error getting member memories: {e}")
             return {"success": False, "message": f"Error getting memories: {str(e)}"}
 
+    def _execute_delete_member_memory(self, arguments: dict) -> dict:
+        """Execute the delete_member_memory tool call."""
+        if not self.bot_data.get('member_memory_tools_enabled'):
+            return {"success": False, "message": "Member memory tools disabled for this bot"}
+
+        member_name = arguments.get("member_name", "").strip()
+        slot_type = arguments.get("slot_type", "")
+
+        if not member_name:
+            return {"success": False, "message": "member_name is required"}
+        if not slot_type:
+            return {"success": False, "message": "slot_type is required"}
+
+        # Validate slot_type
+        valid_slots = ["home_location", "work_info", "interests", "media_prefs", "life_events", "response_prefs", "social_notes", "all"]
+        if slot_type not in valid_slots:
+            return {"success": False, "message": f"Invalid slot_type. Must be one of: {', '.join(valid_slots)}"}
+
+        try:
+            from signal_bot.models import GroupMemberMemory, MessageLog, db
+
+            # Try to find member_id from message logs
+            msg = MessageLog.query.filter_by(
+                group_id=self.group_id,
+                sender_name=member_name,
+                is_bot=False
+            ).order_by(MessageLog.timestamp.desc()).first()
+
+            if not msg:
+                # Try case-insensitive search
+                msg = MessageLog.query.filter(
+                    MessageLog.group_id == self.group_id,
+                    MessageLog.sender_name.ilike(member_name),
+                    MessageLog.is_bot == False
+                ).order_by(MessageLog.timestamp.desc()).first()
+
+            # If member found in MessageLog, use their member_id and canonical name
+            if msg:
+                member_id = msg.sender_id
+                canonical_name = msg.sender_name
+            else:
+                # Member not in MessageLog - search GroupMemberMemory directly by name
+                member_id = None
+                canonical_name = member_name
+
+                # Try to find canonical name from existing memories (case-insensitive)
+                existing_mem = GroupMemberMemory.query.filter(
+                    GroupMemberMemory.group_id == self.group_id,
+                    GroupMemberMemory.member_name.ilike(member_name)
+                ).first()
+                if existing_mem:
+                    canonical_name = existing_mem.member_name
+
+            if slot_type == "all":
+                # Delete all memories for this member - try by member_id first
+                deleted_count = 0
+                if member_id:
+                    deleted_count = GroupMemberMemory.query.filter_by(
+                        group_id=self.group_id,
+                        member_id=member_id
+                    ).delete()
+
+                # Fallback: also delete by member_name (handles mismatched member_id or no MessageLog entry)
+                if deleted_count == 0:
+                    deleted_count = GroupMemberMemory.query.filter_by(
+                        group_id=self.group_id,
+                        member_name=canonical_name
+                    ).delete()
+
+                # Also try case-insensitive if exact match found nothing
+                if deleted_count == 0:
+                    # Find and delete by case-insensitive match
+                    memories_to_delete = GroupMemberMemory.query.filter(
+                        GroupMemberMemory.group_id == self.group_id,
+                        GroupMemberMemory.member_name.ilike(member_name)
+                    ).all()
+                    deleted_count = len(memories_to_delete)
+                    for mem in memories_to_delete:
+                        db.session.delete(mem)
+
+                db.session.commit()
+
+                if deleted_count == 0:
+                    return {
+                        "success": True,
+                        "message": f"No memories found for {canonical_name} to delete"
+                    }
+
+                logger.info(f"Deleted all {deleted_count} memories for {canonical_name}")
+                return {
+                    "success": True,
+                    "data": {
+                        "member_name": canonical_name,
+                        "deleted_count": deleted_count
+                    },
+                    "message": f"Deleted all {deleted_count} memories for {canonical_name}"
+                }
+            else:
+                # Delete specific slot - try by member_id first
+                memory = None
+                if member_id:
+                    memory = GroupMemberMemory.query.filter_by(
+                        group_id=self.group_id,
+                        member_id=member_id,
+                        slot_type=slot_type
+                    ).first()
+
+                # Fallback: search by member_name
+                if not memory:
+                    memory = GroupMemberMemory.query.filter_by(
+                        group_id=self.group_id,
+                        member_name=canonical_name,
+                        slot_type=slot_type
+                    ).first()
+
+                # Case-insensitive fallback
+                if not memory:
+                    memory = GroupMemberMemory.query.filter(
+                        GroupMemberMemory.group_id == self.group_id,
+                        GroupMemberMemory.member_name.ilike(member_name),
+                        GroupMemberMemory.slot_type == slot_type
+                    ).first()
+
+                if not memory:
+                    return {
+                        "success": True,
+                        "message": f"No {slot_type} memory found for {canonical_name}"
+                    }
+
+                old_content = memory.content
+                db.session.delete(memory)
+                db.session.commit()
+
+                logger.info(f"Deleted {slot_type} memory for {canonical_name}: {old_content[:50]}...")
+                return {
+                    "success": True,
+                    "data": {
+                        "member_name": canonical_name,
+                        "slot_type": slot_type,
+                        "deleted_content": old_content
+                    },
+                    "message": f"Deleted {slot_type} memory for {canonical_name}"
+                }
+
+        except Exception as e:
+            logger.error(f"Error deleting member memory: {e}")
+            return {"success": False, "message": f"Error deleting memory: {str(e)}"}
+
     def _execute_list_group_members(self, arguments: dict) -> dict:
         """Execute the list_group_members tool call."""
         if not self.bot_data.get('member_memory_tools_enabled'):
@@ -1094,6 +1287,10 @@ class SheetsAdvancedMixin:
         try:
             from signal_bot.models import GroupMemberMemory, MessageLog
             from sqlalchemy import func
+
+            # Track members we've already processed (by lowercase name for deduplication)
+            seen_members = set()
+            member_list = []
 
             # Get distinct non-bot members from message logs
             members = MessageLog.query.filter_by(
@@ -1104,37 +1301,77 @@ class SheetsAdvancedMixin:
                 MessageLog.sender_name
             ).distinct().all()
 
-            if not members:
-                return {
-                    "success": True,
-                    "data": {"members": [], "count": 0},
-                    "message": "No members found in chat history"
-                }
-
-            # Build member list with memory counts
-            member_list = []
+            # Build member list from MessageLog
             for member_id, member_name in members:
-                if not member_id:
+                if not member_name:
                     continue
 
-                # Count memories for this member
+                seen_members.add(member_name.lower())
+
+                # Get memories from BOTH member_id AND member_name (some may be stored differently)
+                # Use a set to deduplicate slot_types
+                memory_slots = set()
+
+                # First, get by member_id
+                if member_id:
+                    for (slot_type,) in GroupMemberMemory.query.filter_by(
+                        group_id=self.group_id,
+                        member_id=member_id
+                    ).with_entities(GroupMemberMemory.slot_type).all():
+                        memory_slots.add(slot_type)
+
+                # Also get by member_name (may have additional memories stored without member_id)
+                for (slot_type,) in GroupMemberMemory.query.filter_by(
+                    group_id=self.group_id,
+                    member_name=member_name
+                ).with_entities(GroupMemberMemory.slot_type).all():
+                    memory_slots.add(slot_type)
+
+                member_list.append({
+                    "name": member_name,
+                    "memory_count": len(memory_slots),
+                    "memory_types": list(memory_slots)
+                })
+
+            # Also include members who have memories but aren't in MessageLog
+            # This handles members who haven't sent recent messages but have stored memories
+            memory_only_members = GroupMemberMemory.query.filter_by(
+                group_id=self.group_id
+            ).with_entities(
+                GroupMemberMemory.member_name
+            ).distinct().all()
+
+            for (member_name,) in memory_only_members:
+                if not member_name or member_name.lower() in seen_members:
+                    continue
+
+                seen_members.add(member_name.lower())
+
+                # Get memory count and types
                 memory_count = GroupMemberMemory.query.filter_by(
                     group_id=self.group_id,
-                    member_id=member_id
+                    member_name=member_name
                 ).count()
 
-                # Get memory types stored
                 memory_types = GroupMemberMemory.query.filter_by(
                     group_id=self.group_id,
-                    member_id=member_id
+                    member_name=member_name
                 ).with_entities(GroupMemberMemory.slot_type).all()
                 memory_types = [m[0] for m in memory_types]
 
                 member_list.append({
                     "name": member_name,
                     "memory_count": memory_count,
-                    "memory_types": memory_types
+                    "memory_types": memory_types,
+                    "memory_only": True  # Flag that this member isn't in recent chat history
                 })
+
+            if not member_list:
+                return {
+                    "success": True,
+                    "data": {"members": [], "count": 0},
+                    "message": "No members found in chat history or memories"
+                }
 
             # Sort by memory count (most known members first)
             member_list.sort(key=lambda x: x["memory_count"], reverse=True)

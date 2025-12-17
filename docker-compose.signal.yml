@@ -3,7 +3,7 @@ services:
     image: bbernhard/signal-cli-rest-api:latest
     container_name: signal-bot-1
     environment:
-      - MODE=normal
+      - MODE=json-rpc
     ports:
       - "8080:8080"
     volumes:

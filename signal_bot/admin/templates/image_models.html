@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+
+{% block title %}Image Models - Signal Bot Admin{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h1><i class="bi bi-image"></i> Image Models</h1>
+        <p class="text-muted">Manage image generation models available to bots</p>
+    </div>
+    <div class="col-auto">
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addImageModelModal">
+            <i class="bi bi-plus-lg"></i> Add Image Model
+        </button>
+    </div>
+</div>
+
+<div class="row">
+    {% for model in image_models %}
+    <div class="col-md-6 col-lg-4 mb-4">
+        <div class="card h-100 {% if not model.enabled %}opacity-50{% endif %}">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>
+                    <i class="bi bi-image"></i> {{ model.display_name }}
+                </span>
+                <span class="badge {% if model.enabled %}bg-success{% else %}bg-secondary{% endif %}">
+                    {{ 'Enabled' if model.enabled else 'Disabled' }}
+                </span>
+            </div>
+            <div class="card-body">
+                <p class="small text-muted mb-2">
+                    <code>{{ model.id }}</code>
+                </p>
+                {% if model.description %}
+                <p class="small mb-2">{{ model.description[:150] }}{% if model.description|length > 150 %}...{% endif %}</p>
+                {% endif %}
+            </div>
+            <div class="card-footer">
+                <form action="{{ url_for('toggle_image_model', model_id=model.id) }}" method="post" class="d-inline">
+                    <button type="submit" class="btn btn-sm btn-outline-{% if model.enabled %}warning{% else %}success{% endif %}">
+                        <i class="bi bi-{% if model.enabled %}pause{% else %}play{% endif %}"></i>
+                        {{ 'Disable' if model.enabled else 'Enable' }}
+                    </button>
+                </form>
+                <form action="{{ url_for('delete_image_model', model_id=model.id) }}" method="post" class="d-inline" onsubmit="return confirm('Delete this image model?')">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="col-12">
+        <div class="alert alert-info">
+            <i class="bi bi-info-circle"></i> No image models configured. Click "Add Image Model" to add one.
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Add Image Model Modal -->
+<div class="modal fade" id="addImageModelModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="{{ url_for('add_image_model') }}" method="post">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Image Model</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Model ID <span class="text-danger">*</span></label>
+                        <input type="text" name="model_id" class="form-control" required
+                               placeholder="e.g., google/gemini-3-pro-image-preview">
+                        <div class="form-text">OpenRouter model ID for image generation</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Display Name <span class="text-danger">*</span></label>
+                        <input type="text" name="display_name" class="form-control" required
+                               placeholder="e.g., Gemini 3 Pro">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <textarea name="description" class="form-control" rows="2"
+                                  placeholder="Optional description"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add Model</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card bg-dark">
+            <div class="card-body">
+                <h6><i class="bi bi-lightbulb"></i> Common Image Models on OpenRouter</h6>
+                <ul class="mb-0 small">
+                    <li><code>google/gemini-3-pro-image-preview</code> - Gemini 3 Pro (Nano Banana)</li>
+                    <li><code>black-forest-labs/flux-1.1-pro</code> - FLUX 1.1 Pro</li>
+                    <li><code>black-forest-labs/flux-pro</code> - FLUX Pro</li>
+                    <li><code>black-forest-labs/flux-schnell</code> - FLUX Schnell (fast)</li>
+                    <li><code>stability-ai/sdxl</code> - Stable Diffusion XL</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

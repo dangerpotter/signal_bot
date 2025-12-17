@@ -779,6 +779,15 @@ class DndToolsMixin:
             # Sort by initiative (highest first)
             initiative_order.sort(key=lambda x: x["initiative"], reverse=True)
 
+            # Build combat state in new format
+            from signal_bot.dnd_client import combat_state_to_json
+            combat_state = {
+                "round": 1,
+                "current_turn_index": 0,
+                "encounter_name": encounter_name,
+                "combatants": initiative_order
+            }
+
             # Update campaign state
             overview_result = read_sheet_sync(self.bot_data, campaign.spreadsheet_id, "'Overview'!A2:B20")
             overview = {}
@@ -800,7 +809,7 @@ class DndToolsMixin:
                 ["Session Count", overview.get("Session Count", "0")],
                 ["Last Played", datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")],
                 ["Active Combat", "Yes"],
-                ["Combat Initiative Order", json.dumps(initiative_order)],
+                ["Combat Initiative Order", combat_state_to_json(combat_state)],
             ]
             write_sheet_sync(self.bot_data, campaign.spreadsheet_id, "'Overview'!A2", overview_data)
 
@@ -812,17 +821,20 @@ class DndToolsMixin:
                 init_lines.append(f"{i+1}. **{combatant['name']}**{player_tag}: {combatant['initiative']}{surprised} (HP: {combatant['hp']}/{combatant['max_hp']}, AC: {combatant['ac']})")
 
             message = f"**COMBAT STARTED: {encounter_name}**\n\n"
-            message += "**Initiative Order:**\n" + "\n".join(init_lines)
+            message += f"**Round 1 - Initiative Order:**\n" + "\n".join(init_lines)
             if surprise != "none":
                 message += f"\n\n*{surprise.capitalize()} are surprised and cannot act in round 1!*"
             message += f"\n\n**{initiative_order[0]['name']}** is up first!"
+            message += "\n\n*Use `complete_turn` after each combatant's action to track HP, advance initiative, and log the turn.*"
 
             return {
                 "success": True,
                 "data": {
                     "encounter_name": encounter_name,
                     "initiative_order": initiative_order,
-                    "surprise": surprise
+                    "surprise": surprise,
+                    "round": 1,
+                    "current_turn_index": 0
                 },
                 "message": message
             }
@@ -861,19 +873,25 @@ class DndToolsMixin:
                     if len(row) >= 2:
                         overview[row[0]] = row[1]
 
-            # Get encounter info before clearing
-            initiative_data = overview.get("Combat Initiative Order", "[]")
-            try:
-                initiative_order = json.loads(initiative_data)
-            except:
-                initiative_order = []
+            # Get encounter info before clearing (handle both old and new formats)
+            from signal_bot.dnd_client import parse_combat_state
 
-            encounter_name = "Combat Encounter"
+            initiative_data = overview.get("Combat Initiative Order", "")
+            combat_state = parse_combat_state(initiative_data)
+
+            if combat_state:
+                initiative_order = combat_state.get("combatants", [])
+                encounter_name = combat_state.get("encounter_name", "Combat Encounter")
+            else:
+                initiative_order = []
+                encounter_name = "Combat Encounter"
+
             enemies = []
             for combatant in initiative_order:
                 if not combatant.get("is_player"):
                     enemies.append(combatant["name"])
-            if enemies:
+            # Only generate encounter name from enemies if we don't have one
+            if enemies and encounter_name == "Combat Encounter":
                 encounter_name = f"vs {', '.join(enemies[:3])}"
 
             # Clear combat state
@@ -1654,4 +1672,391 @@ class DndToolsMixin:
         except Exception as e:
             logger.error(f"Error updating overview field: {e}")
             return False
+
+    # =========================================================================
+    # TURN & EVENT LOGGING TOOL HANDLERS
+    # =========================================================================
+
+    def _execute_complete_turn(self, arguments: dict) -> dict:
+        """Complete a combat turn with HP updates, conditions, and initiative advancement."""
+        try:
+            if not self.bot_data.get('dnd_enabled'):
+                return {"success": False, "message": "D&D tools are not enabled for this bot"}
+
+            from signal_bot.google_sheets_client import (
+                read_sheet_sync, write_sheet_sync, append_to_sheet_sync, _flask_app
+            )
+            from signal_bot.dnd_client import (
+                parse_combat_state, combat_state_to_json, event_to_row,
+                row_to_character, character_to_row
+            )
+            from signal_bot.models import DndCampaignRegistry
+            from datetime import datetime
+            import json
+
+            if not _flask_app:
+                return {"success": False, "message": "Flask app not initialized for database access"}
+
+            # Get active campaign
+            with _flask_app.app_context():
+                campaign = DndCampaignRegistry.get_active_campaign(
+                    self.bot_data['id'], self.group_id
+                )
+                if not campaign:
+                    return {"success": False, "message": "No active campaign."}
+                spreadsheet_id = campaign.spreadsheet_id
+
+            # Read Overview to get combat state
+            overview_result = read_sheet_sync(self.bot_data, spreadsheet_id, "'Overview'!A2:B20")
+            overview = {}
+            if overview_result.get("success") and overview_result.get("data", {}).get("values"):
+                for row in overview_result["data"]["values"]:
+                    if len(row) >= 2:
+                        overview[row[0]] = row[1]
+
+            # Check if combat is active
+            if overview.get("Active Combat") != "Yes":
+                return {"success": False, "message": "No active combat. Use start_combat first."}
+
+            # Parse combat state (handles both old and new formats)
+            combat_data = overview.get("Combat Initiative Order", "")
+            combat_state = parse_combat_state(combat_data)
+            if not combat_state:
+                return {"success": False, "message": "Invalid combat state. Start a new combat encounter."}
+
+            combatants = combat_state.get("combatants", [])
+            current_round = combat_state.get("round", 1)
+            current_turn_index = combat_state.get("current_turn_index", 0)
+
+            if not combatants:
+                return {"success": False, "message": "No combatants in combat."}
+
+            # Get current combatant
+            current_combatant = combatants[current_turn_index]
+            action_summary = arguments.get("action_summary", "Action taken")
+            combatant_updates = arguments.get("combatant_updates", [])
+            damage_dealt = arguments.get("damage_dealt", 0)
+            healing_done = arguments.get("healing_done", 0)
+            spell_slots_used = arguments.get("spell_slots_used", {})
+            advance_turn = arguments.get("advance_turn", True)
+
+            # Apply combatant updates
+            player_characters_updated = []
+            for update in combatant_updates:
+                target_name = update.get("name")
+                if not target_name:
+                    continue
+
+                # Find the combatant
+                for combatant in combatants:
+                    if combatant["name"].lower() == target_name.lower():
+                        # Apply HP change
+                        if "hp_change" in update:
+                            new_hp = combatant.get("hp", 0) + update["hp_change"]
+                            new_hp = max(0, min(new_hp, combatant.get("max_hp", new_hp)))
+                            combatant["hp"] = new_hp
+
+                        # Add conditions
+                        if "conditions_add" in update:
+                            conditions = combatant.get("conditions", [])
+                            for cond in update["conditions_add"]:
+                                if cond not in conditions:
+                                    conditions.append(cond)
+                            combatant["conditions"] = conditions
+
+                        # Remove conditions
+                        if "conditions_remove" in update:
+                            conditions = combatant.get("conditions", [])
+                            for cond in update["conditions_remove"]:
+                                if cond in conditions:
+                                    conditions.remove(cond)
+                            combatant["conditions"] = conditions
+
+                        # Mark as dead
+                        if update.get("is_dead") or combatant.get("hp", 0) <= 0:
+                            combatant["is_dead"] = True
+
+                        # Track player character updates for syncing
+                        if combatant.get("is_player"):
+                            player_characters_updated.append(combatant)
+
+                        break
+
+            # Handle spell slots for current combatant (if player)
+            if spell_slots_used and current_combatant.get("is_player"):
+                player_characters_updated.append({
+                    "name": current_combatant["name"],
+                    "spell_slots_used": spell_slots_used
+                })
+
+            # Advance turn
+            next_combatant = None
+            new_round = current_round
+            new_turn_index = current_turn_index
+
+            if advance_turn:
+                # Find next living combatant
+                attempts = 0
+                while attempts < len(combatants):
+                    new_turn_index = (new_turn_index + 1) % len(combatants)
+                    if new_turn_index == 0:
+                        new_round += 1  # New round when we wrap around
+
+                    candidate = combatants[new_turn_index]
+                    if not candidate.get("is_dead") and candidate.get("hp", 0) > 0:
+                        next_combatant = candidate
+                        break
+                    attempts += 1
+
+                if not next_combatant:
+                    # No living combatants (shouldn't happen normally)
+                    next_combatant = combatants[0]
+
+            # Check if combat is over (all enemies dead)
+            enemies_alive = [c for c in combatants if not c.get("is_player") and not c.get("is_dead") and c.get("hp", 0) > 0]
+            players_alive = [c for c in combatants if c.get("is_player") and not c.get("is_dead") and c.get("hp", 0) > 0]
+
+            combat_over = False
+            combat_outcome = None
+            if not enemies_alive:
+                combat_over = True
+                combat_outcome = "victory"
+            elif not players_alive:
+                combat_over = True
+                combat_outcome = "defeat"
+
+            # Update combat state
+            combat_state["round"] = new_round
+            combat_state["current_turn_index"] = new_turn_index
+            combat_state["combatants"] = combatants
+
+            # Write updated combat state to Overview
+            self._update_overview_field(spreadsheet_id, "Combat Initiative Order", combat_state_to_json(combat_state))
+            self._update_overview_field(spreadsheet_id, "Last Played", datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"))
+
+            # Log to Event Log
+            session_num = overview.get("Session Count", "1")
+            current_location = overview.get("Current Location", "")
+
+            event_row = event_to_row(
+                session_num=session_num,
+                event_type="combat",
+                actor=current_combatant["name"],
+                summary=action_summary,
+                location=current_location,
+                damage=damage_dealt,
+                healing=healing_done,
+                outcome="",
+                round_num=current_round
+            )
+            append_to_sheet_sync(
+                self.bot_data, spreadsheet_id, event_row,
+                added_by="D&D GM", include_metadata=False,
+                sheet_name="Event Log"
+            )
+
+            # Sync player character HP to Characters sheet
+            if player_characters_updated:
+                chars_result = read_sheet_sync(self.bot_data, spreadsheet_id, "'Characters'!A2:AF100")
+                if chars_result.get("success") and chars_result.get("data", {}).get("values"):
+                    rows = chars_result["data"]["values"]
+                    for pc_update in player_characters_updated:
+                        for i, row in enumerate(rows):
+                            if len(row) > 1 and row[1].lower() == pc_update["name"].lower():
+                                char = row_to_character(row)
+
+                                # Update HP
+                                if "hp" in pc_update:
+                                    char["current_hp"] = pc_update["hp"]
+                                else:
+                                    # Find HP from combatant data
+                                    for c in combatants:
+                                        if c["name"].lower() == pc_update["name"].lower():
+                                            char["current_hp"] = c.get("hp", char["current_hp"])
+                                            char["conditions"] = c.get("conditions", [])
+                                            break
+
+                                # Update spell slots if provided
+                                if "spell_slots_used" in pc_update:
+                                    current_slots = char.get("spell_slots", {})
+                                    for level, used in pc_update["spell_slots_used"].items():
+                                        if level in current_slots:
+                                            current_slots[level] = max(0, current_slots[level] - used)
+                                    char["spell_slots"] = current_slots
+
+                                # Write back
+                                new_row = character_to_row(char)
+                                row_num = i + 2
+                                write_sheet_sync(
+                                    self.bot_data, spreadsheet_id,
+                                    f"'Characters'!A{row_num}",
+                                    [new_row]
+                                )
+                                break
+
+            # If combat is over, auto-end it
+            if combat_over:
+                # Calculate XP (simplified - 50 XP per enemy)
+                enemy_count = len([c for c in combatants if not c.get("is_player")])
+                xp_awarded = enemy_count * 50
+
+                # Call end_combat internally
+                end_result = self._execute_end_combat({
+                    "outcome": combat_outcome,
+                    "xp_awarded": xp_awarded,
+                    "notes": f"Combat ended after {current_round} rounds"
+                })
+
+                return {
+                    "success": True,
+                    "data": {
+                        "turn_completed": True,
+                        "combat_over": True,
+                        "outcome": combat_outcome,
+                        "round": current_round,
+                        "actor": current_combatant["name"]
+                    },
+                    "message": f"**Turn Complete:** {current_combatant['name']} - {action_summary}\n\n**COMBAT ENDED - {combat_outcome.upper()}!**\n{end_result.get('message', '')}"
+                }
+
+            # Build response message
+            message = f"**Turn Complete (Round {current_round}):** {current_combatant['name']}\n"
+            message += f"{action_summary}\n\n"
+
+            if damage_dealt:
+                message += f"Damage dealt: {damage_dealt}\n"
+            if healing_done:
+                message += f"Healing done: {healing_done}\n"
+
+            # Show updated combatant status
+            message += "\n**Combatant Status:**\n"
+            for i, c in enumerate(combatants):
+                status = "DEAD" if c.get("is_dead") or c.get("hp", 0) <= 0 else f"{c.get('hp', 0)}/{c.get('max_hp', 0)} HP"
+                conditions = f" [{', '.join(c.get('conditions', []))}]" if c.get('conditions') else ""
+                turn_marker = " ← UP NEXT" if advance_turn and i == new_turn_index else ""
+                player_tag = "[PC]" if c.get("is_player") else "[Enemy]"
+                message += f"  {c['name']} {player_tag}: {status}{conditions}{turn_marker}\n"
+
+            if next_combatant:
+                message += f"\n**{next_combatant['name']}** is up!"
+
+            return {
+                "success": True,
+                "data": {
+                    "turn_completed": True,
+                    "combat_over": False,
+                    "round": new_round,
+                    "actor": current_combatant["name"],
+                    "next_combatant": next_combatant["name"] if next_combatant else None
+                },
+                "message": message
+            }
+
+        except Exception as e:
+            logger.error(f"Error completing turn: {e}")
+            return {"success": False, "message": f"Error completing turn: {str(e)}"}
+
+    def _execute_log_event(self, arguments: dict) -> dict:
+        """Log an exploration or story event."""
+        try:
+            if not self.bot_data.get('dnd_enabled'):
+                return {"success": False, "message": "D&D tools are not enabled for this bot"}
+
+            from signal_bot.google_sheets_client import (
+                read_sheet_sync, append_to_sheet_sync, _flask_app
+            )
+            from signal_bot.dnd_client import event_to_row
+            from signal_bot.models import DndCampaignRegistry
+            from datetime import datetime
+
+            if not _flask_app:
+                return {"success": False, "message": "Flask app not initialized for database access"}
+
+            # Get active campaign
+            with _flask_app.app_context():
+                campaign = DndCampaignRegistry.get_active_campaign(
+                    self.bot_data['id'], self.group_id
+                )
+                if not campaign:
+                    return {"success": False, "message": "No active campaign."}
+                spreadsheet_id = campaign.spreadsheet_id
+
+            event_type = arguments.get("event_type", "story")
+            summary = arguments.get("summary", "")
+            location = arguments.get("location", "")
+            npcs_involved = arguments.get("npcs_involved", [])
+            outcome = arguments.get("outcome", "")
+            characters_involved = arguments.get("characters_involved", [])
+
+            if not summary:
+                return {"success": False, "message": "Event summary is required"}
+
+            # Read Overview to get session number and current location
+            overview_result = read_sheet_sync(self.bot_data, spreadsheet_id, "'Overview'!A2:B20")
+            overview = {}
+            if overview_result.get("success") and overview_result.get("data", {}).get("values"):
+                for row in overview_result["data"]["values"]:
+                    if len(row) >= 2:
+                        overview[row[0]] = row[1]
+
+            session_num = overview.get("Session Count", "1")
+            current_location = location or overview.get("Current Location", "")
+
+            # Update Current Location if this is a travel event
+            if event_type == "travel" and location:
+                self._update_overview_field(spreadsheet_id, "Current Location", location)
+                self._update_overview_field(spreadsheet_id, "Last Played", datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"))
+
+            # Build actor string from characters involved
+            actor = ", ".join(characters_involved) if characters_involved else "Party"
+
+            # Log to Event Log
+            event_row = event_to_row(
+                session_num=session_num,
+                event_type=event_type,
+                actor=actor,
+                summary=summary,
+                location=current_location,
+                npcs_involved=npcs_involved,
+                outcome=outcome
+            )
+            append_to_sheet_sync(
+                self.bot_data, spreadsheet_id, event_row,
+                added_by="D&D GM", include_metadata=False,
+                sheet_name="Event Log"
+            )
+
+            # Build response message
+            event_icons = {
+                "travel": "🚶",
+                "conversation": "💬",
+                "skill_check": "🎲",
+                "story": "📜",
+                "rest": "🏕️"
+            }
+            icon = event_icons.get(event_type, "📝")
+
+            message = f"{icon} **Event Logged:** {event_type.replace('_', ' ').title()}\n"
+            message += f"{summary}\n"
+
+            if event_type == "travel" and location:
+                message += f"\n*Party location updated to: {location}*"
+            if npcs_involved:
+                message += f"\nNPCs: {', '.join(npcs_involved)}"
+            if outcome:
+                message += f"\nOutcome: {outcome}"
+
+            return {
+                "success": True,
+                "data": {
+                    "event_type": event_type,
+                    "summary": summary,
+                    "location": current_location
+                },
+                "message": message
+            }
+
+        except Exception as e:
+            logger.error(f"Error logging event: {e}")
+            return {"success": False, "message": f"Error logging event: {str(e)}"}
 

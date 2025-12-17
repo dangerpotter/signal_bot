@@ -1,20 +1,32 @@
 """Bot manager for orchestrating multiple Signal bots."""
 
 import asyncio
+import base64
+import io
 import logging
 import httpx
 import random
 import time
+import traceback
 import uuid
 from typing import Optional, Callable
 from dataclasses import dataclass
 from flask import Flask
+from PIL import Image
 
 from signal_bot.models import db, Bot, GroupConnection, BotGroupAssignment, ActivityLog
-from signal_bot.config_signal import get_signal_api_url
+from signal_bot.config_signal import (
+    get_signal_api_url,
+    WEBSOCKET_ENABLED,
+    WEBSOCKET_RECONNECT_DELAY,
+    WEBSOCKET_MAX_RECONNECT_DELAY,
+    WEBSOCKET_PING_INTERVAL,
+    WEBSOCKET_PING_TIMEOUT
+)
 from signal_bot.message_handler import get_message_handler
 from signal_bot.member_memory_scanner import get_memory_scanner, set_flask_app as set_scanner_app
 from signal_bot.trigger_scheduler import create_trigger_scheduler, set_flask_app as set_scheduler_app
+from signal_bot.websocket_handler import SignalWebSocketHandler, WebSocketConfig, probe_websocket
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +41,61 @@ def set_flask_app(app: Flask):
     # Also set for memory scanner and trigger scheduler
     set_scanner_app(app)
     set_scheduler_app(app)
+
+
+def compress_image_for_api(base64_data: str, media_type: str, max_bytes: int = 4_000_000) -> tuple[str, str]:
+    """Compress image to stay under API size limits (Claude: 5MB).
+
+    Args:
+        base64_data: Base64-encoded image data
+        media_type: MIME type (e.g., 'image/jpeg', 'image/png')
+        max_bytes: Target maximum size in bytes (default 4MB, leaves headroom for 5MB API limit)
+
+    Returns:
+        Tuple of (compressed_base64, media_type). May convert PNG to JPEG.
+    """
+    # Decode base64 to bytes
+    image_bytes = base64.b64decode(base64_data)
+    original_size = len(image_bytes)
+
+    # If already under limit, return as-is
+    if original_size <= max_bytes:
+        return base64_data, media_type
+
+    logger.info(f"Compressing image: {original_size:,} bytes -> target {max_bytes:,} bytes")
+
+    # Open image with PIL
+    img = Image.open(io.BytesIO(image_bytes))
+
+    # Convert RGBA/P to RGB for JPEG (JPEG doesn't support alpha)
+    if img.mode in ('RGBA', 'P'):
+        img = img.convert('RGB')
+
+    # Scale down if very large (max 2000px on longest side)
+    max_dimension = 2000
+    if max(img.size) > max_dimension:
+        ratio = max_dimension / max(img.size)
+        new_size = (int(img.width * ratio), int(img.height * ratio))
+        img = img.resize(new_size, Image.Resampling.LANCZOS)
+        logger.info(f"Resized image to {new_size[0]}x{new_size[1]}")
+
+    # Try progressively lower quality until under limit
+    for quality in [85, 70, 55, 40]:
+        buffer = io.BytesIO()
+        img.save(buffer, format='JPEG', quality=quality, optimize=True)
+        compressed = buffer.getvalue()
+        if len(compressed) <= max_bytes:
+            logger.info(f"Compressed to {len(compressed):,} bytes at quality={quality}")
+            return base64.b64encode(compressed).decode('utf-8'), 'image/jpeg'
+
+    # Final fallback: aggressive resize + low quality
+    ratio = 0.5
+    img = img.resize((int(img.width * ratio), int(img.height * ratio)), Image.Resampling.LANCZOS)
+    buffer = io.BytesIO()
+    img.save(buffer, format='JPEG', quality=40, optimize=True)
+    compressed = buffer.getvalue()
+    logger.info(f"Aggressive compression: {len(compressed):,} bytes (50% scale, quality=40)")
+    return base64.b64encode(compressed).decode('utf-8'), 'image/jpeg'
 
 
 @dataclass
@@ -53,7 +120,12 @@ class SignalBotManager:
         self.running = False
         self._tasks: dict[str, asyncio.Task] = {}
         self._http_clients: dict[int, httpx.AsyncClient] = {}
+        self._port_locks: dict[int, asyncio.Semaphore] = {}  # Serialize Signal container requests
         self.message_handler = get_message_handler()
+
+        # WebSocket handlers for json-rpc mode (per-bot)
+        self._ws_handlers: dict[str, SignalWebSocketHandler] = {}
+        self._ws_mode_detected: dict[int, bool] = {}  # port -> supports_websocket
 
         # Idle news feature - track last activity per group
         self._group_last_activity: dict[str, float] = {}  # group_id -> timestamp
@@ -117,6 +189,11 @@ class SignalBotManager:
             except asyncio.CancelledError:
                 pass
 
+        # Stop WebSocket handlers
+        for handler in list(self._ws_handlers.values()):
+            await handler.stop()
+        self._ws_handlers.clear()
+
         # Cancel all bot tasks
         for bot_id, task in self._tasks.items():
             task.cancel()
@@ -162,6 +239,7 @@ class SignalBotManager:
                 'respond_on_mention': bot.respond_on_mention,
                 'random_chance_percent': bot.random_chance_percent,
                 'image_generation_enabled': bot.image_generation_enabled,
+                'image_model': getattr(bot, 'image_model', None),
                 'web_search_enabled': bot.web_search_enabled,
                 'weather_enabled': getattr(bot, 'weather_enabled', False),
                 'finance_enabled': getattr(bot, 'finance_enabled', False),
@@ -190,7 +268,25 @@ class SignalBotManager:
                 # D&D Game Master
                 'dnd_enabled': getattr(bot, 'dnd_enabled', False),
                 'dnd_template_spreadsheet_id': getattr(bot, 'dnd_template_spreadsheet_id', None),
+                # Chat log search
+                'chat_log_enabled': getattr(bot, 'chat_log_enabled', False),
+                'chat_log_retention': getattr(bot, 'chat_log_retention', 'forever'),
+                # Signal UUID for mention matching (fetched on startup)
+                'signal_uuid': getattr(bot, 'signal_uuid', None),
             }
+
+        # Fetch and cache Signal UUID if not already stored
+        if not bot_data.get('signal_uuid'):
+            uuid = await self._fetch_bot_uuid(bot_data['phone_number'], bot_data['signal_api_port'])
+            if uuid:
+                bot_data['signal_uuid'] = uuid
+                # Save to database for future startups
+                with _flask_app.app_context():
+                    bot = Bot.query.get(bot_id)
+                    if bot:
+                        bot.signal_uuid = uuid
+                        db.session.commit()
+                        logger.info(f"Saved Signal UUID for {bot_data['name']}")
 
         # Create task to listen for messages
         task = asyncio.create_task(
@@ -333,7 +429,8 @@ class SignalBotManager:
 
         try:
             client = await self._get_http_client(port)
-            response = await client.post(url, json=payload, timeout=30.0)
+            async with self._get_port_lock(port):
+                response = await client.post(url, json=payload, timeout=30.0)
 
             if response.status_code in (200, 201):
                 return True
@@ -350,7 +447,7 @@ class SignalBotManager:
                 logger.error(f"Send message failed: {response.status_code} - {response.text}")
                 return False
         except Exception as e:
-            logger.error(f"Error sending message: {e}")
+            logger.error(f"Error sending message: {e}\n{traceback.format_exc()}")
             return False
 
     async def send_image(
@@ -388,7 +485,8 @@ class SignalBotManager:
 
         try:
             client = await self._get_http_client(port)
-            response = await client.post(url, json=payload, timeout=60.0)
+            async with self._get_port_lock(port):
+                response = await client.post(url, json=payload, timeout=30.0)
 
             if response.status_code in (200, 201):
                 return True
@@ -396,7 +494,7 @@ class SignalBotManager:
                 logger.error(f"Send image failed: {response.status_code}")
                 return False
         except Exception as e:
-            logger.error(f"Error sending image: {e}")
+            logger.error(f"Error sending image: {e}\n{traceback.format_exc()}")
             return False
 
     async def get_attachment_data(
@@ -428,7 +526,8 @@ class SignalBotManager:
         }
         logger.info(f"[DEBUG] Trying JSON-RPC getAttachment: id={attachment_id}, group={group_id[:20]}...")
         try:
-            response = await client.post(rpc_url, json=payload, timeout=30.0)
+            async with self._get_port_lock(port):
+                response = await client.post(rpc_url, json=payload, timeout=30.0)
             if response.status_code == 200:
                 result = response.json()
                 if "result" in result:
@@ -445,7 +544,8 @@ class SignalBotManager:
         rest_url = f"http://localhost:{port}/v1/attachments/{attachment_id}"
         logger.info(f"[DEBUG] Trying REST: {rest_url}")
         try:
-            response = await client.get(rest_url, timeout=30.0)
+            async with self._get_port_lock(port):
+                response = await client.get(rest_url, timeout=30.0)
             logger.info(f"[DEBUG] REST response: {response.status_code}, content-type: {response.headers.get('content-type')}, size: {len(response.content)}")
             if response.status_code == 200:
                 encoded = b64.b64encode(response.content).decode('utf-8')
@@ -468,34 +568,40 @@ class SignalBotManager:
         port: int = 8080
     ) -> bool:
         """Send an emoji reaction to a message."""
-        import base64
         url = f"http://localhost:{port}/v1/reactions/{phone_number}"
 
-        # Convert internal_id format to API format if needed
-        if not group_id.startswith("group."):
-            api_group_id = "group." + base64.b64encode(group_id.encode()).decode()
-        else:
-            api_group_id = group_id
-
+        # Format group ID consistently with other endpoints
         payload = {
-            "recipient": api_group_id,
+            "recipient": self._format_group_id(group_id),
             "reaction": emoji,
             "target_author": target_author,
             "timestamp": target_timestamp
         }
 
+        logger.info(f"[DEBUG] Sending reaction: recipient={payload['recipient'][:30]}..., target_author={target_author[:20]}..., timestamp={target_timestamp}")
+
         try:
             client = await self._get_http_client(port)
-            response = await client.post(url, json=payload, timeout=10.0)
+            async with self._get_port_lock(port):
+                response = await client.post(url, json=payload, timeout=15.0)
 
             if response.status_code in (200, 201, 204):
                 logger.info(f"Sent reaction {emoji} to message from {target_author[:8]}...")
                 return True
+            elif response.status_code == 400:
+                # Check for partial delivery (unregistered user in group)
+                error_text = response.text
+                if "Unregistered user" in error_text:
+                    logger.warning(f"Reaction partial send - some recipients unregistered: {error_text}")
+                    return True  # Reaction likely delivered to other members
+                else:
+                    logger.error(f"Send reaction failed: {response.status_code} - {error_text}")
+                    return False
             else:
                 logger.error(f"Send reaction failed: {response.status_code} - {response.text}")
                 return False
         except Exception as e:
-            logger.error(f"Error sending reaction: {e}")
+            logger.error(f"Error sending reaction ({type(e).__name__}): {e}\n{traceback.format_exc()}")
             return False
 
     async def _get_http_client(self, port: int) -> httpx.AsyncClient:
@@ -503,6 +609,12 @@ class SignalBotManager:
         if port not in self._http_clients:
             self._http_clients[port] = httpx.AsyncClient()
         return self._http_clients[port]
+
+    def _get_port_lock(self, port: int) -> asyncio.Semaphore:
+        """Get or create semaphore for serializing requests to a Signal container port."""
+        if port not in self._port_locks:
+            self._port_locks[port] = asyncio.Semaphore(1)
+        return self._port_locks[port]
 
     def _format_group_id(self, group_id: str) -> str:
         """Convert internal group ID to API format (group.base64(internal_id))."""
@@ -519,17 +631,20 @@ class SignalBotManager:
         stop: bool = False
     ) -> bool:
         """Send a typing indicator to a group."""
-        url = f"http://localhost:{port}/v1/typing/{phone_number}"
+        url = f"http://localhost:{port}/v1/typing-indicator/{phone_number}"
 
         payload = {
             "recipient": self._format_group_id(group_id),
         }
-        if stop:
-            payload["stop"] = True
 
         try:
             client = await self._get_http_client(port)
-            response = await client.put(url, json=payload, timeout=5.0)
+            async with self._get_port_lock(port):
+                # PUT to show typing, DELETE to hide typing
+                if stop:
+                    response = await client.delete(url, json=payload, timeout=5.0)
+                else:
+                    response = await client.put(url, json=payload, timeout=5.0)
 
             if response.status_code in (200, 201, 204):
                 logger.debug(f"Typing {'stopped' if stop else 'started'} for {phone_number}")
@@ -548,6 +663,7 @@ class SignalBotManager:
     async def send_read_receipt(
         self,
         phone_number: str,
+        group_id: str,
         sender_id: str,
         timestamps: list[int],
         port: int = 8080
@@ -556,14 +672,15 @@ class SignalBotManager:
         url = f"http://localhost:{port}/v1/receipt/{phone_number}"
 
         payload = {
-            "recipient": sender_id,
+            "recipient": self._format_group_id(group_id),
             "timestamps": timestamps,
             "type": "read"
         }
 
         try:
             client = await self._get_http_client(port)
-            response = await client.post(url, json=payload, timeout=5.0)
+            async with self._get_port_lock(port):
+                response = await client.post(url, json=payload, timeout=5.0)
 
             if response.status_code in (200, 201, 204):
                 logger.debug(f"Read receipt sent for {len(timestamps)} messages")
@@ -700,7 +817,8 @@ class SignalBotManager:
 
         try:
             client = await self._get_http_client(port)
-            response = await client.post(url, json=payload, timeout=30.0)
+            async with self._get_port_lock(port):
+                response = await client.post(url, json=payload, timeout=30.0)
 
             if response.status_code in (200, 201):
                 logger.info(f"Message edited successfully")
@@ -709,7 +827,7 @@ class SignalBotManager:
                 logger.error(f"Edit message failed: {response.status_code}")
                 return False
         except Exception as e:
-            logger.error(f"Error editing message: {e}")
+            logger.error(f"Error editing message: {e}\n{traceback.format_exc()}")
             return False
 
     async def delete_message(
@@ -729,7 +847,8 @@ class SignalBotManager:
 
         try:
             client = await self._get_http_client(port)
-            response = await client.delete(url, json=payload, timeout=10.0)
+            async with self._get_port_lock(port):
+                response = await client.delete(url, json=payload, timeout=10.0)
 
             if response.status_code in (200, 201, 204):
                 logger.info(f"Message deleted successfully")
@@ -738,19 +857,99 @@ class SignalBotManager:
                 logger.error(f"Delete message failed: {response.status_code}")
                 return False
         except Exception as e:
-            logger.error(f"Error deleting message: {e}")
+            logger.error(f"Error deleting message: {e}\n{traceback.format_exc()}")
             return False
 
     async def _bot_listener(self, bot_data: dict):
         """
         Main listener loop for a bot.
 
-        Uses Signal CLI REST API's receive endpoint to poll for messages.
+        Uses WebSocket in json-rpc mode for low-latency message delivery,
+        falls back to HTTP polling in normal mode.
         """
         port = bot_data['signal_api_port']
         phone = bot_data['phone_number']
 
         logger.info(f"Starting listener for {bot_data['name']} on port {port}")
+
+        # Check if we should use WebSocket mode
+        use_websocket = await self._should_use_websocket(port, phone)
+
+        if use_websocket:
+            await self._websocket_listener(bot_data)
+        else:
+            await self._polling_listener(bot_data)
+
+    async def _should_use_websocket(self, port: int, phone: str) -> bool:
+        """Determine if WebSocket mode should be used for this port."""
+        # Check global toggle
+        if not WEBSOCKET_ENABLED:
+            logger.debug(f"WebSocket disabled globally")
+            return False
+
+        # Check if already probed this port
+        if port in self._ws_mode_detected:
+            return self._ws_mode_detected[port]
+
+        # Probe the WebSocket endpoint
+        logger.info(f"Probing WebSocket on port {port}...")
+        ws_available = await probe_websocket(port, phone)
+        self._ws_mode_detected[port] = ws_available
+
+        if ws_available:
+            logger.info(f"WebSocket mode available on port {port}")
+        else:
+            logger.info(f"WebSocket not available on port {port}, using polling mode")
+
+        return ws_available
+
+    async def _websocket_listener(self, bot_data: dict):
+        """WebSocket-based message listener for json-rpc mode."""
+        bot_id = str(bot_data['id'])
+        port = bot_data['signal_api_port']
+        phone = bot_data['phone_number']
+
+        logger.info(f"Starting WebSocket listener for {bot_data['name']} on port {port}")
+
+        # Create message callback that processes messages
+        async def on_message(message: dict):
+            await self._process_message(bot_data, message)
+
+        # Create WebSocket handler with config
+        ws_config = WebSocketConfig(
+            reconnect_delay=WEBSOCKET_RECONNECT_DELAY,
+            max_reconnect_delay=WEBSOCKET_MAX_RECONNECT_DELAY,
+            ping_interval=WEBSOCKET_PING_INTERVAL,
+            ping_timeout=WEBSOCKET_PING_TIMEOUT
+        )
+
+        handler = SignalWebSocketHandler(
+            phone_number=phone,
+            port=port,
+            message_callback=on_message,
+            config=ws_config
+        )
+
+        self._ws_handlers[bot_id] = handler
+
+        try:
+            await handler.start()
+
+            # Wait until we're told to stop
+            while self.running:
+                await asyncio.sleep(1)
+
+        finally:
+            await handler.stop()
+            if bot_id in self._ws_handlers:
+                del self._ws_handlers[bot_id]
+
+    async def _polling_listener(self, bot_data: dict):
+        """HTTP polling-based message listener (original behavior)."""
+        port = bot_data['signal_api_port']
+        phone = bot_data['phone_number']
+
+        logger.info(f"Starting polling listener for {bot_data['name']} on port {port}")
 
         while self.running:
             try:
@@ -763,26 +962,117 @@ class SignalBotManager:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Error in bot listener {bot_data['name']}: {e}")
+                logger.error(f"Error in bot listener {bot_data['name']}: {e}\n{traceback.format_exc()}")
 
             # Short delay between polls
             await asyncio.sleep(1)
 
     async def _receive_messages(self, phone: str, port: int) -> list[dict]:
-        """Receive new messages from Signal API."""
-        url = f"http://localhost:{port}/v1/receive/{phone}"
+        """Receive new messages from Signal API.
 
+        Tries JSON-RPC first (for json-rpc mode), falls back to REST (for normal mode).
+        """
+        client = await self._get_http_client(port)
+
+        # Try JSON-RPC first (works in json-rpc mode)
+        rpc_url = f"http://localhost:{port}/api/v1/rpc"
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "receive",
+            "params": {
+                "account": phone
+            },
+            "id": 1
+        }
         try:
-            client = await self._get_http_client(port)
-            response = await client.get(url, timeout=30.0)
+            async with self._get_port_lock(port):
+                response = await client.post(rpc_url, json=payload, timeout=30.0)
+            if response.status_code == 200:
+                result = response.json()
+                if "result" in result:
+                    # JSON-RPC returns messages in result array
+                    return result["result"] if result["result"] else []
+                elif "error" in result:
+                    logger.debug(f"JSON-RPC receive error: {result['error']}")
+        except Exception as e:
+            logger.debug(f"JSON-RPC receive failed: {e}")
+
+        # Fall back to REST (works in normal mode)
+        rest_url = f"http://localhost:{port}/v1/receive/{phone}"
+        try:
+            async with self._get_port_lock(port):
+                response = await client.get(rest_url, timeout=30.0)
 
             if response.status_code == 200:
                 return response.json()
             else:
                 return []
         except Exception as e:
-            logger.debug(f"Receive error: {e}")
+            logger.debug(f"REST receive error: {e}")
             return []
+
+    async def _fetch_bot_uuid(self, phone: str, port: int) -> str | None:
+        """Fetch the bot's Signal UUID from the identities endpoint.
+
+        Tries JSON-RPC first (for json-rpc mode), falls back to REST (for normal mode).
+        """
+        client = await self._get_http_client(port)
+
+        # Try JSON-RPC first
+        rpc_url = f"http://localhost:{port}/api/v1/rpc"
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "listIdentities",
+            "params": {
+                "account": phone
+            },
+            "id": 1
+        }
+        try:
+            async with self._get_port_lock(port):
+                response = await client.post(rpc_url, json=payload, timeout=10.0)
+            if response.status_code == 200:
+                result = response.json()
+                if "result" in result:
+                    identities = result["result"]
+                    phone_normalized = phone.replace("+", "").replace("-", "").replace(" ", "")
+                    for identity in identities:
+                        identity_number = identity.get("number", "")
+                        identity_normalized = identity_number.replace("+", "").replace("-", "").replace(" ", "") if identity_number else ""
+                        if identity_normalized == phone_normalized:
+                            uuid = identity.get("uuid")
+                            if uuid:
+                                logger.info(f"Fetched Signal UUID for {phone} via JSON-RPC: {uuid}")
+                                return uuid
+        except Exception as e:
+            logger.debug(f"JSON-RPC listIdentities failed: {e}")
+
+        # Fall back to REST
+        rest_url = f"http://localhost:{port}/v1/identities/{phone}"
+        try:
+            async with self._get_port_lock(port):
+                response = await client.get(rest_url, timeout=10.0)
+
+            if response.status_code == 200:
+                identities = response.json()
+                phone_normalized = phone.replace("+", "").replace("-", "").replace(" ", "")
+                for identity in identities:
+                    identity_number = identity.get("number", "")
+                    identity_normalized = identity_number.replace("+", "").replace("-", "").replace(" ", "") if identity_number else ""
+                    if identity_normalized == phone_normalized:
+                        uuid = identity.get("uuid")
+                        if uuid:
+                            logger.info(f"Fetched Signal UUID for {phone}: {uuid}")
+                            return uuid
+                logger.warning(f"Could not find UUID for {phone} in identities")
+                return None
+            else:
+                logger.warning(f"Failed to fetch identities for {phone}: {response.status_code}")
+                return None
+        except Exception as e:
+            logger.warning(f"Error fetching bot UUID: {e}")
+            return None
+
 
     async def _process_message(self, bot_data: dict, message: dict):
         """Process an incoming Signal message."""
@@ -822,6 +1112,7 @@ class SignalBotManager:
                 bot_data['respond_on_mention'] = bot.respond_on_mention
                 bot_data['random_chance_percent'] = bot.random_chance_percent
                 bot_data['image_generation_enabled'] = bot.image_generation_enabled
+                bot_data['image_model'] = getattr(bot, 'image_model', None)
                 bot_data['web_search_enabled'] = bot.web_search_enabled
                 bot_data['weather_enabled'] = getattr(bot, 'weather_enabled', False)
                 bot_data['finance_enabled'] = getattr(bot, 'finance_enabled', False)
@@ -834,6 +1125,9 @@ class SignalBotManager:
                 # Refresh D&D settings
                 bot_data['dnd_enabled'] = getattr(bot, 'dnd_enabled', False)
                 bot_data['dnd_template_spreadsheet_id'] = getattr(bot, 'dnd_template_spreadsheet_id', None)
+                # Refresh chat log settings
+                bot_data['chat_log_enabled'] = getattr(bot, 'chat_log_enabled', False)
+                bot_data['chat_log_retention'] = getattr(bot, 'chat_log_retention', 'forever')
 
             assignment = BotGroupAssignment.query.filter_by(
                 bot_id=bot_data['id'],
@@ -919,15 +1213,34 @@ class SignalBotManager:
                 if bot_name_lower in text_lower or f"@{bot_name_lower}" in text_lower:
                     is_mentioned_native = True
 
+            # Check if this is a reply to one of the bot's messages
+            is_reply_to_bot = False
+            quote_info = data_message.get("quote")
+            if quote_info:
+                quote_author = quote_info.get("author", "")
+                # Check if quoted message was from the bot (by phone number or UUID)
+                if quote_author:
+                    quote_author_normalized = quote_author.replace("+", "").replace("-", "").replace(" ", "")
+                    bot_uuid = bot_data.get('signal_uuid')
+                    if quote_author_normalized == bot_phone_normalized:
+                        is_reply_to_bot = True
+                    elif quote_author == bot_uuid:
+                        is_reply_to_bot = True
+                    else:
+                        # Debug: log when quote doesn't match bot
+                        logger.info(f"[DEBUG] Quote author '{quote_author}' doesn't match bot phone '{bot_phone_normalized}' or UUID '{bot_uuid}'")
+
             # Log safely (encode special chars for Windows)
             safe_text = message_text[:50].encode('ascii', 'replace').decode('ascii')
-            logger.info(f"[{group_name}] {sender_name}: {safe_text}... (mentions: {len(mentions)}, bot_mentioned: {is_mentioned_native})")
+            has_quote = "quote" in data_message
+            logger.info(f"[{group_name}] {sender_name}: {safe_text}... (mentions: {len(mentions)}, bot_mentioned: {is_mentioned_native}, reply_to_bot: {is_reply_to_bot})")
 
             # Send read receipt if enabled
             if bot_data.get('read_receipts_enabled', False) and message_timestamp and sender_id:
                 asyncio.create_task(
                     self.send_read_receipt(
                         bot_data['phone_number'],
+                        group_id,
                         sender_id,
                         [message_timestamp],
                         bot_data['signal_api_port']
@@ -963,7 +1276,7 @@ class SignalBotManager:
             async def stop_typing_cb():
                 await self.send_typing(bot_data['phone_number'], group_id, bot_data['signal_api_port'], stop=True)
 
-            # Process image attachments into base64
+            # Process image attachments into base64 (with compression for API limits)
             incoming_images = []
             for att in image_attachments:
                 try:
@@ -974,31 +1287,21 @@ class SignalBotManager:
                         port=bot_data['signal_api_port']
                     )
                     if base64_data:
+                        # Compress if needed to stay under API limits (Claude: 5MB)
+                        compressed_data, final_media_type = compress_image_for_api(
+                            base64_data,
+                            att["content_type"]
+                        )
                         incoming_images.append({
-                            "media_type": att["content_type"],
-                            "data": base64_data
+                            "media_type": final_media_type,
+                            "data": compressed_data
                         })
-                        logger.info(f"Processed image attachment: {att['content_type']}, {len(base64_data)} chars")
+                        logger.info(f"Processed image attachment: {final_media_type}, {len(compressed_data)} chars")
                 except Exception as e:
                     logger.error(f"Failed to process attachment {att['id']}: {e}")
 
-            # Create reaction callback for tool-based reactions
-            async def send_reaction_cb(target_sender_id: str, target_timestamp: int, emoji: str):
-                """Send an emoji reaction to a specific message."""
-                await self.send_reaction(
-                    bot_data['phone_number'],
-                    group_id,
-                    target_sender_id,
-                    target_timestamp,
-                    emoji,
-                    bot_data['signal_api_port']
-                )
-                self._log_activity(
-                    "reaction_sent",
-                    bot_data['id'],
-                    group_id,
-                    f"{bot_data['name']} reacted with {emoji}"
-                )
+            # Queue for reactions - execute synchronously after message handler returns
+            pending_reactions: list[tuple[str, int, str]] = []
 
             # Handle the message (inside app context for DB operations)
             await self.message_handler.handle_incoming_message(
@@ -1009,13 +1312,34 @@ class SignalBotManager:
                 message_timestamp=message_timestamp,
                 bot_data=bot_data,
                 is_mentioned=is_mentioned_native,  # Pass native mention flag
+                is_reply_to_bot=is_reply_to_bot,  # Pass reply-to-bot flag
                 send_callback=lambda t, qt=None, qa=None, m=None, ts=None: asyncio.create_task(send_text(t, qt, qa, m, ts)),
                 send_image_callback=lambda p: asyncio.create_task(send_image_cb(p)),
                 send_typing_callback=lambda: asyncio.create_task(send_typing_cb()),
                 stop_typing_callback=lambda: asyncio.create_task(stop_typing_cb()),
                 incoming_images=incoming_images if incoming_images else None,
-                send_reaction_callback=lambda sid, ts, em: asyncio.create_task(send_reaction_cb(sid, ts, em))
+                send_reaction_callback=lambda sid, ts, em: pending_reactions.append((sid, ts, em))
             )
+
+            # Execute queued reactions synchronously after message handler completes
+            for target_sender_id, target_timestamp, emoji in pending_reactions:
+                try:
+                    await self.send_reaction(
+                        bot_data['phone_number'],
+                        group_id,
+                        target_sender_id,
+                        target_timestamp,
+                        emoji,
+                        bot_data['signal_api_port']
+                    )
+                    self._log_activity(
+                        "reaction_sent",
+                        bot_data['id'],
+                        group_id,
+                        f"{bot_data['name']} reacted with {emoji}"
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to send queued reaction {emoji}: {e}\n{traceback.format_exc()}")
 
     async def _idle_news_checker(self):
         """
@@ -1103,7 +1427,7 @@ class SignalBotManager:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Error in idle news checker: {e}")
+                logger.error(f"Error in idle news checker: {e}\n{traceback.format_exc()}")
 
         logger.info("Idle news checker stopped")
 

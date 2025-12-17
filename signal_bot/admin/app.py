@@ -10,6 +10,17 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from flask import Flask
 from signal_bot.models import db
 from signal_bot.config_signal import DB_PATH, SECRET_KEY, FLASK_DEBUG
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
+
+
+@event.listens_for(Engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    """Enable WAL mode and busy timeout for better concurrency."""
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=5000")  # 5 second timeout on lock contention
+    cursor.close()
 
 
 def create_app():

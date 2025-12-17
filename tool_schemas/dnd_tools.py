@@ -552,5 +552,115 @@ DND_TOOLS = [
                 "additionalProperties": False
             }
         }
+    },
+    # =========================================================================
+    # TURN & EVENT LOGGING TOOLS
+    # =========================================================================
+    {
+        "type": "function",
+        "function": {
+            "name": "complete_turn",
+            "description": "Complete a combat turn. ALWAYS call this after a combatant finishes their turn. Updates HP, conditions, spell slots, advances initiative, and logs to Event Log. Auto-ends combat when all enemies are defeated.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action_summary": {
+                        "type": "string",
+                        "description": "What happened this turn (e.g., 'Attacked goblin with longsword, hit for 8 damage')"
+                    },
+                    "combatant_updates": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {
+                                    "type": "string",
+                                    "description": "Name of combatant to update"
+                                },
+                                "hp_change": {
+                                    "type": "integer",
+                                    "description": "HP change (negative for damage, positive for healing)"
+                                },
+                                "conditions_add": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                    "description": "Conditions to add (poisoned, frightened, etc.)"
+                                },
+                                "conditions_remove": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                    "description": "Conditions to remove"
+                                },
+                                "is_dead": {
+                                    "type": "boolean",
+                                    "description": "Mark combatant as dead/defeated"
+                                }
+                            },
+                            "required": ["name"]
+                        },
+                        "description": "Updates to apply to combatants"
+                    },
+                    "damage_dealt": {
+                        "type": "integer",
+                        "description": "Total damage dealt this turn (for logging)"
+                    },
+                    "healing_done": {
+                        "type": "integer",
+                        "description": "Total healing done this turn (for logging)"
+                    },
+                    "spell_slots_used": {
+                        "type": "object",
+                        "description": "Spell slots used this turn by the acting character (e.g., {\"1st\": 1, \"2nd\": 1})"
+                    },
+                    "advance_turn": {
+                        "type": "boolean",
+                        "description": "Whether to advance to next combatant (default true)"
+                    }
+                },
+                "required": ["action_summary"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "log_event",
+            "description": "Log an exploration or story event. Use for travel, conversations, skill checks, and major story beats. Maintains narrative continuity for the campaign.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "event_type": {
+                        "type": "string",
+                        "enum": ["travel", "conversation", "skill_check", "story", "rest"],
+                        "description": "Type of event"
+                    },
+                    "summary": {
+                        "type": "string",
+                        "description": "What happened (e.g., 'Party traveled to Darkwood Forest', 'Spoke with innkeeper about missing merchants')"
+                    },
+                    "location": {
+                        "type": "string",
+                        "description": "Current or new location (for travel events, updates Current Location in Overview)"
+                    },
+                    "npcs_involved": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "NPCs involved in this event"
+                    },
+                    "outcome": {
+                        "type": "string",
+                        "description": "Result (for skill_check: 'success'/'failure', for story: key revelation)"
+                    },
+                    "characters_involved": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Player characters who participated"
+                    }
+                },
+                "required": ["event_type", "summary"],
+                "additionalProperties": False
+            }
+        }
     }
 ]

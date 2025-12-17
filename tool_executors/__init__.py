@@ -10,6 +10,7 @@ This package contains tool execution classes organized by category:
 - sheets_advanced: Advanced Google Sheets operations mixins
 - calendar_executor: Google Calendar and trigger mixins
 - dnd_executor: D&D Game Master tool mixins
+- chat_log_executor: Chat log search tool mixins
 """
 
 # Signal executor (main class combining all mixins)

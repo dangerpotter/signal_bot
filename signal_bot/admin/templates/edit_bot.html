@@ -164,6 +164,16 @@
                         </div>
                     </div>
                     <div class="mb-3">
+                        <label class="form-label">Image Generation Model</label>
+                        <select name="image_model" class="form-select">
+                            <option value="">Default (Gemini 3 Pro)</option>
+                            {% for display_name, model_id in image_models.items() %}
+                            <option value="{{ model_id }}" {% if model_id == bot.image_model %}selected{% endif %}>{{ display_name }}</option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted">Select which model to use for image generation</small>
+                    </div>
+                    <div class="mb-3">
                         <div class="form-check form-switch">
                             <input type="checkbox" name="web_search_enabled" class="form-check-input" id="webSearch" {% if bot.web_search_enabled %}checked{% endif %}>
                             <label class="form-check-label" for="webSearch">Enable web search (real-time data)</label>
@@ -352,6 +362,44 @@
                         <i class="bi bi-info-circle"></i>
                         Manage triggers in the <a href="{{ url_for('triggers_list') }}?bot_id={{ bot.id }}">Triggers</a> tab.
                         Triggers can send reminders or execute AI tasks on a schedule.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Chat Log Settings -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-journal-text"></i> Chat Log Settings
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input type="checkbox" name="chat_log_enabled" class="form-check-input" id="chatLogEnabled" {% if bot.chat_log_enabled %}checked{% endif %}>
+                            <label class="form-check-label" for="chatLogEnabled">Enable chat log search tool</label>
+                        </div>
+                        <small class="text-muted">Bot can search conversation history by keyword, date, or member (requires tool-capable model)</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Retention Period</label>
+                        <select name="chat_log_retention" class="form-select">
+                            <option value="6h" {% if bot.chat_log_retention == '6h' %}selected{% endif %}>6 hours</option>
+                            <option value="12h" {% if bot.chat_log_retention == '12h' %}selected{% endif %}>12 hours</option>
+                            <option value="24h" {% if bot.chat_log_retention == '24h' %}selected{% endif %}>24 hours</option>
+                            <option value="1w" {% if bot.chat_log_retention == '1w' %}selected{% endif %}>1 week</option>
+                            <option value="1m" {% if bot.chat_log_retention == '1m' %}selected{% endif %}>1 month</option>
+                            <option value="1y" {% if bot.chat_log_retention == '1y' %}selected{% endif %}>1 year</option>
+                            <option value="forever" {% if not bot.chat_log_retention or bot.chat_log_retention == 'forever' %}selected{% endif %}>Forever</option>
+                        </select>
+                        <small class="text-muted">How long to keep chat history. Old messages are deleted hourly.</small>
+                    </div>
+
+                    <hr>
+
+                    <p class="text-muted small mb-0">
+                        <i class="bi bi-info-circle"></i>
+                        View and search chat history in <a href="{{ url_for('chat_logs_list') }}">Chat Logs</a>.
+                        Messages are stored separately from the rolling context window.
                     </p>
                 </div>
             </div>

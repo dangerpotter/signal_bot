@@ -1688,6 +1688,10 @@ def get_campaign_sheet_headers_v2() -> dict:
             "Session #", "Date", "Summary", "Key Events",
             "NPCs Met", "Locations Visited", "XP Earned", "Next Session Hook"
         ],
+        "Event Log": [
+            "Session", "Event Type", "Round", "Actor", "Summary",
+            "Location", "NPCs Involved", "Damage", "Healing", "Outcome", "Timestamp"
+        ],
         "Quick Reference": [
             "Field", "Value"  # Simple key-value for quick reference tab
         ],
@@ -1721,4 +1725,91 @@ def get_overview_initial_data_v2(
         ["Last Played", "Never"],
         ["Active Combat", "No"],
         ["Combat Initiative Order", ""],
+    ]
+
+
+# =============================================================================
+# COMBAT STATE MIGRATION HELPER
+# =============================================================================
+
+def parse_combat_state(combat_data: str) -> dict:
+    """
+    Parse combat state from Overview sheet, handling both old and new formats.
+
+    Old format (flat array):
+        [{"name": "Aldric", "initiative": 18, "hp": 25, ...}, ...]
+
+    New format (object with tracking):
+        {
+            "round": 1,
+            "current_turn_index": 0,
+            "encounter_name": "Combat",
+            "combatants": [...]
+        }
+
+    Returns new format dict, migrating old format if necessary.
+    """
+    if not combat_data or combat_data.strip() == "":
+        return None
+
+    try:
+        data = json.loads(combat_data)
+    except json.JSONDecodeError:
+        return None
+
+    # Check if it's already new format (has 'combatants' key)
+    if isinstance(data, dict) and "combatants" in data:
+        # Ensure all required fields exist
+        return {
+            "round": data.get("round", 1),
+            "current_turn_index": data.get("current_turn_index", 0),
+            "encounter_name": data.get("encounter_name", "Combat"),
+            "combatants": data.get("combatants", [])
+        }
+
+    # Old format: flat array of combatants
+    if isinstance(data, list):
+        # Migrate to new format
+        return {
+            "round": 1,
+            "current_turn_index": 0,
+            "encounter_name": "Combat",
+            "combatants": data
+        }
+
+    return None
+
+
+def combat_state_to_json(combat_state: dict) -> str:
+    """Convert combat state dict to JSON string for storage."""
+    return json.dumps(combat_state)
+
+
+def event_to_row(
+    session_num: str,
+    event_type: str,
+    actor: str,
+    summary: str,
+    location: str = "",
+    npcs_involved: list = None,
+    damage: int = 0,
+    healing: int = 0,
+    outcome: str = "",
+    round_num: int = None
+) -> list:
+    """Convert event data to spreadsheet row for Event Log."""
+    from datetime import datetime
+
+    return [
+        session_num,
+        event_type,
+        str(round_num) if round_num is not None else "",
+        actor,
+        summary,
+        location,
+        ", ".join(npcs_involved) if npcs_involved else "",
+        str(damage) if damage else "",
+        str(healing) if healing else "",
+        outcome,
+        datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
     ]

@@ -47,6 +47,9 @@ from .trigger_tools import TRIGGER_TOOLS
 # D&D Game Master tools
 from .dnd_tools import DND_TOOLS
 
+# Chat log search tools
+from .chat_log_tools import CHAT_LOG_TOOLS
+
 # Helper functions
 from .helpers import (
     ALL_META_CATEGORIES,
@@ -85,6 +88,7 @@ __all__ = [
     'MEMBER_MEMORY_TOOLS',
     'TRIGGER_TOOLS',
     'DND_TOOLS',
+    'CHAT_LOG_TOOLS',
     # Categories
     'FINANCE_CATEGORIES',
     'SHEETS_CATEGORIES',

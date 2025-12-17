@@ -14,14 +14,18 @@ A comprehensive guide to setting up and using the Signal Bot system - AI-powered
 - [Part 5: Admin UI Walkthrough](#part-5-admin-ui-walkthrough)
 - [Part 6: Available Tools Reference](#part-6-available-tools-reference)
 - [Part 7: Google Sheets Integration (Advanced)](#part-7-google-sheets-integration-advanced)
-- [Part 8: How Bots Respond](#part-8-how-bots-respond)
-- [Part 9: Memory System Deep Dive](#part-9-memory-system-deep-dive)
-- [Part 10: Troubleshooting & FAQ](#part-10-troubleshooting--faq)
-- [Part 11: Advanced Topics](#part-11-advanced-topics)
+- [Part 8: Google Calendar Integration](#part-8-google-calendar-integration)
+- [Part 9: D&D Game Master (Advanced)](#part-9-dnd-game-master-advanced)
+- [Part 10: How Bots Respond](#part-10-how-bots-respond)
+- [Part 11: Memory System Deep Dive](#part-11-memory-system-deep-dive)
+- [Part 12: Troubleshooting & FAQ](#part-12-troubleshooting--faq)
+- [Part 13: Advanced Topics](#part-13-advanced-topics)
 - [Appendix A: Environment Variables Reference](#appendix-a-environment-variables-reference)
 - [Appendix B: All Bot Settings Reference](#appendix-b-all-bot-settings-reference)
 - [Appendix C: Supported AI Models](#appendix-c-supported-ai-models)
 - [Appendix D: Google Sheets Tools Reference](#appendix-d-google-sheets-tools-reference)
+- [Appendix E: Google Calendar Tools Reference](#appendix-e-google-calendar-tools-reference)
+- [Appendix F: D&D Game Master Tools Reference](#appendix-f-dnd-game-master-tools-reference)
 
 ---
 
@@ -1109,7 +1113,44 @@ Allows the bot to react to messages with emoji.
 
 ---
 
-## 6.8 Member Memory Tools
+## 6.8 Dice Rolling
+
+**No toggle required** - Always enabled for all bots
+
+Roll dice for D&D, tabletop games, or any random number needs.
+
+**Function:**
+
+| Function | Description |
+|----------|-------------|
+| **roll_dice** | Roll dice using standard tabletop notation |
+
+**Notation Examples:**
+```
+1d20           - Roll a d20
+2d6+3          - Roll 2d6, add 3
+4d6 drop lowest - Stat generation (roll 4d6, drop lowest)
+1d20 advantage  - Roll with advantage (2d20, keep highest)
+1d20 disadvantage - Roll with disadvantage (2d20, keep lowest)
+d%             - Percentile (1d100)
+8d6            - Fireball damage
+```
+
+**Features:**
+- Cryptographically secure randomness (uses Python's `secrets` module)
+- Detects natural 20 (critical) and natural 1 (fumble) on d20
+- Shorthands: `adv`/`dis`, `dl`/`dh` (drop), `kh`/`kl` (keep)
+- Optional `reason` parameter for labeled rolls ("attack roll", "saving throw")
+
+**Example:**
+```
+User: Roll 4d6 drop lowest for stats
+Bot: 🎲 Rolling 4d6 drop lowest: [6, 4, 5, 2] → dropped 2 → 15
+```
+
+---
+
+## 6.9 Member Memory Tools
 
 **Toggle:** Member Memory Tools Enabled
 
@@ -1260,7 +1301,256 @@ This revokes the bot's access to your Google account.
 
 ---
 
-# Part 8: How Bots Respond
+# Part 8: Google Calendar Integration
+
+Google Calendar integration allows bots to create and manage calendars for your group. It shares OAuth credentials with Google Sheets, so if you've already connected Sheets, you just need to enable the Calendar API and reconnect.
+
+## Setup
+
+### If You Already Have Sheets Connected:
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/apis/library)
+2. Search for "Google Calendar API"
+3. Click **Enable**
+4. In the Signal Bot admin UI, edit your bot
+5. In the Google section, click **Disconnect**
+6. Click **Connect to Google** again (this grants the new Calendar scope)
+7. Enable the "Google Calendar" toggle
+
+### If Starting Fresh:
+
+Follow the Google Sheets setup instructions in Part 7, but also enable the Google Calendar API in addition to Sheets and Drive APIs.
+
+## Available Calendar Tools
+
+| Tool | Description |
+|------|-------------|
+| **create_calendar** | Create a new calendar for the group (public by default) |
+| **list_calendars** | List all calendars created for this group |
+| **list_events** | List upcoming events with optional time range |
+| **get_event** | Get details of a specific event |
+| **create_event** | Create event with title, times, location, attendees |
+| **update_event** | Modify existing event details |
+| **delete_event** | Remove an event from calendar |
+| **quick_add_event** | Natural language event creation |
+| **share_calendar** | Share via email or make public |
+
+## Using Calendars in Chat
+
+```
+User: Create a calendar for our book club
+Bot: I've created "Book Club Calendar" for the group! Here's the link
+     to view it: [calendar link]
+
+User: Add a meeting for next Tuesday at 7pm
+Bot: Added "Meeting" for Tuesday, December 17th at 7:00 PM.
+
+User: What's coming up this month?
+Bot: Here are the upcoming events:
+     • Dec 17 - Meeting (7:00 PM)
+     • Dec 24 - Holiday Party (6:00 PM)
+```
+
+## Quick Add Events
+
+The `quick_add_event` tool uses Google's natural language parsing:
+
+```
+User: Add "Dinner at Mario's tomorrow at 7pm" to the calendar
+Bot: Added! "Dinner at Mario's" - December 10th at 7:00 PM
+```
+
+Google understands phrases like:
+- "tomorrow at 3pm"
+- "next Friday at noon"
+- "December 25th"
+- "in 2 hours"
+
+## Public vs Private Calendars
+
+By default, calendars are created as **public** so anyone with the link can view events. This makes sharing easy - just send the calendar URL to the group.
+
+To create a private calendar, the bot can specify `make_public=false` when creating.
+
+---
+
+# Part 9: D&D Game Master (Advanced)
+
+Run complete D&D 5e campaigns in Signal group chats! The D&D Game Master tools use Google Sheets for persistent storage of campaign data.
+
+> **Note:** This is an advanced feature requiring Google OAuth setup. The bot needs Google Sheets connected to use D&D features.
+
+## Prerequisites
+
+1. Bot must be connected to Google (same setup as Sheets/Calendar)
+2. Enable the "D&D Game Master" toggle in bot settings
+3. Use a tool-capable model (Claude Sonnet recommended)
+
+## How It Works
+
+When you start a campaign, the bot creates a Google Spreadsheet with multiple sheets:
+- **Overview** - Campaign state, current location, story flags
+- **Characters** - Player character sheets with full D&D 5e stats
+- **NPCs** - Non-player characters the party has met
+- **Locations** - Places in the world (discovered and undiscovered)
+- **Items** - Special items and loot
+- **Combat Log** - Record of all combat encounters
+- **Session History** - Summary of what happened each session
+- **Event Log** - Detailed log of actions for continuity
+
+## Starting a Campaign
+
+```
+User: Let's start a D&D campaign!
+Bot: Great! What kind of campaign would you like?
+     - Campaign name?
+     - Setting (Forgotten Realms, Eberron, homebrew)?
+     - Tone (heroic, gritty, comedic, horror)?
+     - Starting level (1-20)?
+     - Size (small: 3 locations, medium: 6, large: 12)?
+
+User: Call it "The Lost Temple", high fantasy setting, heroic tone,
+     start at level 1, medium size
+Bot: [Creates campaign spreadsheet]
+     Campaign "The Lost Temple" created! Now let's build your world...
+```
+
+## Campaign Setup Workflow
+
+The bot guides you through setup phases:
+
+1. **World Building** - Define setting, tone, starting level
+2. **Location Creation** - Generate or define locations
+3. **Route Determination** - Dice rolls determine start/end points
+4. **NPC Generation** - Populate locations with characters
+5. **Character Creation** - Create player characters
+6. **Item Setup** - Finalize starting equipment
+7. **Ready to Play** - Campaign is live!
+
+## Creating Characters
+
+```
+User: I want to create my character
+Bot: Let's build your character! What's your character's name?
+
+User: Thorin
+Bot: Great name! Now choose a race:
+     Human, Elf, Dwarf, Halfling, Dragonborn, Gnome,
+     Half-Elf, Half-Orc, Tiefling...
+
+[Bot guides through class, background, ability scores, etc.]
+
+Bot: Thorin is ready!
+     Race: Dwarf (Hill Dwarf)
+     Class: Fighter
+     Background: Soldier
+     HP: 12 | AC: 16
+     STR 16 (+3) | DEX 12 (+1) | CON 16 (+3)
+     INT 10 (+0) | WIS 14 (+2) | CHA 8 (-1)
+```
+
+## Running Combat
+
+```
+User: We attack the goblins!
+Bot: [Rolls initiative for everyone]
+
+     ⚔️ COMBAT STARTED: Goblin Ambush
+
+     Initiative Order:
+     1. Thorin (18)
+     2. Goblin A (15)
+     3. Elara (12)
+     4. Goblin B (10)
+
+     Thorin, you're up! What do you do?
+
+User: I attack Goblin A with my battleaxe
+Bot: [Rolls attack] 🎲 1d20+5 = 17 vs AC 15 - HIT!
+     [Rolls damage] 🎲 1d10+3 = 9 slashing damage
+
+     Goblin A takes 9 damage (3 HP remaining).
+
+     Goblin A's turn...
+```
+
+## Available D&D Tools
+
+### Campaign Management
+| Tool | Description |
+|------|-------------|
+| `start_dnd_campaign` | Create new campaign with spreadsheet |
+| `get_campaign_state` | Load current state (characters, location, etc.) |
+| `update_campaign_state` | Update after story events |
+| `list_campaigns` | Show all campaigns for this group |
+| `update_campaign_phase` | Move between setup phases |
+
+### Character Tools
+| Tool | Description |
+|------|-------------|
+| `create_character` | Create PC with full D&D 5e mechanics |
+| `update_character` | Update HP, XP, inventory, conditions |
+
+### World Building
+| Tool | Description |
+|------|-------------|
+| `add_npc` | Add NPC with role, description, relationship |
+| `add_location` | Add location with type, connections |
+| `generate_locations` | Auto-generate based on campaign size |
+| `save_locations` | Save generated locations |
+| `assign_route` | Dice-based start/end determination |
+| `generate_npcs_for_location` | Auto-populate a location |
+
+### Combat & Events
+| Tool | Description |
+|------|-------------|
+| `start_combat` | Initialize encounter, roll initiative |
+| `complete_turn` | End turn, update HP/conditions, advance |
+| `end_combat` | End fight, award XP, record loot |
+| `log_event` | Log exploration, conversations, skill checks |
+
+### Items
+| Tool | Description |
+|------|-------------|
+| `finalize_starting_items` | Confirm equipment, add special items |
+
+## Tips for DMs
+
+1. **Use the dice roller** - The `roll_dice` tool works alongside D&D tools for any rolls
+2. **Log events** - Use `log_event` for important story moments to maintain continuity
+3. **Update state regularly** - Call `update_campaign_state` after major story beats
+4. **Let the bot improvise** - The AI can generate descriptions, NPC dialogue, and story hooks
+5. **Review the spreadsheet** - Open the Google Sheet to see all campaign data
+
+## Example Session Flow
+
+```
+User: Let's continue our campaign
+Bot: [Calls get_campaign_state]
+
+     Welcome back to "The Lost Temple"!
+
+     Current Location: Darkwood Forest
+     Party: Thorin (Fighter 2), Elara (Wizard 2)
+
+     Last session, you discovered a hidden shrine and fought
+     off a group of cultists. The cult leader escaped deeper
+     into the forest...
+
+     What would you like to do?
+
+User: We follow the cult leader's tracks
+Bot: [Calls log_event for travel]
+
+     Make a Survival check to follow the tracks.
+
+User: I rolled a 14
+Bot: Success! The tracks lead to a moss-covered stone archway...
+```
+
+---
+
+# Part 10: How Bots Respond
 
 Understanding when and why bots respond helps you configure them effectively.
 
@@ -1330,7 +1620,7 @@ This prevents the bot from feeling too robotic or overwhelming the chat.
 
 ---
 
-# Part 9: Memory System Deep Dive
+# Part 11: Memory System Deep Dive
 
 The Signal Bot has a sophisticated memory system to make conversations more natural.
 
@@ -1401,7 +1691,7 @@ This creates contextual, personalized responses without explicit prompting.
 
 ---
 
-# Part 10: Troubleshooting & FAQ
+# Part 12: Troubleshooting & FAQ
 
 ## Docker Container Won't Start
 
@@ -1528,7 +1818,7 @@ Bots sometimes save irrelevant or low-quality memories. To clean them up:
 
 ---
 
-# Part 11: Advanced Topics
+# Part 13: Advanced Topics
 
 ## Running Multiple Bots
 
@@ -1688,8 +1978,12 @@ FLASK_DEBUG=false
 | **idle_check_interval_minutes** | Integer | 5 | 1-30 | Check frequency |
 | **idle_trigger_chance_percent** | Integer | 10 | 5-50 | News post probability |
 | **google_sheets_enabled** | Boolean | false | - | Enable Sheets tools |
+| **google_calendar_enabled** | Boolean | false | - | Enable Calendar tools |
 | **google_client_id** | String | null | - | OAuth client ID |
 | **google_client_secret** | String | null | - | OAuth client secret |
+| **triggers_enabled** | Boolean | false | - | Enable scheduled triggers |
+| **max_triggers** | Integer | 10 | 1-100 | Max triggers per bot |
+| **dnd_enabled** | Boolean | false | - | Enable D&D Game Master tools |
 | **system_prompt** | Text | null | - | Custom personality prompt |
 
 ---
@@ -1854,11 +2148,74 @@ When Google Sheets is enabled and connected, bots have access to these tools:
 
 ---
 
+# Appendix E: Google Calendar Tools Reference
+
+| Tool | Description |
+|------|-------------|
+| `create_calendar` | Create new calendar for group (public by default) |
+| `list_calendars` | List all calendars for this group |
+| `list_events` | List upcoming events with time range filter |
+| `get_event` | Get details of specific event |
+| `create_event` | Create event with title, times, location, attendees |
+| `update_event` | Modify existing event |
+| `delete_event` | Remove event from calendar |
+| `quick_add_event` | Natural language event creation |
+| `share_calendar` | Share via email or make public |
+
+---
+
+# Appendix F: D&D Game Master Tools Reference
+
+## Campaign Management
+
+| Tool | Description |
+|------|-------------|
+| `start_dnd_campaign` | Create campaign with spreadsheet tracking |
+| `get_campaign_state` | Load current state (characters, NPCs, location) |
+| `update_campaign_state` | Update after story events |
+| `list_campaigns` | List all campaigns for group |
+| `update_campaign_phase` | Track setup workflow progress |
+
+## Characters
+
+| Tool | Description |
+|------|-------------|
+| `create_character` | Create PC with full D&D 5e mechanics |
+| `update_character` | Update HP, XP, inventory, conditions, spells |
+
+## World Building
+
+| Tool | Description |
+|------|-------------|
+| `add_npc` | Add NPC with role, location, relationship |
+| `add_location` | Add location with type, connections |
+| `generate_locations` | Auto-generate based on campaign size |
+| `save_locations` | Save generated locations to spreadsheet |
+| `assign_route` | Determine start/end via dice rolls |
+| `generate_npcs_for_location` | Auto-populate location with NPCs |
+
+## Combat
+
+| Tool | Description |
+|------|-------------|
+| `start_combat` | Initialize encounter, roll initiative |
+| `complete_turn` | End turn, update HP/conditions, advance |
+| `end_combat` | End fight, award XP, record loot |
+| `log_event` | Log exploration, conversation, skill checks |
+
+## Items
+
+| Tool | Description |
+|------|-------------|
+| `finalize_starting_items` | Confirm equipment, add special items |
+
+---
+
 ## Getting Help
 
 If you encounter issues not covered in this guide:
 
-1. Check the [Troubleshooting](#part-10-troubleshooting--faq) section
+1. Check the [Troubleshooting](#part-12-troubleshooting--faq) section
 2. Review application logs in the `logs/` directory
 3. Report issues at the project repository
 

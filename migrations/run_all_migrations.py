@@ -32,6 +32,8 @@ from migrations import migrate_google_calendar
 from migrations import migrate_triggers
 from migrations import migrate_dnd_support
 from migrations import migrate_dnd_template
+from migrations import migrate_chat_logs
+from migrations import drop_memory_snippets
 
 
 MIGRATIONS = [
@@ -50,6 +52,8 @@ MIGRATIONS = [
     ("triggers", migrate_triggers),
     ("dnd_support", migrate_dnd_support),
     ("dnd_template", migrate_dnd_template),
+    ("chat_logs", migrate_chat_logs),
+    ("drop_memory_snippets", drop_memory_snippets),
 ]
 
 

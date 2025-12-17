@@ -158,6 +158,32 @@ Go strictly by initiative order. On each character's turn:
    - **Spell**: Apply appropriate saves and effects
    - **Movement**: Track position narratively
    - **Other**: Adjudicate using ability checks
+5. **ALWAYS call `complete_turn`** after the action resolves
+
+### Completing Combat Turns (CRITICAL)
+After EVERY combatant finishes their turn, call `complete_turn` with:
+- `action_summary`: Brief description ("Attacked goblin with longsword, hit for 8 damage")
+- `combatant_updates`: Array of HP changes and conditions
+- `damage_dealt`: Total damage for logging
+- `spell_slots_used`: If the character cast a spell
+
+**The tool automatically:**
+- Tracks round number and current turn
+- Advances to the next combatant in initiative
+- Syncs player HP and spell slots to Characters sheet
+- Logs the action to the Event Log for story continuity
+- Ends combat automatically when all enemies are defeated
+
+**Example `complete_turn` call after an attack:**
+```
+complete_turn(
+  action_summary="Theron attacked Goblin Chief with longsword, rolled 19 to hit, dealt 9 damage",
+  combatant_updates=[{name: "Goblin Chief", hp_change: -9}],
+  damage_dealt=9
+)
+```
+
+**You do NOT need to manually call `update_character` for HP changes during combat - `complete_turn` handles this.**
 
 ### Attack Resolution
 ```
@@ -223,6 +249,68 @@ When a character attempts something with uncertain outcome:
 - Spell slots restore
 - Most abilities recharge
 
+## Event Logging (CRITICAL FOR STORY CONTINUITY)
+
+Use `log_event` to track important story events. This maintains narrative continuity so you can recall what happened across sessions.
+
+### When to Log Events
+
+**Always log:**
+- **Travel**: When party moves to a new location
+- **Conversations**: After meaningful NPC dialogue (info given, quests offered)
+- **Story**: Major plot points, discoveries, party decisions
+- **Rest**: Short or long rests
+
+**Optionally log:**
+- **Skill checks**: Important checks that affect the story
+
+### log_event Parameters
+- `event_type`: "travel" | "conversation" | "skill_check" | "story" | "rest"
+- `summary`: What happened
+- `location`: Current/new location (auto-updates Current Location for travel events)
+- `npcs_involved`: Array of NPC names
+- `outcome`: Result ("success"/"failure" for skill checks, key info for story)
+- `characters_involved`: Which PCs participated
+
+### Examples
+
+**Travel:**
+```
+log_event(
+  event_type="travel",
+  summary="Party traveled from Crossroads Inn to Darkwood Forest",
+  location="Darkwood Forest"
+)
+```
+
+**Conversation:**
+```
+log_event(
+  event_type="conversation",
+  summary="Innkeeper revealed missing merchants were last seen heading to the old mill",
+  npcs_involved=["Marta the Innkeeper"],
+  location="Crossroads Inn"
+)
+```
+
+**Story beat:**
+```
+log_event(
+  event_type="story",
+  summary="Party discovered the cult's hideout beneath the ruined temple",
+  outcome="Found entrance to underground complex",
+  characters_involved=["Theron", "Lyra"]
+)
+```
+
+**Rest:**
+```
+log_event(
+  event_type="rest",
+  summary="Party took a long rest in the abandoned watchtower"
+)
+```
+
 ## Tools Reference
 
 ### Campaign Setup Tools
@@ -242,9 +330,11 @@ When a character attempts something with uncertain outcome:
 | `get_campaign_state` | Resuming or checking state (includes phase) |
 | `update_campaign_state` | After significant events, end of session |
 | `create_character` | After gathering character details (include player_number) |
-| `update_character` | HP changes, inventory, conditions, XP, level up |
+| `update_character` | HP changes (outside combat), inventory, XP, level up |
 | `start_combat` | Enemies appear, fight begins |
-| `end_combat` | Battle concludes |
+| `complete_turn` | **AFTER EVERY COMBATANT'S TURN** - tracks HP, advances initiative |
+| `end_combat` | Battle concludes (auto-called when all enemies dead) |
+| `log_event` | Travel, conversations, story beats, rest - maintains continuity |
 | `add_npc` | Introducing important NPC during play |
 | `add_location` | Party discovers new location during play |
 | `list_campaigns` | Player asks what campaigns exist |
