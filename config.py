@@ -65,6 +65,18 @@ AI_MODELS = {
     "Nano Banana Pro": "google/gemini-3-pro-image-preview",
 }
 
+# Models that support direct Gemini API (map OpenRouter ID to Gemini API model ID)
+# These models can bypass OpenRouter when api_provider='gemini' is set
+GEMINI_DIRECT_MODELS = {
+    "google/gemini-3-pro-preview": "gemini-3-pro-preview",
+    "google/gemini-3-flash-preview": "gemini-3-flash-preview",
+    "google/gemini-2.5-pro-preview": "gemini-2.5-pro-preview-06-05",
+    "google/gemini-2.5-pro-preview-03-25": "gemini-2.5-pro-preview-06-05",
+    "google/gemini-2.5-pro": "gemini-2.5-pro-preview-06-05",
+    "google/gemini-2.5-flash-preview": "gemini-2.5-flash-preview-05-20",
+    "google/gemini-2.5-flash-lite-preview-06-17": "gemini-2.5-flash-lite-preview-06-17",
+}
+
 # System prompt pairs library
 SYSTEM_PROMPT_PAIRS = {
     # this is a basic system prompt for a conversation between two AIs. Experiment with different prompts to see how they affect the conversation. Add new prompts to the library to use them in the GUI.

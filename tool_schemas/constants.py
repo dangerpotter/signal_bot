@@ -24,8 +24,10 @@ TOOL_CAPABLE_MODEL_PATTERNS = [
     "claude-3.7-sonnet",
     # OpenAI models
     "openai/gpt-5", "openai/gpt-4o", "openai/gpt-4.1", "openai/o1", "openai/o3",
-    # Google models
+    # Google models (OpenRouter format)
     "google/gemini-3", "google/gemini-2.5", "google/gemini-2.0",
+    # Google models (Direct Gemini API format)
+    "gemini-",
     # Grok
     "x-ai/grok-4", "x-ai/grok-3",
     # Others with tool support

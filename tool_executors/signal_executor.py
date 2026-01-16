@@ -418,27 +418,50 @@ class SignalToolExecutor(
         if not self.bot_data.get('image_generation_enabled'):
             return {"success": False, "message": "Image generation disabled for this bot"}
 
+        # Check image generation limit
+        if self.images_sent >= self.max_images:
+            return {
+                "success": False,
+                "message": f"Maximum images ({self.max_images}) already generated for this response. Save it for the next message!"
+            }
+
         prompt = arguments.get("prompt", "")
         if not prompt:
             return {"success": False, "message": "No prompt provided"}
 
         try:
-            from shared_utils import generate_image_from_text
+            from shared_utils import generate_image_from_text, generate_image_gemini
 
-            # Get image model from bot settings, fall back to default
-            image_model = self.bot_data.get('image_model') or "google/gemini-3-pro-image-preview"
-            result = generate_image_from_text(prompt, model=image_model)
+            # Determine which image API to use
+            image_api_provider = self.bot_data.get('image_api_provider', 'openrouter')
+
+            if image_api_provider == 'gemini':
+                # Use direct Gemini API for image generation
+                # API key comes from GEMINI_API_KEY or GOOGLE_API_KEY in .env
+                gemini_image_model = self.bot_data.get('gemini_image_model') or "imagen-3.0-generate-002"
+                result = generate_image_gemini(
+                    prompt=prompt,
+                    model=gemini_image_model
+                )
+            else:
+                # Use OpenRouter (default)
+                image_model = self.bot_data.get('image_model') or "google/gemini-3-pro-image-preview"
+                result = generate_image_from_text(prompt, model=image_model)
 
             if result and result.get("success"):
                 image_path = result.get("image_path")
                 if image_path and self.send_image_callback:
                     self.send_image_callback(image_path)
+                    self.images_sent += 1
+                    logger.info(f"Image generated ({self.images_sent}/{self.max_images}): {prompt[:50]}...")
                     return {
                         "success": True,
                         "message": f"Image generated: {prompt[:50]}...",
                         "image_path": image_path
                     }
                 elif image_path:
+                    self.images_sent += 1
+                    logger.info(f"Image generated ({self.images_sent}/{self.max_images}): {prompt[:50]}...")
                     return {
                         "success": True,
                         "message": f"Image generated at {image_path}",

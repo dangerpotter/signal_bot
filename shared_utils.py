@@ -3,6 +3,9 @@
 import requests
 import logging
 import openai
+
+# Logger for this module (used by Gemini Interactions API)
+logger = logging.getLogger(__name__)
 import time
 import json
 import os
@@ -153,6 +156,136 @@ def call_openrouter_api_structured(
         return None
     except Exception as e:
         print(f"[OpenRouter Structured] Error: {e}")
+        return None
+
+
+def call_gemini_api_structured(
+    prompt: str,
+    model: str,
+    system_prompt: str,
+    json_schema: dict,
+    schema_name: str = "response",
+    thinking_level: str = "low"
+) -> dict | None:
+    """Call Gemini GenerateContent API with guaranteed JSON schema response.
+
+    Uses the stable generateContent API (not Interactions API) with structured outputs
+    to ensure the response matches the provided JSON schema.
+
+    Args:
+        prompt: The user message/prompt
+        model: Gemini model ID (e.g., 'gemini-3-flash-preview')
+        system_prompt: System prompt for the model
+        json_schema: JSON Schema dict defining the response structure
+        schema_name: Name for logging (not used in API)
+        thinking_level: Reasoning depth - 'low' recommended for simple classification
+
+    Returns:
+        Parsed JSON dict on success, None on error
+    """
+    api_key = os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY')
+    if not api_key:
+        print("[Gemini Structured] Error: No API key. Set GEMINI_API_KEY in .env")
+        return None
+
+    try:
+        # Build contents in Gemini format
+        contents = [
+            {
+                "role": "user",
+                "parts": [{"text": prompt}]
+            }
+        ]
+
+        # Build generation config with structured output
+        # For generateContent API: use responseMimeType + responseJsonSchema in generationConfig
+        # No maxOutputTokens - let model use its default (64k for Gemini 3 Pro)
+        generation_config = {
+            "temperature": 0.7,
+            "responseMimeType": "application/json",
+            "responseJsonSchema": json_schema
+        }
+
+        # Add thinking config for Gemini 3 models
+        # Use specified thinking level (default "low" to minimize token usage)
+        if "gemini-3" in model or "gemini-2.5" in model:
+            generation_config["thinkingConfig"] = {"thinkingLevel": thinking_level}
+
+        # Build payload
+        payload = {
+            "contents": contents,
+            "generationConfig": generation_config
+        }
+
+        # Add system instruction if provided
+        if system_prompt:
+            payload["systemInstruction"] = {
+                "parts": [{"text": system_prompt}]
+            }
+
+        # API endpoint - use generateContent instead of Interactions API
+        endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+        headers = {
+            "x-goog-api-key": api_key,
+            "Content-Type": "application/json"
+        }
+
+        print(f"[Gemini Structured] Model: {model}, Schema: {schema_name}")
+        print(f"[Gemini Structured] Using generateContent API")
+        # Debug: log generation config keys
+        print(f"[Gemini Structured] GenerationConfig keys: {list(generation_config.keys())}")
+
+        response = requests.post(endpoint, headers=headers, json=payload, timeout=60)
+        print(f"[Gemini Structured] Response status: {response.status_code}")
+
+        if response.status_code == 200:
+            response_data = response.json()
+
+            # Extract text from candidates
+            candidates = response_data.get("candidates", [])
+            if not candidates:
+                print("[Gemini Structured] No candidates in response")
+                print(f"[Gemini Structured] Full response: {json.dumps(response_data)[:1000]}")
+                return None
+
+            # Get first candidate's content
+            candidate = candidates[0]
+            finish_reason = candidate.get("finishReason", "unknown")
+            content = candidate.get("content", {})
+            parts = content.get("parts", [])
+
+            # Debug: log finish reason and candidate info
+            print(f"[Gemini Structured] Finish reason: {finish_reason}")
+            if finish_reason != "STOP":
+                # Log safety ratings if present
+                safety_ratings = candidate.get("safetyRatings", [])
+                if safety_ratings:
+                    print(f"[Gemini Structured] Safety ratings: {safety_ratings}")
+                print(f"[Gemini Structured] Full candidate: {json.dumps(candidate)[:1000]}")
+
+            for part in parts:
+                text_content = part.get("text", "")
+                if text_content:
+                    try:
+                        return json.loads(text_content)
+                    except json.JSONDecodeError as e:
+                        print(f"[Gemini Structured] JSON parse error: {e}")
+                        print(f"[Gemini Structured] Content: {text_content[:500]}")
+                        return None
+
+            print("[Gemini Structured] No text in response parts")
+            print(f"[Gemini Structured] Parts: {parts}")
+            print(f"[Gemini Structured] Full response: {json.dumps(response_data)[:2000]}")
+            return None
+        else:
+            print(f"[Gemini Structured] Error {response.status_code}: {response.text[:500]}")
+            return None
+
+    except requests.exceptions.Timeout:
+        print("[Gemini Structured] Request timed out")
+        return None
+    except Exception as e:
+        print(f"[Gemini Structured] Error: {e}")
         return None
 
 
@@ -1815,6 +1948,163 @@ def generate_image_from_text(text, model="google/gemini-3-pro-image-preview"):
             "error": str(e)
         }
 
+
+# Gemini image models available for direct API
+GEMINI_IMAGE_MODELS = {
+    "Gemini 3 Pro Image": "gemini-3-pro-image-preview",
+    "Imagen 3": "imagen-3.0-generate-002",
+    "Imagen 4 Standard": "imagen-4.0-generate-001",
+    "Imagen 4 Ultra": "imagen-4.0-ultra-generate-001",
+    "Imagen 4 Fast": "imagen-4.0-fast-generate-001",
+}
+
+
+def generate_image_gemini(
+    prompt: str,
+    model: str = "imagen-3.0-generate-002",
+    api_key: str = None,
+    aspect_ratio: str = "1:1",
+    number_of_images: int = 1
+) -> dict:
+    """
+    Generate an image using Gemini's direct API (Imagen or Gemini 3 Pro Image).
+
+    Args:
+        prompt: Text description of the image to generate
+        model: Model ID (imagen-3.0-generate-002, gemini-3-pro-image-preview, etc.)
+        api_key: Gemini API key (uses GEMINI_API_KEY env var if not provided)
+        aspect_ratio: Image aspect ratio (1:1, 3:4, 4:3, 9:16, 16:9)
+        number_of_images: Number of images to generate (1-4)
+
+    Returns:
+        dict with success, image_path, timestamp, or error
+    """
+    api_key = api_key or os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY')
+    if not api_key:
+        return {
+            "success": False,
+            "error": "Gemini API key not configured. Set GEMINI_API_KEY in .env"
+        }
+
+    try:
+        image_dir = Path("images")
+        image_dir.mkdir(exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+
+        headers = {
+            "x-goog-api-key": api_key,
+            "Content-Type": "application/json"
+        }
+
+        # Different API format for Imagen vs Gemini 3 Pro Image
+        if model.startswith("imagen"):
+            # Imagen 3/4 uses predict endpoint
+            endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:predict"
+            payload = {
+                "instances": [{"prompt": prompt}],
+                "parameters": {
+                    "sampleCount": min(number_of_images, 4),
+                    "aspectRatio": aspect_ratio
+                }
+            }
+            print(f"[Gemini Image] Generating with Imagen: {model}")
+        else:
+            # Gemini 3 Pro Image uses generateContent endpoint
+            endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+            payload = {
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {
+                    "responseModalities": ["TEXT", "IMAGE"]
+                }
+            }
+            print(f"[Gemini Image] Generating with Gemini model: {model}")
+
+        print(f"[Gemini Image] Prompt: {prompt[:50]}...")
+        response = requests.post(endpoint, headers=headers, json=payload, timeout=120)
+
+        if response.status_code != 200:
+            error_text = response.text[:500]
+            print(f"[Gemini Image] API error {response.status_code}: {error_text}")
+            return {
+                "success": False,
+                "error": f"Gemini API error {response.status_code}: {error_text[:200]}"
+            }
+
+        result = response.json()
+
+        # Parse response based on model type
+        if model.startswith("imagen"):
+            # Imagen response format
+            predictions = result.get("predictions", [])
+            if not predictions:
+                return {"success": False, "error": "No images generated"}
+
+            # Get first image
+            image_data = predictions[0].get("bytesBase64Encoded")
+            if not image_data:
+                return {"success": False, "error": "No image data in response"}
+
+            # Imagen returns raw base64 without data URL prefix
+            image_bytes = base64.b64decode(image_data)
+            image_path = image_dir / f"generated_{timestamp}.png"
+            with open(image_path, "wb") as f:
+                f.write(image_bytes)
+
+        else:
+            # Gemini 3 Pro Image response format
+            candidates = result.get("candidates", [])
+            if not candidates:
+                # Check for blocked content
+                block_reason = result.get("promptFeedback", {}).get("blockReason")
+                if block_reason:
+                    return {"success": False, "error": f"Content blocked: {block_reason}"}
+                return {"success": False, "error": "No response from Gemini"}
+
+            # Find image part in response
+            parts = candidates[0].get("content", {}).get("parts", [])
+            image_data = None
+            for part in parts:
+                if "inlineData" in part:
+                    image_data = part["inlineData"].get("data")
+                    mime_type = part["inlineData"].get("mimeType", "image/png")
+                    break
+
+            if not image_data:
+                # Model may have returned text only
+                text_response = ""
+                for part in parts:
+                    if "text" in part:
+                        text_response += part["text"]
+                return {"success": False, "error": f"No image generated. Model response: {text_response[:200]}"}
+
+            # Determine file extension from mime type
+            ext = ".png"
+            if "jpeg" in mime_type or "jpg" in mime_type:
+                ext = ".jpg"
+            elif "webp" in mime_type:
+                ext = ".webp"
+
+            image_bytes = base64.b64decode(image_data)
+            image_path = image_dir / f"generated_{timestamp}{ext}"
+            with open(image_path, "wb") as f:
+                f.write(image_bytes)
+
+        print(f"[Gemini Image] Saved to {image_path}")
+        return {
+            "success": True,
+            "image_path": str(image_path),
+            "timestamp": timestamp
+        }
+
+    except requests.exceptions.Timeout:
+        return {"success": False, "error": "Gemini image request timed out"}
+    except Exception as e:
+        print(f"[Gemini Image] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"success": False, "error": str(e)}
+
+
 # -------------------- Sora Video Utilities --------------------
 def ensure_videos_dir() -> Path:
     """Create a 'videos' directory in the project root if it doesn't exist."""
@@ -1924,4 +2214,509 @@ def generate_video_with_sora(
     except Exception as e:
         logging.exception("Sora video generation error")
         return {"success": False, "error": str(e)}
+
+
+# ============================================================================
+# GEMINI DIRECT API SUPPORT
+# ============================================================================
+
+def _sanitize_schema_for_gemini(schema):
+    """
+    Remove JSON Schema fields not supported by Gemini API.
+
+    Gemini's function calling API doesn't support:
+    - additionalProperties
+    - default
+    """
+    if not isinstance(schema, dict):
+        return schema
+
+    unsupported = {"additionalProperties", "default"}
+    cleaned = {}
+
+    for key, value in schema.items():
+        if key not in unsupported:
+            if isinstance(value, dict):
+                cleaned[key] = _sanitize_schema_for_gemini(value)
+            elif isinstance(value, list):
+                cleaned[key] = [
+                    _sanitize_schema_for_gemini(item) if isinstance(item, dict) else item
+                    for item in value
+                ]
+            else:
+                cleaned[key] = value
+
+    return cleaned
+
+
+def _extract_gemini_thoughts(text: str) -> tuple:
+    """
+    Extract thought signatures from Gemini 3 responses.
+
+    Gemini 3 may return thoughts in <thinking>...</thinking> tags.
+    Similar to DeepSeek R1 handling.
+
+    Returns:
+        Tuple of (clean_text, thoughts or None)
+    """
+    import re
+
+    thinking_match = re.search(r'<thinking>(.*?)</thinking>', text, re.DOTALL)
+    if thinking_match:
+        thoughts = thinking_match.group(1).strip()
+        clean_text = re.sub(r'<thinking>.*?</thinking>', '', text, flags=re.DOTALL).strip()
+        return clean_text, thoughts
+
+    return text, None
+
+
+def fetch_gemini_models(api_key: str) -> list:
+    """
+    Fetch available Gemini models that support text generation.
+
+    Calls the Gemini API models.list endpoint and filters for models
+    that support generateContent (text generation).
+
+    Args:
+        api_key: Gemini API key
+
+    Returns:
+        List of dicts with 'id' and 'name' keys, or empty list on error.
+    """
+    if not api_key:
+        return []
+
+    url = "https://generativelanguage.googleapis.com/v1beta/models"
+    headers = {
+        "x-goog-api-key": api_key,
+        "Content-Type": "application/json"
+    }
+
+    try:
+        response = requests.get(url, headers=headers, timeout=30)
+        if response.status_code != 200:
+            print(f"[Gemini Models] Error {response.status_code}: {response.text[:200]}")
+            return []
+
+        data = response.json()
+        models = data.get("models", [])
+
+        # Filter for models that support text generation
+        text_models = [
+            {
+                "id": m.get("name", "").replace("models/", ""),
+                "name": m.get("displayName", m.get("name", "").replace("models/", "")),
+                "description": m.get("description", ""),
+            }
+            for m in models
+            if "generateContent" in m.get("supportedGenerationMethods", [])
+        ]
+
+        # Sort by name for consistent ordering
+        text_models.sort(key=lambda x: x["name"])
+        return text_models
+
+    except Exception as e:
+        print(f"[Gemini Models] Exception: {e}")
+        return []
+
+
+# =============================================================================
+# Gemini Interactions API (Beta)
+# =============================================================================
+
+def _convert_tools_to_interactions_format(tools: list) -> list:
+    """
+    Convert OpenAI-style tools to Interactions API flat format.
+
+    OpenAI: {"type": "function", "function": {"name", "description", "parameters"}}
+    Interactions: {"type": "function", "name", "description", "parameters"}
+    """
+    if not tools:
+        return []
+
+    result = []
+    for tool in tools:
+        if tool.get("type") == "function":
+            fn = tool.get("function", {})
+            interactions_tool = {
+                "type": "function",
+                "name": fn.get("name", ""),
+                "description": fn.get("description", ""),
+            }
+            # Only include parameters if present (sanitized for Gemini compatibility)
+            if fn.get("parameters"):
+                interactions_tool["parameters"] = _sanitize_schema_for_gemini(fn["parameters"])
+            result.append(interactions_tool)
+
+    return result
+
+
+def _convert_messages_to_interactions_format(messages: list, current_prompt=None) -> list:
+    """
+    Convert OpenAI-style messages to Interactions API input format.
+
+    The Interactions API expects:
+    - input: list of turns with {role: "user"|"model", content: ...}
+    - content can be: string, list of content objects, or outputs from previous turn
+
+    Returns:
+        List of turns for the 'input' field
+    """
+    if not messages and not current_prompt:
+        return []
+
+    turns = []
+
+    for msg in (messages or []):
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+
+        # Map roles (OpenAI/Anthropic → Gemini)
+        if role == "assistant":
+            gemini_role = "model"
+        elif role == "system":
+            # System messages are handled via system_instruction, skip here
+            continue
+        else:
+            gemini_role = "user"
+
+        # Handle structured content (with images)
+        if isinstance(content, list):
+            parts = []
+            for part in content:
+                if part.get("type") == "text":
+                    parts.append({"type": "text", "text": part.get("text", "")})
+                elif part.get("type") == "image_url":
+                    # OpenAI format: {"type": "image_url", "image_url": {"url": "data:..."}}
+                    url = part.get("image_url", {}).get("url", "")
+                    if url.startswith("data:"):
+                        # Extract base64 from data URL
+                        try:
+                            header, b64_data = url.split(",", 1)
+                            mime = header.split(":")[1].split(";")[0]
+                            parts.append({
+                                "type": "image",
+                                "data": b64_data,
+                                "mime_type": mime
+                            })
+                        except:
+                            pass
+                elif part.get("type") == "image":
+                    # Already in Anthropic format
+                    source = part.get("source", {})
+                    if source.get("type") == "base64":
+                        parts.append({
+                            "type": "image",
+                            "data": source.get("data", ""),
+                            "mime_type": source.get("media_type", "image/png")
+                        })
+            if parts:
+                turns.append({"role": gemini_role, "content": parts})
+        elif content:
+            turns.append({"role": gemini_role, "content": content})
+
+    # Add current prompt as the last user turn
+    if current_prompt:
+        if isinstance(current_prompt, list):
+            # Structured content with images
+            parts = []
+            for part in current_prompt:
+                if part.get("type") == "text":
+                    parts.append({"type": "text", "text": part.get("text", "")})
+                elif part.get("type") == "image":
+                    source = part.get("source", {})
+                    if source.get("type") == "base64":
+                        parts.append({
+                            "type": "image",
+                            "data": source.get("data", ""),
+                            "mime_type": source.get("media_type", "image/png")
+                        })
+            if parts:
+                turns.append({"role": "user", "content": parts})
+        else:
+            turns.append({"role": "user", "content": current_prompt})
+
+    return turns
+
+
+def _parse_interactions_response(response_data: dict) -> tuple:
+    """
+    Parse Interactions API response into text and function calls.
+
+    The response structure:
+    {
+        "id": "...",
+        "status": "completed",
+        "outputs": [
+            {"type": "text", "text": "..."},
+            {"type": "function_call", "id": "...", "name": "...", "arguments": {...}}
+        ],
+        "usage": {...}
+    }
+
+    Returns:
+        Tuple of (text_content, list of function_calls)
+        function_calls format: [{"id": "...", "name": "...", "args": {...}}, ...]
+    """
+    text_parts = []
+    function_calls = []
+
+    outputs = response_data.get("outputs", [])
+    for output in outputs:
+        output_type = output.get("type", "")
+
+        if output_type == "text":
+            text_parts.append(output.get("text", ""))
+        elif output_type == "function_call":
+            function_calls.append({
+                "id": output.get("id", ""),
+                "name": output.get("name", ""),
+                "args": output.get("arguments", {}),
+                "thoughtSignature": output.get("thoughtSignature")  # Required for Gemini 3
+            })
+        # Skip other types like google_search_result, code_execution_result, url_context_result
+
+    return "".join(text_parts), function_calls
+
+
+def call_gemini_interactions_api(
+    prompt,
+    conversation_history,
+    model,
+    system_prompt,
+    stream_callback=None,  # Not implemented yet
+    tools=None,
+    tool_executor=None,
+    thinking_level="high",
+    enable_google_search=False,
+    enable_code_execution=False,
+    enable_url_context=False,
+):
+    """
+    Call the Gemini Interactions API (Beta).
+
+    This is the new unified API for Gemini that provides:
+    - Built-in tools (Google Search, Code Execution, URL Context)
+    - Thinking level control (minimal, low, medium, high)
+    - Simplified tool schema format
+    - Optional server-side state management
+
+    Args:
+        prompt: The current user message (string or structured content with images)
+        conversation_history: List of previous messages in OpenAI format
+        model: Gemini model ID (e.g., 'gemini-3-flash-preview')
+        system_prompt: System instructions for the model
+        stream_callback: Not implemented (streaming not supported yet)
+        tools: Optional list of tool schemas (OpenAI format - will be converted)
+        tool_executor: Optional callback function(name, args) -> dict to execute tool calls
+        thinking_level: Reasoning depth - 'minimal', 'low', 'medium', 'high' (default: 'high')
+        enable_google_search: Enable built-in Google Search grounding
+        enable_code_execution: Enable built-in Python code execution
+        enable_url_context: Enable built-in URL fetch and summarization
+
+    Returns:
+        Response string, or None on error
+    """
+    # Get API key (with GOOGLE_API_KEY fallback)
+    api_key = os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY')
+    if not api_key:
+        logger.error("[Gemini Interactions] No API key. Set GEMINI_API_KEY or GOOGLE_API_KEY in .env")
+        return "Error: Gemini API key not configured. Please set GEMINI_API_KEY in .env"
+
+    try:
+        # Convert messages to Interactions API format
+        input_data = _convert_messages_to_interactions_format(
+            conversation_history or [], prompt
+        )
+
+        # Build tools list - custom functions OR built-in tools (can't mix in Interactions API)
+        # Note: Multi-tool use (mixing function calling with built-in tools) is only supported
+        # in the Live API (WebSocket streaming), not the standard Interactions API endpoint.
+        # See: https://ai.google.dev/gemini-api/docs/function-calling#multi-tool-use
+        custom_tools = _convert_tools_to_interactions_format(tools or [])
+
+        if custom_tools:
+            # Use custom function tools (our weather, sheets, memory, etc.)
+            all_tools = custom_tools
+        else:
+            # No custom tools - can use built-in tools
+            all_tools = []
+            if enable_google_search:
+                all_tools.append({"type": "google_search"})
+            if enable_code_execution:
+                all_tools.append({"type": "code_execution"})
+            if enable_url_context:
+                all_tools.append({"type": "url_context"})
+
+        # Build generation config
+        generation_config = {
+            "temperature": 1.0,
+            "max_output_tokens": 4000
+        }
+
+        # Only add thinking_level for models that support it (2.5+)
+        # Note: 'minimal' and 'medium' are Flash-only
+        if thinking_level and thinking_level in ['minimal', 'low', 'medium', 'high']:
+            generation_config["thinking_level"] = thinking_level
+
+        # Build payload
+        payload = {
+            "model": model,
+            "input": input_data,
+            "generation_config": generation_config,
+            "store": False  # Don't store interactions server-side (privacy)
+        }
+
+        # Add system instruction if provided
+        if system_prompt:
+            payload["system_instruction"] = system_prompt
+
+        # Add tools if any
+        if all_tools:
+            payload["tools"] = all_tools
+            # Log which type of tools we're using (can't mix in Interactions API)
+            if custom_tools:
+                logger.info(f"[Gemini Interactions] Tools enabled: {len(all_tools)} custom function(s)")
+            else:
+                builtin_types = [t.get("type") for t in all_tools]
+                logger.info(f"[Gemini Interactions] Tools enabled: built-in: {', '.join(builtin_types)}")
+
+        # API endpoint
+        endpoint = "https://generativelanguage.googleapis.com/v1beta/interactions"
+        headers = {
+            "x-goog-api-key": api_key,
+            "Content-Type": "application/json"
+        }
+
+        logger.info(f"[Gemini Interactions] Request to: {model}")
+        logger.info(f"[Gemini Interactions] Input turns: {len(input_data)}, thinking_level: {thinking_level}")
+
+        # Multi-turn tool calling loop
+        max_iterations = 15
+        # Cache tool call results to avoid duplicate API calls within same response
+        tool_call_cache = {}  # {(fn_name, sorted_args_json): result}
+
+        for iteration in range(max_iterations):
+            logger.info(f"[Gemini Interactions] Tool iteration {iteration + 1}/{max_iterations}")
+            response = requests.post(endpoint, headers=headers, json=payload, timeout=120)
+
+            if response.status_code != 200:
+                error_text = response.text
+                logger.error(f"[Gemini Interactions] API error {response.status_code}: {error_text[:500]}")
+
+                # Parse common errors
+                if response.status_code == 400:
+                    return f"Error: Invalid request - {error_text[:200]}"
+                elif response.status_code == 401:
+                    return "Error: Invalid Gemini API key"
+                elif response.status_code == 403:
+                    return "Error: API key doesn't have access to this model"
+                elif response.status_code == 404:
+                    return f"Error: Model or endpoint not found: {model}"
+                elif response.status_code == 429:
+                    return "Error: Gemini rate limit exceeded. Try again later."
+                else:
+                    return f"Error: Gemini API error {response.status_code}"
+
+            response_data = response.json()
+            text, function_calls = _parse_interactions_response(response_data)
+
+            # Check for status
+            status = response_data.get("status", "")
+            if status == "failed":
+                error_msg = response_data.get("error", {}).get("message", "Unknown error")
+                logger.error(f"[Gemini Interactions] Failed: {error_msg}")
+                return f"Error: {error_msg}"
+
+            # Handle function calls
+            if function_calls and tool_executor:
+                logger.info(f"[Gemini Interactions] Model requested {len(function_calls)} tool call(s)")
+
+                for fc in function_calls:
+                    fn_name = fc["name"]
+                    fn_args = fc["args"]
+                    call_id = fc["id"]
+
+                    # Check for duplicate tool call (deduplication)
+                    try:
+                        cache_key = (fn_name, json.dumps(fn_args, sort_keys=True))
+                    except (TypeError, ValueError):
+                        cache_key = None  # Can't cache if args aren't serializable
+
+                    if cache_key and cache_key in tool_call_cache:
+                        result = tool_call_cache[cache_key]
+                        logger.info(f"[Gemini Interactions] Using cached result for: {fn_name}({fn_args})")
+                    else:
+                        logger.info(f"[Gemini Interactions] Executing tool: {fn_name}({fn_args})")
+
+                        # Execute tool
+                        try:
+                            result = tool_executor(fn_name, fn_args)
+                            # Cache the result (only cache successful executions to avoid caching transient errors)
+                            if cache_key and isinstance(result, dict) and result.get("success", True):
+                                tool_call_cache[cache_key] = result
+                        except Exception as e:
+                            logger.error(f"[Gemini Interactions] Tool execution error: {e}")
+                            result = {"success": False, "error": str(e)}
+
+                    # Check for meta-tool expansion signal
+                    if isinstance(result, dict) and result.get("expansion_needed"):
+                        logger.info(f"[Gemini Interactions] Meta-tool expansion requested for {fn_name}")
+                        return result  # Return the expansion signal
+
+                    logger.debug(f"[Gemini Interactions] Tool result: {str(result)[:200]}")
+
+                    # Add function result to input for next iteration
+                    # Interactions API format for function results
+                    function_result = {
+                        "type": "function_result",
+                        "name": fn_name,
+                        "call_id": call_id,
+                        "result": str(result) if not isinstance(result, str) else result
+                    }
+                    # Include thoughtSignature if present (required for Gemini 3)
+                    # See: https://ai.google.dev/gemini-api/docs/gemini-3
+                    if fc.get("thoughtSignature"):
+                        function_result["thoughtSignature"] = fc["thoughtSignature"]
+
+                    input_data.append({
+                        "role": "user",
+                        "content": [function_result]
+                    })
+
+                # Update payload for next iteration
+                payload["input"] = input_data
+                continue
+
+            # No function calls - return text response
+            if text:
+                # Extract any thinking tags (Gemini 3 feature)
+                clean_text, thoughts = _extract_gemini_thoughts(text)
+                if thoughts:
+                    logger.debug(f"[Gemini Interactions] Extracted thoughts: {thoughts[:100]}...")
+                logger.info(f"[Gemini Interactions] Returning response ({len(clean_text)} chars): {clean_text[:100]}...")
+                return clean_text
+
+            # Empty response - return user-friendly message instead of None
+            logger.warning("[Gemini Interactions] Empty response received from model")
+            return "I processed your request but couldn't generate a response. Please try rephrasing your question."
+
+        # Max iterations reached - provide helpful feedback
+        logger.warning(f"[Gemini Interactions] Max tool iterations ({max_iterations}) reached")
+        return "I tried to gather comprehensive data but hit a complexity limit. Please try asking a more focused question."
+
+    except requests.exceptions.Timeout:
+        logger.error("[Gemini Interactions] Request timed out")
+        return "Error: Gemini request timed out"
+    except requests.exceptions.RequestException as e:
+        logger.error(f"[Gemini Interactions] Network error: {e}")
+        return f"Error: Network error - {str(e)}"
+    except Exception as e:
+        logger.error(f"[Gemini Interactions] Unexpected error: {e}", exc_info=True)
+        return f"Error: {str(e)}"
+
+
+
+# DEPRECATED: call_gemini_api() removed - use call_gemini_interactions_api() instead
 

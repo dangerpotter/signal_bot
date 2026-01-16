@@ -252,7 +252,7 @@ class MemberMemoryScanner:
     ) -> list[dict]:
         """Use AI to analyze messages and propose memory updates using structured outputs."""
         try:
-            from shared_utils import call_openrouter_api_structured
+            from shared_utils import call_openrouter_api_structured, call_gemini_api_structured
             from config import AI_MODELS
         except ImportError as e:
             logger.error(f"Failed to import for memory scan: {e}")
@@ -341,14 +341,28 @@ Analyze and return memory updates:"""
                 return []
             model_id = AI_MODELS.get(bot.model, bot.model)
 
-            # Use structured outputs for guaranteed valid JSON
-            result = call_openrouter_api_structured(
-                prompt=user_prompt,
-                model=model_id,
-                system_prompt=system_prompt,
-                json_schema=self.MEMORY_SCAN_SCHEMA,
-                schema_name="memory_scan"
-            )
+            # Route to correct API based on bot's api_provider setting
+            use_gemini_api = getattr(bot, 'api_provider', 'openrouter') == 'gemini'
+
+            if use_gemini_api:
+                # Use Gemini Interactions API for Direct Gemini provider
+                result = call_gemini_api_structured(
+                    prompt=user_prompt,
+                    model=model_id,
+                    system_prompt=system_prompt,
+                    json_schema=self.MEMORY_SCAN_SCHEMA,
+                    schema_name="memory_scan",
+                    thinking_level="low"  # Fast for background tasks
+                )
+            else:
+                # Use OpenRouter for all other providers
+                result = call_openrouter_api_structured(
+                    prompt=user_prompt,
+                    model=model_id,
+                    system_prompt=system_prompt,
+                    json_schema=self.MEMORY_SCAN_SCHEMA,
+                    schema_name="memory_scan"
+                )
 
             if not result:
                 return []
@@ -585,13 +599,13 @@ def is_location_relevant_llm(message_content: str, model_id: str) -> tuple[bool,
 
     Args:
         message_content: The message text
-        model_id: The model to use for relevance detection
+        model_id: The model to use for relevance detection (OpenRouter or Gemini model ID)
 
     Returns:
         Tuple of (should_include_location, is_explicitly_asked)
     """
     try:
-        from shared_utils import call_openrouter_api_structured
+        from shared_utils import call_openrouter_api_structured, call_gemini_api_structured
     except ImportError as e:
         logger.error(f"Failed to import for location relevance check: {e}")
         return False, False
@@ -616,13 +630,28 @@ Location is NOT relevant if:
 Is location information relevant for responding to this message?"""
 
     try:
-        result = call_openrouter_api_structured(
-            prompt=user_prompt,
-            model=model_id,
-            system_prompt=system_prompt,
-            json_schema=LOCATION_RELEVANCE_SCHEMA,
-            schema_name="location_relevance"
-        )
+        # Detect if this is a Gemini model and route to the correct API
+        is_gemini_model = model_id and model_id.startswith(('gemini-', 'imagen-'))
+
+        if is_gemini_model:
+            # Use Gemini Interactions API for Gemini models
+            result = call_gemini_api_structured(
+                prompt=user_prompt,
+                model=model_id,
+                system_prompt=system_prompt,
+                json_schema=LOCATION_RELEVANCE_SCHEMA,
+                schema_name="location_relevance",
+                thinking_level="low"  # Fast, simple classification task
+            )
+        else:
+            # Use OpenRouter for all other models
+            result = call_openrouter_api_structured(
+                prompt=user_prompt,
+                model=model_id,
+                system_prompt=system_prompt,
+                json_schema=LOCATION_RELEVANCE_SCHEMA,
+                schema_name="location_relevance"
+            )
 
         if not result:
             logger.warning("No result from location relevance LLM")

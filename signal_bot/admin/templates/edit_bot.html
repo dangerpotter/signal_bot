@@ -11,440 +11,495 @@
 
 <form action="{{ url_for('edit_bot', bot_id=bot.id) }}" method="post">
     <div class="row">
+        <!-- LEFT COLUMN: Core Settings -->
         <div class="col-md-6">
+            <!-- Basic Settings -->
             <div class="card mb-4">
-                <div class="card-header">Basic Settings</div>
+                <div class="card-header"><i class="bi bi-gear"></i> Basic Settings</div>
                 <div class="card-body">
                     <div class="mb-3">
                         <label class="form-label">Bot Name</label>
                         <input type="text" name="name" class="form-control" value="{{ bot.name }}" required>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">AI Model</label>
-                        <select name="model" class="form-select" required>
-                            {% for display_name, model_id in all_models.items() %}
-                            <option value="{{ model_id }}" {% if model_id == bot.model %}selected{% endif %}>{{ display_name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Phone Number</label>
-                        <input type="text" name="phone_number" class="form-control" value="{{ bot.phone_number or '' }}" placeholder="+1234567890">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Signal API Port</label>
-                        <select name="signal_api_port" class="form-select">
-                            <option value="8080" {% if bot.signal_api_port == 8080 %}selected{% endif %}>8080 (Bot 1)</option>
-                            <option value="8081" {% if bot.signal_api_port == 8081 %}selected{% endif %}>8081 (Bot 2)</option>
-                            <option value="8082" {% if bot.signal_api_port == 8082 %}selected{% endif %}>8082 (Bot 3)</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
-
-            <div class="card mb-4">
-                <div class="card-header">
-                    <i class="bi bi-signal"></i> Signal Features
-                </div>
-                <div class="card-body">
-                    <div class="mb-3">
-                        <div class="form-check form-switch">
-                            <input type="checkbox" name="typing_enabled" class="form-check-input" id="typingEnabled" {% if bot.typing_enabled is not defined or bot.typing_enabled %}checked{% endif %}>
-                            <label class="form-check-label" for="typingEnabled">Send typing indicators</label>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Phone Number</label>
+                                <input type="text" name="phone_number" class="form-control" value="{{ bot.phone_number or '' }}" placeholder="+1234567890">
+                            </div>
                         </div>
-                        <small class="text-muted">Show "typing..." while bot composes a response</small>
-                    </div>
-                    <div class="mb-3">
-                        <div class="form-check form-switch">
-                            <input type="checkbox" name="read_receipts_enabled" class="form-check-input" id="readReceipts" {% if bot.read_receipts_enabled %}checked{% endif %}>
-                            <label class="form-check-label" for="readReceipts">Send read receipts</label>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Signal API Port</label>
+                                <select name="signal_api_port" class="form-select">
+                                    <option value="8080" {% if bot.signal_api_port == 8080 %}selected{% endif %}>8080 (Bot 1)</option>
+                                    <option value="8081" {% if bot.signal_api_port == 8081 %}selected{% endif %}>8081 (Bot 2)</option>
+                                    <option value="8082" {% if bot.signal_api_port == 8082 %}selected{% endif %}>8082 (Bot 3)</option>
+                                </select>
+                            </div>
                         </div>
-                        <small class="text-muted">Mark messages as read when bot sees them</small>
                     </div>
                     <hr>
-                    <p class="text-muted mb-0">
-                        <small>
-                            <i class="bi bi-info-circle"></i>
-                            <strong>Also enabled:</strong> Quote/reply to messages, text styling (**bold**, *italic*, `code`), link previews
-                        </small>
-                    </p>
-                </div>
-            </div>
-
-            <div class="card mb-4">
-                <div class="card-header">
-                    <i class="bi bi-emoji-smile"></i> Reaction Settings
-                </div>
-                <div class="card-body">
                     <div class="mb-3">
-                        <div class="form-check form-switch">
-                            <input type="checkbox" name="reaction_tool_enabled" class="form-check-input" id="reactionToolEnabled" {% if bot.reaction_tool_enabled %}checked{% endif %}>
-                            <label class="form-check-label" for="reactionToolEnabled">Enable reaction tool</label>
+                        <label class="form-label">API Provider</label>
+                        <select name="api_provider" class="form-select" id="apiProvider" onchange="toggleGeminiSettings()">
+                            <option value="openrouter" {% if bot.api_provider != 'gemini' %}selected{% endif %}>OpenRouter (default)</option>
+                            <option value="gemini" {% if bot.api_provider == 'gemini' %}selected{% endif %}>Direct Gemini API</option>
+                        </select>
+                        <small class="text-muted">OpenRouter supports all models. Direct Gemini bypasses OpenRouter.</small>
+                    </div>
+                    <div id="openrouterModelSettings">
+                        <div class="mb-3">
+                            <label class="form-label">AI Model (OpenRouter)</label>
+                            <select name="model" id="openrouterModelSelect" class="form-select">
+                                {% for display_name, model_id in all_models.items() %}
+                                <option value="{{ model_id }}" {% if model_id == bot.model %}selected{% endif %}>{{ display_name }}</option>
+                                {% endfor %}
+                            </select>
                         </div>
-                        <small class="text-muted">Bot can react to messages with emoji during responses. The AI reads the conversation and decides which messages deserve reactions. (requires tool-capable model)</small>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">Max Reactions Per Response</label>
-                        <input type="number" name="max_reactions_per_response" class="form-control" min="1" max="10" value="{{ bot.max_reactions_per_response or 3 }}">
-                        <small class="text-muted">Maximum emoji reactions the bot can add per response (1-10)</small>
-                    </div>
-                </div>
-            </div>
-
-            <div class="card mb-4">
-                <div class="card-header">
-                    <i class="bi bi-newspaper"></i> Idle News Settings
-                </div>
-                <div class="card-body">
-                    <div class="mb-3">
-                        <div class="form-check form-switch">
-                            <input type="checkbox" name="idle_news_enabled" class="form-check-input" id="idleNewsEnabled" {% if bot.idle_news_enabled %}checked{% endif %}>
-                            <label class="form-check-label" for="idleNewsEnabled">Enable idle news posting</label>
+                    <div id="geminiModelSettings" style="display: none;">
+                        <div class="mb-3">
+                            <label class="form-label">AI Model (Gemini Direct)</label>
+                            <select name="model" id="geminiModelSelect" class="form-select">
+                                <option value="">Loading models...</option>
+                            </select>
+                            <small class="text-muted" id="geminiModelStatus">Loading available models...</small>
                         </div>
-                        <small class="text-muted">Post interesting news when group goes quiet (requires web search enabled)</small>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">Idle Threshold (minutes)</label>
-                        <input type="number" name="idle_threshold_minutes" class="form-control" min="5" max="120" value="{{ bot.idle_threshold_minutes or 15 }}">
-                        <small class="text-muted">How long the group must be quiet before idle mode activates (5-120)</small>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Check Interval (minutes)</label>
-                        <input type="number" name="idle_check_interval_minutes" class="form-control" min="1" max="30" value="{{ bot.idle_check_interval_minutes or 5 }}">
-                        <small class="text-muted">How often to check idle groups for news posting (1-30)</small>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Trigger Chance (%)</label>
-                        <input type="range" name="idle_trigger_chance_percent" class="form-range" min="5" max="50" value="{{ bot.idle_trigger_chance_percent or 10 }}" id="idleChance" oninput="document.getElementById('idleChanceValue').textContent = this.value + '%'">
-                        <span id="idleChanceValue">{{ bot.idle_trigger_chance_percent or 10 }}%</span>
-                        <br><small class="text-muted">Probability of posting news each check interval (5-50%)</small>
+                    <div id="geminiSettings" style="display: none;">
+                        <div class="mb-3">
+                            <label class="form-label">Thinking Level</label>
+                            <select name="thinking_level" class="form-select">
+                                <option value="high" {% if bot.thinking_level == 'high' or not bot.thinking_level %}selected{% endif %}>High (deep reasoning)</option>
+                                <option value="medium" {% if bot.thinking_level == 'medium' %}selected{% endif %}>Medium (balanced, Flash only)</option>
+                                <option value="low" {% if bot.thinking_level == 'low' %}selected{% endif %}>Low (faster)</option>
+                                <option value="minimal" {% if bot.thinking_level == 'minimal' %}selected{% endif %}>Minimal (Flash only, fastest)</option>
+                            </select>
+                            <small class="text-muted">Higher = better quality, lower = faster/cheaper</small>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label d-block">Built-in Gemini Tools</label>
+                            <div class="form-check form-check-inline">
+                                <input type="checkbox" name="enable_google_search" class="form-check-input" id="enableGoogleSearch" {% if bot.enable_google_search %}checked{% endif %}>
+                                <label class="form-check-label" for="enableGoogleSearch">Google Search</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input type="checkbox" name="enable_code_execution" class="form-check-input" id="enableCodeExecution" {% if bot.enable_code_execution %}checked{% endif %}>
+                                <label class="form-check-label" for="enableCodeExecution">Code Execution</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input type="checkbox" name="enable_url_context" class="form-check-input" id="enableUrlContext" {% if bot.enable_url_context %}checked{% endif %}>
+                                <label class="form-check-label" for="enableUrlContext">URL Context</label>
+                            </div>
+                            <br><small class="text-muted">Web search grounding, Python execution, URL fetching</small>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="fetchGeminiModels()">
+                            <i class="bi bi-arrow-clockwise"></i> Refresh Models
+                        </button>
+                        <small class="text-muted ms-2"><i class="bi bi-key"></i> Uses GEMINI_API_KEY from .env</small>
                     </div>
                 </div>
             </div>
 
-            <div class="card mb-4 border-warning">
-                <div class="card-header bg-warning text-dark">
-                    <i class="bi bi-tools"></i> Maintenance
-                </div>
-                <div class="card-body">
-                    <h6>Clear Message Logs</h6>
-                    <p class="text-muted small">Delete all message history for this bot's assigned groups. Use this to fix context pollution issues.</p>
-                    <button type="button" class="btn btn-warning btn-sm" onclick="clearLogs()">
-                        <i class="bi bi-trash"></i> Clear Message Logs
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-md-6">
+            <!-- Response Settings -->
             <div class="card mb-4">
-                <div class="card-header">Response Settings</div>
+                <div class="card-header"><i class="bi bi-chat-dots"></i> Response Settings</div>
                 <div class="card-body">
-                    <div class="mb-3">
-                        <div class="form-check form-switch">
-                            <input type="checkbox" name="respond_on_mention" class="form-check-input" id="respondMention" {% if bot.respond_on_mention %}checked{% endif %}>
-                            <label class="form-check-label" for="respondMention">Respond when mentioned</label>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <div class="form-check form-switch">
+                                    <input type="checkbox" name="respond_on_mention" class="form-check-input" id="respondMention" {% if bot.respond_on_mention %}checked{% endif %}>
+                                    <label class="form-check-label" for="respondMention">Respond when mentioned</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Random Response: <span id="randomValue">{{ bot.random_chance_percent }}%</span></label>
+                                <input type="range" name="random_chance_percent" class="form-range" min="0" max="50" value="{{ bot.random_chance_percent }}" id="randomChance" oninput="document.getElementById('randomValue').textContent = this.value + '%'">
+                            </div>
                         </div>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Random Response Chance (%)</label>
-                        <input type="range" name="random_chance_percent" class="form-range" min="0" max="50" value="{{ bot.random_chance_percent }}" id="randomChance" oninput="document.getElementById('randomValue').textContent = this.value + '%'">
-                        <span id="randomValue">{{ bot.random_chance_percent }}%</span>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Context Window (messages)</label>
+                        <label class="form-label">Context Window: <span id="contextValue">{{ bot.context_window or 25 }}</span> messages</label>
                         <input type="range" name="context_window" class="form-range" min="5" max="100" value="{{ bot.context_window or 25 }}" id="contextWindow" oninput="document.getElementById('contextValue').textContent = this.value">
-                        <span id="contextValue">{{ bot.context_window or 25 }}</span>
-                        <br><small class="text-muted">Number of recent messages to include in context (default: 25)</small>
+                        <small class="text-muted">Number of recent messages to include in context</small>
                     </div>
+                </div>
+            </div>
+
+            <!-- Signal Features -->
+            <div class="card mb-4">
+                <div class="card-header"><i class="bi bi-signal"></i> Signal Features</div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-check form-switch">
+                                <input type="checkbox" name="typing_enabled" class="form-check-input" id="typingEnabled" {% if bot.typing_enabled is not defined or bot.typing_enabled %}checked{% endif %}>
+                                <label class="form-check-label" for="typingEnabled">Typing indicators</label>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check form-switch">
+                                <input type="checkbox" name="read_receipts_enabled" class="form-check-input" id="readReceipts" {% if bot.read_receipts_enabled %}checked{% endif %}>
+                                <label class="form-check-label" for="readReceipts">Read receipts</label>
+                            </div>
+                        </div>
+                    </div>
+                    <small class="text-muted d-block mt-2">
+                        <i class="bi bi-info-circle"></i> Also enabled: Quote/reply, text styling (**bold**, *italic*, `code`), link previews
+                    </small>
+                </div>
+            </div>
+
+            <!-- AI Tools -->
+            <div class="card mb-4">
+                <div class="card-header"><i class="bi bi-tools"></i> AI Tools</div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-check form-switch mb-2">
+                                <input type="checkbox" name="web_search_enabled" class="form-check-input" id="webSearch" {% if bot.web_search_enabled %}checked{% endif %}>
+                                <label class="form-check-label" for="webSearch">Web Search</label>
+                            </div>
+                            <div class="form-check form-switch mb-2">
+                                <input type="checkbox" name="weather_enabled" class="form-check-input" id="weatherEnabled" {% if bot.weather_enabled %}checked{% endif %}>
+                                <label class="form-check-label" for="weatherEnabled">Weather</label>
+                            </div>
+                            <div class="form-check form-switch mb-2">
+                                <input type="checkbox" name="time_enabled" class="form-check-input" id="timeEnabled" {% if bot.time_enabled %}checked{% endif %}>
+                                <label class="form-check-label" for="timeEnabled">Time/Date</label>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check form-switch mb-2">
+                                <input type="checkbox" name="wikipedia_enabled" class="form-check-input" id="wikipediaEnabled" {% if bot.wikipedia_enabled %}checked{% endif %}>
+                                <label class="form-check-label" for="wikipediaEnabled">Wikipedia</label>
+                            </div>
+                            <div class="form-check form-switch mb-2">
+                                <input type="checkbox" name="finance_enabled" class="form-check-input" id="financeEnabled" {% if bot.finance_enabled %}checked{% endif %}>
+                                <label class="form-check-label" for="financeEnabled">Finance (Yahoo)</label>
+                            </div>
+                            <div class="form-check form-switch mb-2">
+                                <input type="checkbox" name="reaction_tool_enabled" class="form-check-input" id="reactionToolEnabled" {% if bot.reaction_tool_enabled %}checked{% endif %}>
+                                <label class="form-check-label" for="reactionToolEnabled">Emoji Reactions</label>
+                            </div>
+                        </div>
+                    </div>
+                    <small class="text-muted"><i class="bi bi-info-circle"></i> All tools require a tool-capable model (Claude, GPT-4, Gemini)</small>
+                </div>
+            </div>
+
+            <!-- Image Generation -->
+            <div class="card mb-4">
+                <div class="card-header"><i class="bi bi-image"></i> Image Generation</div>
+                <div class="card-body">
                     <div class="mb-3">
                         <div class="form-check form-switch">
                             <input type="checkbox" name="image_generation_enabled" class="form-check-input" id="imageGen" {% if bot.image_generation_enabled %}checked{% endif %}>
                             <label class="form-check-label" for="imageGen">Enable image generation (!image)</label>
                         </div>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">Image Generation Model</label>
-                        <select name="image_model" class="form-select">
-                            <option value="">Default (Gemini 3 Pro)</option>
-                            {% for display_name, model_id in image_models.items() %}
-                            <option value="{{ model_id }}" {% if model_id == bot.image_model %}selected{% endif %}>{{ display_name }}</option>
-                            {% endfor %}
-                        </select>
-                        <small class="text-muted">Select which model to use for image generation</small>
-                    </div>
-                    <div class="mb-3">
-                        <div class="form-check form-switch">
-                            <input type="checkbox" name="web_search_enabled" class="form-check-input" id="webSearch" {% if bot.web_search_enabled %}checked{% endif %}>
-                            <label class="form-check-label" for="webSearch">Enable web search (real-time data)</label>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Image API</label>
+                                <select name="image_api_provider" class="form-select" id="imageApiProvider" onchange="toggleImageSettings()">
+                                    <option value="openrouter" {% if bot.image_api_provider != 'gemini' %}selected{% endif %}>OpenRouter</option>
+                                    <option value="gemini" {% if bot.image_api_provider == 'gemini' %}selected{% endif %}>Direct Gemini</option>
+                                </select>
+                            </div>
                         </div>
-                        <small class="text-muted">Uses OpenRouter's web search plugin for current info</small>
-                    </div>
-                    <div class="mb-3">
-                        <div class="form-check form-switch">
-                            <input type="checkbox" name="weather_enabled" class="form-check-input" id="weatherEnabled" {% if bot.weather_enabled %}checked{% endif %}>
-                            <label class="form-check-label" for="weatherEnabled">Enable weather tool</label>
+                        <div class="col-md-6">
+                            <div id="openrouterImageSettings">
+                                <div class="mb-3">
+                                    <label class="form-label">Model</label>
+                                    <select name="image_model" class="form-select">
+                                        <option value="">Default (Gemini 3 Pro)</option>
+                                        {% for display_name, model_id in image_models.items() %}
+                                        <option value="{{ model_id }}" {% if model_id == bot.image_model %}selected{% endif %}>{{ display_name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+                            <div id="geminiImageSettings" style="display: none;">
+                                <div class="mb-3">
+                                    <label class="form-label">Gemini Model</label>
+                                    <select name="gemini_image_model" class="form-select">
+                                        <option value="imagen-3.0-generate-002" {% if bot.gemini_image_model == 'imagen-3.0-generate-002' %}selected{% endif %}>Imagen 3</option>
+                                        <option value="gemini-3-pro-image-preview" {% if bot.gemini_image_model == 'gemini-3-pro-image-preview' %}selected{% endif %}>Gemini 3 Pro (4K)</option>
+                                        <option value="imagen-4.0-generate-001" {% if bot.gemini_image_model == 'imagen-4.0-generate-001' %}selected{% endif %}>Imagen 4</option>
+                                        <option value="imagen-4.0-ultra-generate-001" {% if bot.gemini_image_model == 'imagen-4.0-ultra-generate-001' %}selected{% endif %}>Imagen 4 Ultra</option>
+                                        <option value="imagen-4.0-fast-generate-001" {% if bot.gemini_image_model == 'imagen-4.0-fast-generate-001' %}selected{% endif %}>Imagen 4 Fast</option>
+                                    </select>
+                                </div>
+                            </div>
                         </div>
-                        <small class="text-muted">Accurate weather data via WeatherAPI.com (requires tool-capable model)</small>
                     </div>
-                    <div class="mb-3">
-                        <div class="form-check form-switch">
-                            <input type="checkbox" name="finance_enabled" class="form-check-input" id="financeEnabled" {% if bot.finance_enabled %}checked{% endif %}>
-                            <label class="form-check-label" for="financeEnabled">Enable finance tools</label>
+                    <div class="row align-items-center">
+                        <div class="col-md-8">
+                            <small class="text-muted">Max images per response (prevents spam)</small>
                         </div>
-                        <small class="text-muted">Yahoo Finance data for stocks, ETFs, and crypto. Includes: stock quotes, company news, symbol search, top performers by sector, price history, options chains, and earnings data. Bot responds to any ticker/company mentioned.</small>
-                    </div>
-                    <div class="mb-3">
-                        <div class="form-check form-switch">
-                            <input type="checkbox" name="time_enabled" class="form-check-input" id="timeEnabled" {% if bot.time_enabled %}checked{% endif %}>
-                            <label class="form-check-label" for="timeEnabled">Enable time/date tool</label>
+                        <div class="col-md-4">
+                            <input type="number" name="max_images_per_response" class="form-control form-control-sm" min="1" max="5" value="{{ bot.max_images_per_response or 2 }}">
                         </div>
-                        <small class="text-muted">Accurate time and date across timezones. Supports IANA timezone names like America/New_York, America/Chicago, America/Denver, America/Los_Angeles (requires tool-capable model)</small>
-                    </div>
-                    <div class="mb-3">
-                        <div class="form-check form-switch">
-                            <input type="checkbox" name="wikipedia_enabled" class="form-check-input" id="wikipediaEnabled" {% if bot.wikipedia_enabled %}checked{% endif %}>
-                            <label class="form-check-label" for="wikipediaEnabled">Enable Wikipedia tool</label>
-                        </div>
-                        <small class="text-muted">Search and retrieve Wikipedia articles. Includes article search, full summaries, and random articles (requires tool-capable model)</small>
                     </div>
                 </div>
             </div>
+        </div>
 
+        <!-- RIGHT COLUMN: Integrations & Advanced -->
+        <div class="col-md-6">
+            <!-- Google Integration (Sheets + Calendar combined) -->
             <div class="card mb-4">
-                <div class="card-header">
-                    <i class="bi bi-person-badge"></i> Member Memory Settings
-                </div>
+                <div class="card-header"><i class="bi bi-google"></i> Google Integration</div>
                 <div class="card-body">
-                    <div class="mb-3">
-                        <div class="form-check form-switch">
-                            <input type="checkbox" name="member_memory_tools_enabled" class="form-check-input" id="memberMemoryToolsEnabled" {% if bot.member_memory_tools_enabled %}checked{% endif %}>
-                            <label class="form-check-label" for="memberMemoryToolsEnabled">Enable member memory tools</label>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="form-check form-switch">
+                                <input type="checkbox" name="google_sheets_enabled" class="form-check-input" id="sheetsEnabled" {% if bot.google_sheets_enabled %}checked{% endif %}>
+                                <label class="form-check-label" for="sheetsEnabled">Google Sheets</label>
+                            </div>
                         </div>
-                        <small class="text-muted">Bot can save and recall information about group members (save_member_memory, get_member_memories, list_group_members). When the bot learns personal details about someone, it can explicitly save them for future reference. (requires tool-capable model)</small>
-                    </div>
-                    <hr>
-                    <div class="mb-3">
-                        <label class="form-label">Relevance Detection Model (for auto-scan)</label>
-                        <select name="member_memory_model" class="form-select">
-                            <option value="">-- None (use keywords only) --</option>
-                            {% for display_name, model_id in all_models.items() %}
-                            <option value="{{ model_id }}" {% if model_id == bot.member_memory_model %}selected{% endif %}>{{ display_name }}</option>
-                            {% endfor %}
-                        </select>
-                        <small class="text-muted">Small/fast model for background scanning when location info is relevant. Use Haiku for speed, Sonnet for accuracy. Leave empty to use keyword matching only.</small>
-                    </div>
-                    <p class="text-muted small mb-0">
-                        <i class="bi bi-info-circle"></i>
-                        Member memories (home location, interests, etc.) are managed in <a href="{{ url_for('member_memories_list') }}">Member Memories</a>.
-                        The tools above let the bot save explicitly, while auto-scan runs in background.
-                    </p>
-                </div>
-            </div>
-
-            <div class="card mb-4">
-                <div class="card-header">
-                    <i class="bi bi-file-earmark-spreadsheet"></i> Google Sheets Integration
-                </div>
-                <div class="card-body">
-                    <div class="mb-3">
-                        <div class="form-check form-switch">
-                            <input type="checkbox" name="google_sheets_enabled" class="form-check-input" id="sheetsEnabled" {% if bot.google_sheets_enabled %}checked{% endif %}>
-                            <label class="form-check-label" for="sheetsEnabled">Enable Google Sheets tools</label>
+                        <div class="col-md-6">
+                            <div class="form-check form-switch">
+                                <input type="checkbox" name="google_calendar_enabled" class="form-check-input" id="calendarEnabled" {% if bot.google_calendar_enabled %}checked{% endif %}>
+                                <label class="form-check-label" for="calendarEnabled">Google Calendar</label>
+                            </div>
                         </div>
-                        <small class="text-muted">Bot can create and manage spreadsheets for expense tracking, lists, and collaborative data (requires tool-capable model)</small>
                     </div>
 
                     <hr>
 
                     <h6>OAuth Credentials</h6>
                     <p class="text-muted small mb-2">
-                        <a href="https://console.cloud.google.com/apis/credentials" target="_blank">Create OAuth credentials</a> in Google Cloud Console.
-                        Enable <strong>Sheets API</strong> and <strong>Drive API</strong>.
-                        Add this redirect URI: <code>{{ url_for('google_oauth_callback', _external=True) }}</code>
+                        <a href="https://console.cloud.google.com/apis/credentials" target="_blank">Create credentials</a> &bull;
+                        Enable Sheets, Drive, Calendar APIs &bull;
+                        Redirect: <code>{{ url_for('google_oauth_callback', _external=True) }}</code>
                     </p>
-
-                    <div class="mb-3">
-                        <label class="form-label">Client ID</label>
-                        <input type="text" name="google_client_id" class="form-control" value="{{ bot.google_client_id or '' }}" placeholder="123456789.apps.googleusercontent.com">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Client Secret</label>
-                        <input type="password" name="google_client_secret" class="form-control" value="" placeholder="{% if bot.google_client_secret %}(configured - leave blank to keep){% else %}Enter client secret{% endif %}">
-                        <small class="text-muted">Leave blank to keep existing secret</small>
-                    </div>
-
-                    <hr>
-
-                    <h6>Connection Status</h6>
-                    {% if bot.google_connected %}
-                        <div class="alert alert-success mb-3">
-                            <i class="bi bi-check-circle"></i> <strong>Connected to Google</strong>
-                            {% if bot.google_token_expiry %}
-                                <br><small>Token refreshes automatically</small>
-                            {% endif %}
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Client ID</label>
+                                <input type="text" name="google_client_id" class="form-control form-control-sm" value="{{ bot.google_client_id or '' }}" placeholder="...apps.googleusercontent.com">
+                            </div>
                         </div>
-                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="disconnectGoogle()">
-                            <i class="bi bi-x-circle"></i> Disconnect
-                        </button>
-                    {% else %}
-                        <div class="alert alert-warning mb-3">
-                            <i class="bi bi-exclamation-triangle"></i> <strong>Not Connected</strong>
-                            <br><small>Configure credentials and click Connect to authorize</small>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Client Secret</label>
+                                <input type="password" name="google_client_secret" class="form-control form-control-sm" value="" placeholder="{% if bot.google_client_secret %}(configured){% else %}Enter secret{% endif %}">
+                            </div>
                         </div>
-                        {% if bot.google_client_id and bot.google_client_secret %}
-                            <a href="{{ url_for('google_oauth_start', bot_id=bot.id) }}" class="btn btn-primary btn-sm">
-                                <i class="bi bi-google"></i> Connect to Google
-                            </a>
-                        {% else %}
-                            <button class="btn btn-secondary btn-sm" disabled>
-                                <i class="bi bi-google"></i> Configure credentials first
+                    </div>
+
+                    <div class="d-flex align-items-center justify-content-between">
+                        {% if bot.google_connected %}
+                            <span class="badge bg-success"><i class="bi bi-check-circle"></i> Connected</span>
+                            <button type="button" class="btn btn-outline-danger btn-sm" onclick="disconnectGoogle()">
+                                <i class="bi bi-x-circle"></i> Disconnect
                             </button>
+                        {% else %}
+                            <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> Not Connected</span>
+                            {% if bot.google_client_id and bot.google_client_secret %}
+                                <a href="{{ url_for('google_oauth_start', bot_id=bot.id) }}" class="btn btn-primary btn-sm">
+                                    <i class="bi bi-google"></i> Connect
+                                </a>
+                            {% else %}
+                                <button class="btn btn-secondary btn-sm" disabled>Configure credentials first</button>
+                            {% endif %}
                         {% endif %}
-                    {% endif %}
+                    </div>
                 </div>
             </div>
 
-            <!-- Google Calendar Integration -->
+            <!-- Member Memory -->
             <div class="card mb-4">
-                <div class="card-header">
-                    <i class="bi bi-calendar-event"></i> Google Calendar Integration
-                </div>
+                <div class="card-header"><i class="bi bi-person-badge"></i> Member Memory</div>
                 <div class="card-body">
                     <div class="mb-3">
                         <div class="form-check form-switch">
-                            <input type="checkbox" name="google_calendar_enabled" class="form-check-input" id="calendarEnabled" {% if bot.google_calendar_enabled %}checked{% endif %}>
-                            <label class="form-check-label" for="calendarEnabled">Enable Google Calendar tools</label>
+                            <input type="checkbox" name="member_memory_tools_enabled" class="form-check-input" id="memberMemoryToolsEnabled" {% if bot.member_memory_tools_enabled %}checked{% endif %}>
+                            <label class="form-check-label" for="memberMemoryToolsEnabled">Enable memory tools</label>
                         </div>
-                        <small class="text-muted">Bot can create calendars, manage events, and share calendar links (requires tool-capable model)</small>
+                        <small class="text-muted">Bot can save/recall info about group members</small>
                     </div>
-
-                    <div class="alert alert-info mb-0">
-                        <i class="bi bi-info-circle"></i>
-                        <small>
-                            Calendar uses the same Google connection as Sheets. If you see permission errors,
-                            <strong>disconnect and reconnect</strong> to grant Calendar access (new OAuth scope).
-                        </small>
+                    <div class="mb-3">
+                        <label class="form-label">Auto-scan Model</label>
+                        <div id="openrouterMemoryModelSettings">
+                            <select name="member_memory_model" id="openrouterMemoryModelSelect" class="form-select form-select-sm">
+                                <option value="">-- None (keywords only) --</option>
+                                {% for display_name, model_id in all_models.items() %}
+                                <option value="{{ model_id }}" {% if model_id == bot.member_memory_model %}selected{% endif %}>{{ display_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div id="geminiMemoryModelSettings" style="display: none;">
+                            <select name="member_memory_model" id="geminiMemoryModelSelect" class="form-select form-select-sm" disabled>
+                                <option value="">-- None (keywords only) --</option>
+                                <option value="">Loading Gemini models...</option>
+                            </select>
+                        </div>
+                        <small class="text-muted">Background model for relevance detection</small>
                     </div>
-
-                    {% if not bot.google_connected %}
-                    <div class="alert alert-warning mt-3 mb-0">
-                        <i class="bi bi-exclamation-triangle"></i>
-                        <small>Connect to Google (above) to enable Calendar features.</small>
-                    </div>
-                    {% endif %}
+                    <a href="{{ url_for('member_memories_list') }}" class="btn btn-outline-secondary btn-sm">
+                        <i class="bi bi-database"></i> Manage Memories
+                    </a>
                 </div>
             </div>
 
             <!-- Scheduled Triggers -->
             <div class="card mb-4">
-                <div class="card-header">
-                    <i class="bi bi-clock-history"></i> Scheduled Triggers
-                </div>
+                <div class="card-header"><i class="bi bi-clock-history"></i> Scheduled Triggers</div>
                 <div class="card-body">
-                    <div class="mb-3">
-                        <div class="form-check form-switch">
-                            <input type="checkbox" name="triggers_enabled" class="form-check-input" id="triggersEnabled" {% if bot.triggers_enabled is not defined or bot.triggers_enabled %}checked{% endif %}>
-                            <label class="form-check-label" for="triggersEnabled">Enable scheduled triggers</label>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-check form-switch">
+                                <input type="checkbox" name="triggers_enabled" class="form-check-input" id="triggersEnabled" {% if bot.triggers_enabled is not defined or bot.triggers_enabled %}checked{% endif %}>
+                                <label class="form-check-label" for="triggersEnabled">Enable triggers</label>
+                            </div>
                         </div>
-                        <small class="text-muted">Allow scheduled reminders and AI tasks for this bot</small>
+                        <div class="col-md-6">
+                            <div class="mb-0">
+                                <label class="form-label mb-0">Max: </label>
+                                <input type="number" name="max_triggers" class="form-control form-control-sm d-inline-block" style="width: 70px;" min="1" max="100" value="{{ bot.max_triggers if bot.max_triggers is defined else 10 }}">
+                            </div>
+                        </div>
                     </div>
-
-                    <div class="mb-3">
-                        <label class="form-label">Max Triggers</label>
-                        <input type="number" name="max_triggers" class="form-control" min="1" max="100" value="{{ bot.max_triggers if bot.max_triggers is defined else 10 }}">
-                        <small class="text-muted">Maximum number of active triggers for this bot (1-100, default: 10)</small>
+                    <div class="mt-2">
+                        <a href="{{ url_for('triggers_list') }}?bot_id={{ bot.id }}" class="btn btn-outline-secondary btn-sm">
+                            <i class="bi bi-calendar-check"></i> Manage Triggers
+                        </a>
                     </div>
-
-                    <hr>
-
-                    <p class="text-muted small mb-0">
-                        <i class="bi bi-info-circle"></i>
-                        Manage triggers in the <a href="{{ url_for('triggers_list') }}?bot_id={{ bot.id }}">Triggers</a> tab.
-                        Triggers can send reminders or execute AI tasks on a schedule.
-                    </p>
                 </div>
             </div>
 
             <!-- Chat Log Settings -->
             <div class="card mb-4">
-                <div class="card-header">
-                    <i class="bi bi-journal-text"></i> Chat Log Settings
-                </div>
+                <div class="card-header"><i class="bi bi-journal-text"></i> Chat Log Search</div>
                 <div class="card-body">
-                    <div class="mb-3">
-                        <div class="form-check form-switch">
-                            <input type="checkbox" name="chat_log_enabled" class="form-check-input" id="chatLogEnabled" {% if bot.chat_log_enabled %}checked{% endif %}>
-                            <label class="form-check-label" for="chatLogEnabled">Enable chat log search tool</label>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-check form-switch">
+                                <input type="checkbox" name="chat_log_enabled" class="form-check-input" id="chatLogEnabled" {% if bot.chat_log_enabled %}checked{% endif %}>
+                                <label class="form-check-label" for="chatLogEnabled">Enable search tool</label>
+                            </div>
                         </div>
-                        <small class="text-muted">Bot can search conversation history by keyword, date, or member (requires tool-capable model)</small>
+                        <div class="col-md-6">
+                            <select name="chat_log_retention" class="form-select form-select-sm">
+                                <option value="6h" {% if bot.chat_log_retention == '6h' %}selected{% endif %}>6 hours</option>
+                                <option value="12h" {% if bot.chat_log_retention == '12h' %}selected{% endif %}>12 hours</option>
+                                <option value="24h" {% if bot.chat_log_retention == '24h' %}selected{% endif %}>24 hours</option>
+                                <option value="1w" {% if bot.chat_log_retention == '1w' %}selected{% endif %}>1 week</option>
+                                <option value="1m" {% if bot.chat_log_retention == '1m' %}selected{% endif %}>1 month</option>
+                                <option value="1y" {% if bot.chat_log_retention == '1y' %}selected{% endif %}>1 year</option>
+                                <option value="forever" {% if not bot.chat_log_retention or bot.chat_log_retention == 'forever' %}selected{% endif %}>Forever</option>
+                            </select>
+                        </div>
                     </div>
-
-                    <div class="mb-3">
-                        <label class="form-label">Retention Period</label>
-                        <select name="chat_log_retention" class="form-select">
-                            <option value="6h" {% if bot.chat_log_retention == '6h' %}selected{% endif %}>6 hours</option>
-                            <option value="12h" {% if bot.chat_log_retention == '12h' %}selected{% endif %}>12 hours</option>
-                            <option value="24h" {% if bot.chat_log_retention == '24h' %}selected{% endif %}>24 hours</option>
-                            <option value="1w" {% if bot.chat_log_retention == '1w' %}selected{% endif %}>1 week</option>
-                            <option value="1m" {% if bot.chat_log_retention == '1m' %}selected{% endif %}>1 month</option>
-                            <option value="1y" {% if bot.chat_log_retention == '1y' %}selected{% endif %}>1 year</option>
-                            <option value="forever" {% if not bot.chat_log_retention or bot.chat_log_retention == 'forever' %}selected{% endif %}>Forever</option>
-                        </select>
-                        <small class="text-muted">How long to keep chat history. Old messages are deleted hourly.</small>
+                    <div class="mt-2">
+                        <a href="{{ url_for('chat_logs_list') }}" class="btn btn-outline-secondary btn-sm">
+                            <i class="bi bi-search"></i> View Chat Logs
+                        </a>
                     </div>
-
-                    <hr>
-
-                    <p class="text-muted small mb-0">
-                        <i class="bi bi-info-circle"></i>
-                        View and search chat history in <a href="{{ url_for('chat_logs_list') }}">Chat Logs</a>.
-                        Messages are stored separately from the rolling context window.
-                    </p>
                 </div>
             </div>
-        </div>
 
-        <!-- D&D Game Master -->
-        <div class="col-md-6">
+            <!-- D&D Game Master -->
             <div class="card mb-4">
-                <div class="card-header">
-                    <i class="bi bi-dice-6"></i> D&D Game Master
-                </div>
+                <div class="card-header"><i class="bi bi-dice-6"></i> D&D Game Master</div>
                 <div class="card-body">
                     <div class="mb-3">
                         <div class="form-check form-switch">
                             <input type="checkbox" name="dnd_enabled" class="form-check-input" id="dndEnabled" {% if bot.dnd_enabled %}checked{% endif %}>
                             <label class="form-check-label" for="dndEnabled">Enable D&D GM tools</label>
                         </div>
-                        <small class="text-muted">Run D&D 5e campaigns with character sheets, combat tracking, and campaign management</small>
+                        <small class="text-muted">Character sheets, combat tracking, campaign management</small>
                     </div>
-
-                    <div class="mb-3">
-                        <label for="dndTemplateId" class="form-label">Campaign Template Spreadsheet ID</label>
-                        <input type="text" class="form-control" id="dndTemplateId" name="dnd_template_spreadsheet_id"
+                    <div class="mb-0">
+                        <label class="form-label">Campaign Template ID</label>
+                        <input type="text" class="form-control form-control-sm" name="dnd_template_spreadsheet_id"
                                value="{{ bot.dnd_template_spreadsheet_id or '' }}"
-                               placeholder="e.g., 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms">
-                        <small class="text-muted">Google Sheets ID of your campaign template. New campaigns will be created by copying this template.</small>
+                               placeholder="Google Sheets ID for campaign template">
+                        <small class="text-muted">Requires Google Sheets connection</small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Idle News & Reactions (low priority, grouped) -->
+            <div class="card mb-4">
+                <div class="card-header"><i class="bi bi-sliders"></i> Advanced Behavior</div>
+                <div class="card-body">
+                    <!-- Reactions -->
+                    <h6 class="mb-2"><i class="bi bi-emoji-smile"></i> Emoji Reactions</h6>
+                    <div class="row mb-3">
+                        <div class="col-md-8">
+                            <small class="text-muted">Max reactions per response (if tool enabled above)</small>
+                        </div>
+                        <div class="col-md-4">
+                            <input type="number" name="max_reactions_per_response" class="form-control form-control-sm" min="1" max="10" value="{{ bot.max_reactions_per_response or 3 }}">
+                        </div>
                     </div>
 
                     <hr>
 
-                    <p class="text-muted small mb-0">
-                        <i class="bi bi-info-circle"></i>
-                        <strong>Requirements:</strong> Google Sheets must be connected (campaigns stored in spreadsheets).
-                        <br>Use a GM-focused system prompt for best results. Dice rolling is always enabled.
-                    </p>
+                    <!-- Idle News -->
+                    <h6 class="mb-2"><i class="bi bi-newspaper"></i> Idle News Posting</h6>
+                    <div class="mb-2">
+                        <div class="form-check form-switch">
+                            <input type="checkbox" name="idle_news_enabled" class="form-check-input" id="idleNewsEnabled" {% if bot.idle_news_enabled %}checked{% endif %}>
+                            <label class="form-check-label" for="idleNewsEnabled">Post news when group is quiet</label>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <label class="form-label small">Idle threshold</label>
+                            <div class="input-group input-group-sm">
+                                <input type="number" name="idle_threshold_minutes" class="form-control" min="5" max="120" value="{{ bot.idle_threshold_minutes or 15 }}">
+                                <span class="input-group-text">min</span>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small">Check interval</label>
+                            <div class="input-group input-group-sm">
+                                <input type="number" name="idle_check_interval_minutes" class="form-control" min="1" max="30" value="{{ bot.idle_check_interval_minutes or 5 }}">
+                                <span class="input-group-text">min</span>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small">Chance: <span id="idleChanceValue">{{ bot.idle_trigger_chance_percent or 10 }}%</span></label>
+                            <input type="range" name="idle_trigger_chance_percent" class="form-range" min="5" max="50" value="{{ bot.idle_trigger_chance_percent or 10 }}" id="idleChance" oninput="document.getElementById('idleChanceValue').textContent = this.value + '%'">
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- FULL WIDTH: Maintenance & System Prompt -->
     <div class="row">
         <div class="col-12">
+            <!-- Maintenance -->
+            <div class="card mb-4 border-warning">
+                <div class="card-header bg-warning text-dark"><i class="bi bi-tools"></i> Maintenance</div>
+                <div class="card-body">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <strong>Clear Message Logs</strong>
+                            <br><small class="text-muted">Delete all message history for this bot's groups. Resets conversation context.</small>
+                        </div>
+                        <button type="button" class="btn btn-warning btn-sm" onclick="clearLogs()">
+                            <i class="bi bi-trash"></i> Clear Logs
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- System Prompt -->
             <div class="card mb-4">
                 <div class="card-header">
-                    System Prompt
+                    <i class="bi bi-chat-quote"></i> System Prompt
                     <small class="text-muted ms-2">Define the bot's personality</small>
                 </div>
                 <div class="card-body">
@@ -459,7 +514,7 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Custom System Prompt</label>
-                        <textarea name="system_prompt" class="form-control" rows="10" id="systemPrompt" placeholder="Enter a custom system prompt or select a template above...">{{ bot.system_prompt or '' }}</textarea>
+                        <textarea name="system_prompt" class="form-control" rows="8" id="systemPrompt" placeholder="Enter a custom system prompt or select a template above...">{{ bot.system_prompt or '' }}</textarea>
                         <small class="text-muted">Leave empty to use the default prompt</small>
                     </div>
                 </div>
@@ -480,6 +535,118 @@
 </form>
 
 <script>
+var geminiModelsLoaded = false;
+var currentBotModel = "{{ bot.model }}";
+var currentMemoryModel = "{{ bot.member_memory_model or '' }}";
+
+function toggleGeminiSettings() {
+    var provider = document.getElementById('apiProvider').value;
+    var geminiSettings = document.getElementById('geminiSettings');
+    var openrouterModelSettings = document.getElementById('openrouterModelSettings');
+    var geminiModelSettings = document.getElementById('geminiModelSettings');
+    var openrouterSelect = document.getElementById('openrouterModelSelect');
+    var geminiSelect = document.getElementById('geminiModelSelect');
+
+    // Memory model dropdowns
+    var openrouterMemorySettings = document.getElementById('openrouterMemoryModelSettings');
+    var geminiMemorySettings = document.getElementById('geminiMemoryModelSettings');
+    var openrouterMemorySelect = document.getElementById('openrouterMemoryModelSelect');
+    var geminiMemorySelect = document.getElementById('geminiMemoryModelSelect');
+
+    var isGemini = provider === 'gemini';
+    geminiSettings.style.display = isGemini ? 'block' : 'none';
+    openrouterModelSettings.style.display = isGemini ? 'none' : 'block';
+    geminiModelSettings.style.display = isGemini ? 'block' : 'none';
+
+    // Toggle memory model dropdowns
+    openrouterMemorySettings.style.display = isGemini ? 'none' : 'block';
+    geminiMemorySettings.style.display = isGemini ? 'block' : 'none';
+
+    // Disable hidden selects so only one is submitted
+    openrouterSelect.disabled = isGemini;
+    geminiSelect.disabled = !isGemini;
+    openrouterMemorySelect.disabled = isGemini;
+    geminiMemorySelect.disabled = !isGemini;
+
+    if (isGemini && !geminiModelsLoaded) {
+        fetchGeminiModels();
+    }
+}
+
+function fetchGeminiModels() {
+    var geminiSelect = document.getElementById('geminiModelSelect');
+    var geminiMemorySelect = document.getElementById('geminiMemoryModelSelect');
+    var statusEl = document.getElementById('geminiModelStatus');
+
+    statusEl.textContent = 'Loading models...';
+    geminiSelect.innerHTML = '<option value="">Loading...</option>';
+    geminiMemorySelect.innerHTML = '<option value="">-- None (keywords only) --</option><option value="">Loading...</option>';
+
+    fetch('/api/gemini-models')
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+            if (data.error) {
+                statusEl.textContent = 'Error: ' + data.error;
+                geminiSelect.innerHTML = '<option value="">No models available</option>';
+                geminiMemorySelect.innerHTML = '<option value="">-- None (keywords only) --</option>';
+                return;
+            }
+
+            var models = data.models || [];
+            if (models.length === 0) {
+                statusEl.textContent = 'No models found. Check API key.';
+                geminiSelect.innerHTML = '<option value="">No models available</option>';
+                geminiMemorySelect.innerHTML = '<option value="">-- None (keywords only) --</option>';
+                return;
+            }
+
+            // Populate main model dropdown
+            geminiSelect.innerHTML = '';
+            models.forEach(function(model) {
+                var option = document.createElement('option');
+                option.value = model.id;
+                option.textContent = model.name || model.id;
+                option.title = model.description || '';
+                if (model.id === currentBotModel) {
+                    option.selected = true;
+                }
+                geminiSelect.appendChild(option);
+            });
+
+            // Populate memory model dropdown (with None option)
+            geminiMemorySelect.innerHTML = '<option value="">-- None (keywords only) --</option>';
+            models.forEach(function(model) {
+                var option = document.createElement('option');
+                option.value = model.id;
+                option.textContent = model.name || model.id;
+                option.title = model.description || '';
+                if (model.id === currentMemoryModel) {
+                    option.selected = true;
+                }
+                geminiMemorySelect.appendChild(option);
+            });
+
+            statusEl.textContent = models.length + ' models available';
+            geminiModelsLoaded = true;
+        })
+        .catch(function(error) {
+            statusEl.textContent = 'Error: ' + error;
+            geminiSelect.innerHTML = '<option value="">Error loading</option>';
+            geminiMemorySelect.innerHTML = '<option value="">-- None (keywords only) --</option>';
+        });
+}
+
+function toggleImageSettings() {
+    var provider = document.getElementById('imageApiProvider').value;
+    document.getElementById('openrouterImageSettings').style.display = provider === 'openrouter' ? 'block' : 'none';
+    document.getElementById('geminiImageSettings').style.display = provider === 'gemini' ? 'block' : 'none';
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    toggleGeminiSettings();
+    toggleImageSettings();
+});
+
 function loadPromptTemplate(value) {
     if (value) {
         document.getElementById('systemPrompt').value = value;
@@ -487,8 +654,7 @@ function loadPromptTemplate(value) {
 }
 
 function disconnectGoogle() {
-    if (confirm('Disconnect from Google? You will need to re-authorize to use Sheets features.')) {
-        // Create a temporary form and submit it
+    if (confirm('Disconnect from Google? You will need to re-authorize to use Sheets/Calendar.')) {
         var form = document.createElement('form');
         form.method = 'POST';
         form.action = '{{ url_for("google_oauth_disconnect", bot_id=bot.id) }}';
@@ -498,7 +664,7 @@ function disconnectGoogle() {
 }
 
 function clearLogs() {
-    if (confirm('Clear all message logs for this bot\'s groups? This will reset the conversation context and cannot be undone.')) {
+    if (confirm('Clear all message logs? This resets conversation context and cannot be undone.')) {
         var form = document.createElement('form');
         form.method = 'POST';
         form.action = '{{ url_for("clear_bot_logs", bot_id=bot.id) }}';

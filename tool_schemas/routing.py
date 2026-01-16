@@ -15,6 +15,7 @@ HIGH_CONFIDENCE_KEYWORDS = {
     "wikipedia": {"wikipedia", "wiki article"},
     "dice": {"roll dice", "d20", "d6", "d4", "d8", "d10", "d12", "advantage", "disadvantage"},
     "chat_log": {"chat log", "chat history", "conversation history", "search history"},
+    "image": {"generate image", "create image", "make image", "draw me", "picture of", "an image of", "an image showing"},
 }
 
 # MEDIUM-CONFIDENCE: Only fast-path if no competing context
@@ -23,6 +24,7 @@ MEDIUM_CONFIDENCE_KEYWORDS = {
     "weather": {"rain", "sunny", "cloudy", "degrees"},
     "time": {"what time", "what day", "current date"},
     "triggers": {"every day at", "recurring", "cron"},
+    "image": {"image of", "visualization", "illustrat"},
 }
 
 # FINANCE: Ticker pattern detection (aggressive fast-path)
@@ -83,6 +85,7 @@ def get_fast_path_tools(domain: str, bot_data: dict) -> Optional[list]:
     Includes REACTION_TOOL if enabled (cross-cutting feature).
     """
     from .basic_tools import WEATHER_TOOL, TIME_TOOLS, WIKIPEDIA_TOOLS, DICE_TOOLS, REACTION_TOOL
+    from .agent_tools import SIGNAL_TOOLS
     from .calendar_tools import CALENDAR_TOOLS
     from .trigger_tools import TRIGGER_TOOLS
     from .finance_tools import FINANCE_TOOLS
@@ -99,6 +102,7 @@ def get_fast_path_tools(domain: str, bot_data: dict) -> Optional[list]:
         "sheets": bot_data.get("google_sheets_enabled") and bot_data.get("google_connected"),
         "triggers": bot_data.get("triggers_enabled"),
         "chat_log": bot_data.get("chat_log_enabled"),
+        "image": bot_data.get("image_generation_enabled"),
     }
 
     if not enabled_map.get(domain, False):
@@ -114,6 +118,7 @@ def get_fast_path_tools(domain: str, bot_data: dict) -> Optional[list]:
         "triggers": list(TRIGGER_TOOLS),
         "finance": list(FINANCE_TOOLS),  # All 11 tools - skip meta expansion!
         "chat_log": list(CHAT_LOG_TOOLS),
+        "image": list(SIGNAL_TOOLS),
     }
 
     # Sheets: conservative fast-path - pre-expand sheets_core only

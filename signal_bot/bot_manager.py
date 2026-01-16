@@ -58,8 +58,26 @@ def compress_image_for_api(base64_data: str, media_type: str, max_bytes: int = 4
     image_bytes = base64.b64decode(base64_data)
     original_size = len(image_bytes)
 
-    # If already under limit, return as-is
+    # Convert unsupported formats (GIF, BMP, etc.) to JPEG - Gemini only supports jpeg/png/webp
+    SUPPORTED_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
+    format_converted = False
+    if media_type not in SUPPORTED_MIME_TYPES:
+        logger.info(f"Converting unsupported format {media_type} to JPEG")
+        img = Image.open(io.BytesIO(image_bytes))
+        # Convert to RGB (handles RGBA, P modes, and extracts first frame from animated GIF)
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+        buffer = io.BytesIO()
+        img.save(buffer, format='JPEG', quality=85)
+        image_bytes = buffer.getvalue()
+        media_type = "image/jpeg"
+        original_size = len(image_bytes)
+        format_converted = True
+
+    # If already under limit, return as-is (or converted format if format was changed)
     if original_size <= max_bytes:
+        if format_converted:
+            return base64.b64encode(image_bytes).decode('utf-8'), media_type
         return base64_data, media_type
 
     logger.info(f"Compressing image: {original_size:,} bytes -> target {max_bytes:,} bytes")
@@ -240,6 +258,16 @@ class SignalBotManager:
                 'random_chance_percent': bot.random_chance_percent,
                 'image_generation_enabled': bot.image_generation_enabled,
                 'image_model': getattr(bot, 'image_model', None),
+                # API Provider settings (for direct Gemini API support)
+                'api_provider': getattr(bot, 'api_provider', 'openrouter'),
+                'gemini_api_key': getattr(bot, 'gemini_api_key', None),  # DEPRECATED
+                # Gemini Interactions API settings
+                'thinking_level': getattr(bot, 'thinking_level', 'high'),
+                'enable_google_search': getattr(bot, 'enable_google_search', False),
+                'enable_code_execution': getattr(bot, 'enable_code_execution', False),
+                'enable_url_context': getattr(bot, 'enable_url_context', False),
+                'image_api_provider': getattr(bot, 'image_api_provider', 'openrouter'),
+                'gemini_image_model': getattr(bot, 'gemini_image_model', None),
                 'web_search_enabled': bot.web_search_enabled,
                 'weather_enabled': getattr(bot, 'weather_enabled', False),
                 'finance_enabled': getattr(bot, 'finance_enabled', False),

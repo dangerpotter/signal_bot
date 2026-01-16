@@ -34,6 +34,10 @@ from migrations import migrate_dnd_support
 from migrations import migrate_dnd_template
 from migrations import migrate_chat_logs
 from migrations import drop_memory_snippets
+from migrations import migrate_gemini_support
+from migrations import migrate_gemini_image
+from migrations import migrate_interactions_api
+from migrations import migrate_image_limit
 
 
 MIGRATIONS = [
@@ -54,6 +58,10 @@ MIGRATIONS = [
     ("dnd_template", migrate_dnd_template),
     ("chat_logs", migrate_chat_logs),
     ("drop_memory_snippets", drop_memory_snippets),
+    ("gemini_support", migrate_gemini_support),
+    ("gemini_image", migrate_gemini_image),
+    ("interactions_api", migrate_interactions_api),
+    ("image_limit", migrate_image_limit),
 ]
 
 

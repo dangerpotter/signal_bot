@@ -26,7 +26,8 @@ class SignalToolExecutorBase:
         send_image_callback: Optional[Callable[[str], None]] = None,
         send_reaction_callback: Optional[Callable[[str, int, str], None]] = None,
         reaction_metadata: Optional[list[dict]] = None,
-        max_reactions: int = 3
+        max_reactions: int = 3,
+        max_images: int = 2
     ):
         """
         Args:
@@ -36,6 +37,7 @@ class SignalToolExecutorBase:
             send_reaction_callback: Optional callback to send emoji reactions (sender_id, timestamp, emoji)
             reaction_metadata: List of dicts with message index, sender_id, and signal_timestamp
             max_reactions: Maximum reactions allowed per response
+            max_images: Maximum images allowed per response
         """
         self.bot_data = bot_data
         self.group_id = group_id
@@ -44,6 +46,8 @@ class SignalToolExecutorBase:
         self.reaction_metadata = reaction_metadata or []
         self.max_reactions = max_reactions
         self.reactions_sent = 0  # Track reactions sent in this response
+        self.max_images = max_images
+        self.images_sent = 0  # Track images generated in this response
         self.sender_name = None  # Set by message handler for sheet attribution
 
         # Two-phase meta-tool expansion state

@@ -159,6 +159,7 @@ def register_routes(app):
             bot.idle_trigger_chance_percent = int(request.form.get("idle_trigger_chance_percent", 10))
             bot.reaction_tool_enabled = request.form.get("reaction_tool_enabled") == "on"
             bot.max_reactions_per_response = int(request.form.get("max_reactions_per_response", 3))
+            bot.max_images_per_response = int(request.form.get("max_images_per_response", 2))
             bot.typing_enabled = request.form.get("typing_enabled") == "on"
             bot.read_receipts_enabled = request.form.get("read_receipts_enabled") == "on"
 
@@ -176,6 +177,19 @@ def register_routes(app):
             # Chat log settings
             bot.chat_log_enabled = request.form.get("chat_log_enabled") == "on"
             bot.chat_log_retention = request.form.get("chat_log_retention", "forever").strip()
+
+            # API Provider settings (for direct Gemini API support)
+            bot.api_provider = request.form.get("api_provider", "openrouter").strip()
+
+            # Gemini Interactions API settings
+            bot.thinking_level = request.form.get("thinking_level", "high").strip()
+            bot.enable_google_search = request.form.get("enable_google_search") == "on"
+            bot.enable_code_execution = request.form.get("enable_code_execution") == "on"
+            bot.enable_url_context = request.form.get("enable_url_context") == "on"
+
+            # Image generation API settings
+            bot.image_api_provider = request.form.get("image_api_provider", "openrouter").strip()
+            bot.gemini_image_model = request.form.get("gemini_image_model", "").strip() or None
 
             db.session.commit()
             _log_activity("bot_updated", bot_id, None, f"Bot '{bot.name}' settings updated")
@@ -1040,6 +1054,20 @@ def register_routes(app):
 
         # Return sorted by name
         return jsonify(sorted(members_dict.values(), key=lambda x: x["name"].lower()))
+
+    @app.route("/api/gemini-models")
+    def api_gemini_models():
+        """Fetch available Gemini models that support text generation."""
+        import os
+        from shared_utils import fetch_gemini_models
+
+        # Get API key from query param (for per-bot keys) or environment
+        api_key = request.args.get("api_key") or os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            return jsonify({"error": "No Gemini API key provided", "models": []}), 400
+
+        models = fetch_gemini_models(api_key)
+        return jsonify({"models": models})
 
     # ===== Scheduled Triggers =====
 

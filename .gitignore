@@ -177,11 +177,16 @@ videos/*
 # Signal bot data (credentials/keys)
 signal-data/
 signal_bot.db
+signal_bot.db-shm
+signal_bot.db-wal
 nul
 
 # Stray exports at root (should use exports/)
 conversation_full.html
 
-# Claude Code instructions (project-specific, not for repo)
+# Claude Code (project-specific, not for repo)
 CLAUDE.md
-.claude/settings.local.json
+.claude/
+
+# Claude Code temp files
+tmpclaude-*

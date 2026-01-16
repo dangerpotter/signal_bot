@@ -286,8 +286,8 @@ class MessageHandler:
         """Generate an AI response using the configured model."""
         try:
             # Import shared_utils for API calls
-            from shared_utils import call_openrouter_api
-            from config import AI_MODELS, OPENROUTER_TOOL_CALLING_ENABLED
+            from shared_utils import call_openrouter_api, call_gemini_interactions_api
+            from config import AI_MODELS, OPENROUTER_TOOL_CALLING_ENABLED, GEMINI_DIRECT_MODELS
             from tool_schemas import get_tools_for_context, model_supports_tools, route_tools_for_message
             from tool_executor import SignalToolExecutor
         except ImportError as e:
@@ -473,6 +473,7 @@ class MessageHandler:
             max_expansions = 5  # Allow multiple sheet categories + finance + retries
             fast_path_used = False
             fast_path_domain = None
+            signal_executor = None  # Initialize before loop - may not be set if tools disabled
 
             for expansion_iteration in range(max_expansions + 1):
                 if (OPENROUTER_TOOL_CALLING_ENABLED and
@@ -513,7 +514,8 @@ class MessageHandler:
                         send_image_callback=send_image_callback,
                         send_reaction_callback=send_reaction_callback,
                         reaction_metadata=reaction_metadata,
-                        max_reactions=bot_data.get('max_reactions_per_response', 3)
+                        max_reactions=bot_data.get('max_reactions_per_response', 3),
+                        max_images=bot_data.get('max_images_per_response', 2)
                     )
                     # Set sender name for sheet attribution
                     signal_executor.sender_name = sender_name
@@ -535,17 +537,43 @@ class MessageHandler:
                     effective_system_prompt += intent_context
                     logger.info(f"Added expansion context to system prompt: {expansion_intents}")
 
-                # Call the AI API
-                response = call_openrouter_api(
-                    prompt=prompt_content,
-                    conversation_history=formatted_messages,
-                    model=model_id,
-                    system_prompt=effective_system_prompt,
-                    stream_callback=None,  # No streaming for Signal
-                    web_search=bot_data.get('web_search_enabled', False),
-                    tools=use_tools,
-                    tool_executor=tool_executor
-                )
+                # Determine which API to use based on bot configuration
+                api_provider = bot_data.get('api_provider', 'openrouter')
+                # Get Gemini model ID - either from mapping (OpenRouter format) or use directly (Gemini format)
+                gemini_model_id = GEMINI_DIRECT_MODELS.get(model_id)
+                if not gemini_model_id and model_id.startswith('gemini-'):
+                    # Model is already in Gemini API format (from dynamic dropdown)
+                    gemini_model_id = model_id
+
+                # Use direct Gemini API if configured and model supports it
+                if api_provider == 'gemini' and gemini_model_id:
+                    logger.info(f"[Gemini Interactions] Using Gemini API for model {gemini_model_id}")
+                    response = call_gemini_interactions_api(
+                        prompt=prompt_content,
+                        conversation_history=formatted_messages,
+                        model=gemini_model_id,
+                        system_prompt=effective_system_prompt,
+                        tools=use_tools,
+                        tool_executor=tool_executor,
+                        thinking_level=bot_data.get('thinking_level', 'high'),
+                        enable_google_search=bot_data.get('enable_google_search', False),
+                        enable_code_execution=bot_data.get('enable_code_execution', False),
+                        enable_url_context=bot_data.get('enable_url_context', False),
+                    )
+                else:
+                    # Use OpenRouter (default)
+                    if api_provider == 'gemini' and not gemini_model_id:
+                        logger.warning(f"Bot configured for Gemini but model {model_id} not in GEMINI_DIRECT_MODELS, falling back to OpenRouter")
+                    response = call_openrouter_api(
+                        prompt=prompt_content,
+                        conversation_history=formatted_messages,
+                        model=model_id,
+                        system_prompt=effective_system_prompt,
+                        stream_callback=None,  # No streaming for Signal
+                        web_search=bot_data.get('web_search_enabled', False),
+                        tools=use_tools,
+                        tool_executor=tool_executor
+                    )
 
                 # Check if meta-tool expansion was requested
                 if (signal_executor and
@@ -581,8 +609,8 @@ class MessageHandler:
             return response
 
         except Exception as e:
-            logger.error(f"API call failed: {e}")
-            return None
+            logger.error(f"API call failed: {e}", exc_info=True)
+            return f"Sorry, I ran into a problem processing your request: {str(e)[:100]}"
 
     def _parse_commands(self, response: str) -> tuple[str, list[dict]]:
         """Parse commands from the response."""
@@ -742,17 +770,31 @@ class MessageHandler:
     ):
         """Generate and send an image."""
         try:
-            from shared_utils import generate_image_from_text
+            from shared_utils import generate_image_from_text, generate_image_gemini
         except ImportError:
-            logger.error("Cannot import generate_image_from_text")
+            logger.error("Cannot import image generation functions")
             return
 
         logger.info(f"Bot {bot_data['name']} generating image: {prompt[:50]}...")
 
         try:
-            # Get image model from bot settings, fall back to default
-            image_model = bot_data.get('image_model') or "google/gemini-3-pro-image-preview"
-            result = generate_image_from_text(prompt, model=image_model)
+            # Determine which image API to use
+            image_api_provider = bot_data.get('image_api_provider', 'openrouter')
+
+            if image_api_provider == 'gemini':
+                # Use direct Gemini API for image generation
+                gemini_image_model = bot_data.get('gemini_image_model') or "imagen-3.0-generate-002"
+                logger.info(f"[Gemini Image] Using direct Gemini API with model: {gemini_image_model}")
+                result = generate_image_gemini(
+                    prompt=prompt,
+                    model=gemini_image_model,
+                    # Uses GEMINI_API_KEY from .env
+                )
+            else:
+                # Use OpenRouter (default)
+                image_model = bot_data.get('image_model') or "google/gemini-3-pro-image-preview"
+                logger.info(f"[OpenRouter Image] Using OpenRouter with model: {image_model}")
+                result = generate_image_from_text(prompt, model=image_model)
 
             if result and result.get("success"):
                 image_path = result.get("image_path")

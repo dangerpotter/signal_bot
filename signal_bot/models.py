@@ -57,6 +57,9 @@ class Bot(db.Model):
     reaction_tool_enabled = db.Column(db.Boolean, default=False)  # Enable reaction tool for AI
     max_reactions_per_response = db.Column(db.Integer, default=3)  # Cap on reactions per response (1-10)
 
+    # Image generation limits
+    max_images_per_response = db.Column(db.Integer, default=2)  # Cap on images per response (1-5)
+
     # Signal feature settings
     typing_enabled = db.Column(db.Boolean, default=True)  # Send typing indicators while composing
     read_receipts_enabled = db.Column(db.Boolean, default=False)  # Send read receipts for messages
@@ -78,6 +81,20 @@ class Bot(db.Model):
     # Chat Log settings
     chat_log_enabled = db.Column(db.Boolean, default=False)  # Enable chat log search tool
     chat_log_retention = db.Column(db.String(20), default='forever')  # '6h', '12h', '24h', '1w', '1m', '1y', 'forever'
+
+    # API Provider settings (for direct Gemini API support)
+    api_provider = db.Column(db.String(20), default='openrouter')  # 'openrouter' or 'gemini'
+    gemini_api_key = db.Column(db.Text, nullable=True)  # DEPRECATED: Use GEMINI_API_KEY env var
+
+    # Gemini Interactions API settings (Beta)
+    thinking_level = db.Column(db.String(20), default='high')  # minimal, low, medium, high
+    enable_google_search = db.Column(db.Boolean, default=False)  # Built-in Google Search grounding
+    enable_code_execution = db.Column(db.Boolean, default=False)  # Built-in Python code execution
+    enable_url_context = db.Column(db.Boolean, default=False)  # Built-in URL fetch/summarize
+
+    # Image generation API settings
+    image_api_provider = db.Column(db.String(20), default='openrouter')  # 'openrouter' or 'gemini'
+    gemini_image_model = db.Column(db.String(50), nullable=True)  # imagen-3.0-generate-002, gemini-3-pro-image-preview, etc.
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -117,6 +134,7 @@ class Bot(db.Model):
             "idle_trigger_chance_percent": self.idle_trigger_chance_percent or 10,
             "reaction_tool_enabled": self.reaction_tool_enabled,
             "max_reactions_per_response": self.max_reactions_per_response or 3,
+            "max_images_per_response": self.max_images_per_response or 2,
             "typing_enabled": self.typing_enabled,
             "read_receipts_enabled": self.read_receipts_enabled,
             "context_window": self.context_window or 25,
@@ -127,6 +145,14 @@ class Bot(db.Model):
             "dnd_template_spreadsheet_id": self.dnd_template_spreadsheet_id,
             "chat_log_enabled": self.chat_log_enabled if self.chat_log_enabled is not None else False,
             "chat_log_retention": self.chat_log_retention or 'forever',
+            "api_provider": self.api_provider or 'openrouter',
+            "gemini_api_key": self.gemini_api_key,  # DEPRECATED
+            "thinking_level": self.thinking_level or 'high',
+            "enable_google_search": self.enable_google_search if self.enable_google_search is not None else False,
+            "enable_code_execution": self.enable_code_execution if self.enable_code_execution is not None else False,
+            "enable_url_context": self.enable_url_context if self.enable_url_context is not None else False,
+            "image_api_provider": self.image_api_provider or 'openrouter',
+            "gemini_image_model": self.gemini_image_model,
         }
 
 
